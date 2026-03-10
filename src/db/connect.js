@@ -1,21 +1,28 @@
-const { Pool } = require('pg');
+const { Sequelize } = require('sequelize');
 require('dotenv').config();
 
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    // Ensure SSL is used in production (e.g., on Render)
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+const isProduction = process.env.NODE_ENV === 'production';
+
+const sequelize = new Sequelize(process.env.DATABASE_URL, {
+    dialect: 'postgres',
+    protocol: 'postgres',
+    dialectOptions: isProduction ? {
+        ssl: {
+            require: true,
+            rejectUnauthorized: false
+        }
+    } : {},
+    logging: false // set to console.log to see SQL queries
 });
 
 const connectDB = async () => {
     try {
-        const client = await pool.connect();
-        console.log('Successfully connected to PostgreSQL database');
-        client.release(); // Release the client back to the pool
+        await sequelize.authenticate();
+        console.log('Successfully connected to PostgreSQL database via Sequelize');
     } catch (err) {
-        console.error('Error connecting to PostgreSQL database:', err.stack);
+        console.error('Error connecting to PostgreSQL database:', err.message);
         process.exit(1); // Exit process with failure
     }
 };
 
-module.exports = { pool, connectDB };
+module.exports = { sequelize, connectDB };

@@ -1,0 +1,96 @@
+const userService = require('../services/user.service');
+
+class UserController {
+    // POST /users
+    async createUser(req, res) {
+        try {
+            const user = await userService.createUser(req.body);
+            res.status(201).json({
+                success: true,
+                message: 'User created successfully',
+                data: user
+            });
+        } catch (error) {
+            console.error('Error creating user:', error);
+            res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || 'Server error creating user'
+            });
+        }
+    }
+
+    // GET /users
+    async getUsers(req, res) {
+        try {
+            const result = await userService.getUsers(req.query);
+            res.status(200).json({
+                success: true,
+                message: 'Users retrieved successfully',
+                data: result.data,
+                pagination: result.pagination
+            });
+        } catch (error) {
+            console.error('Error getting users:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Server error retrieving users'
+            });
+        }
+    }
+
+    // GET /users/:id
+    async getUserById(req, res) {
+        try {
+            const user = await userService.getUserById(req.params.id);
+            res.status(200).json({
+                success: true,
+                message: 'User retrieved successfully',
+                data: user
+            });
+        } catch (error) {
+            console.error('Error fetching user by id:', error);
+            res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || 'Server error fetching user'
+            });
+        }
+    }
+
+    // PUT /users/:id
+    async updateUser(req, res) {
+        try {
+            const user = await userService.updateUser(req.params.id, req.body);
+            res.status(200).json({
+                success: true,
+                message: 'User updated successfully',
+                data: user
+            });
+        } catch (error) {
+            console.error('Error updating user:', error);
+            res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || 'Server error updating user'
+            });
+        }
+    }
+
+    // DELETE /users/:id
+    async deleteUser(req, res) {
+        try {
+            await userService.deleteUser(req.params.id);
+            res.status(200).json({
+                success: true,
+                message: 'User deleted successfully',
+                data: null
+            });
+        } catch (error) {
+            console.error('Error deleting user:', error);
+            res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || 'Server error deleting user'
+            });
+        }
+    }
+}
+
+module.exports = new UserController();

@@ -15,6 +15,10 @@ app.get('/', (req, res) => {
     res.json({ message: 'LMS Backend API is running' });
 });
 
+// Register API Routes
+app.use('/api/v1/users', require('./routes/user.routes'));
+app.use('/api/v1/institutions', require('./routes/institution.routes'));
+
 // Start the server only after connecting to the database
 const startServer = async () => {
     try {

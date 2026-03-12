@@ -4,27 +4,27 @@ const bcrypt = require('bcryptjs');
 
 class UserService {
     async createUser(data) {
-        const { full_name, email, password, role, institution_id } = data;
-
-        let targetRole = role;
-        // Map frontend role to backend enum if necessary
-        if (role === 'institution' || role === 'Institution Representative' || role === 'College Administrator') {
-            targetRole = 'institution_representative';
-        }
+        const { full_name, email, password, role, institution_name } = data;
+        let institutionId = null;
 
         // Validate institution requirements
-        if (['institution_representative', 'College Administrator', 'Institution Representative'].includes(targetRole) || role === 'institution') {
-            if (!institution_id) {
-                const error = new Error('institution_id is required for Institution Representative or College Administrator');
+        if (role === 'institution_representative') {
+            if (!institution_name) {
+                const error = new Error('institution_name is required for institution_representative');
                 error.statusCode = 400;
                 throw error;
             }
-            const institution = await Institution.findByPk(institution_id);
+            const institution = await Institution.findOne({ 
+                where: { 
+                    name: { [Op.iLike]: institution_name.trim() }
+                } 
+            });
             if (!institution) {
-                const error = new Error('Institution not found');
+                const error = new Error(`Institution with name "${institution_name}" not found`);
                 error.statusCode = 404;
                 throw error;
             }
+            institutionId = institution.id;
         }
 
         // Default username generation if needed to satisfy DB unique constraint
@@ -43,14 +43,14 @@ class UserService {
                 email,
                 username,
                 password_hash,
-                role: targetRole
+                role: role
             }, { transaction: t });
 
-            // If an institution_id was provided, link user to institution
-            if (institution_id && targetRole === 'institution_representative') {
+            // If an institution ID was resolved, link user to institution
+            if (institutionId && role === 'institution_representative') {
                 await TutorInstitutionAssignment.create({
                     tutor_id: user.id,
-                    institution_id
+                    institution_id: institutionId
                 }, { transaction: t });
             }
 
@@ -121,6 +121,18 @@ class UserService {
             throw error;
         }
         return user;
+    }
+
+    async getTotalAdmins() {
+        return await User.count({ where: { role: 'admin' } });
+    }
+
+    async getTotalRepresentatives() {
+        return await User.count({ where: { role: 'institution_representative' } });
+    }
+
+    async getTotalInstitutions() {
+        return await Institution.count();
     }
 
     async updateUser(id, updateData) {

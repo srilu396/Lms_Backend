@@ -7,6 +7,9 @@ const { createUserSchema, updateUserSchema } = require('../utils/validations/use
 // CRUD endpoints for Users
 router.post('/', validate(createUserSchema), userController.createUser);
 router.get('/', userController.getUsers);
+router.get('/count/admins', userController.getTotalAdmins);
+router.get('/count/representatives', userController.getTotalRepresentatives);
+router.get('/count/institutions', userController.getTotalInstitutions);
 router.get('/:id', userController.getUserById);
 router.put('/:id', validate(updateUserSchema), userController.updateUser);
 router.delete('/:id', userController.deleteUser);

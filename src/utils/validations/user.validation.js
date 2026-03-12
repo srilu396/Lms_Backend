@@ -12,18 +12,18 @@ const createUserSchema = Joi.object({
         'string.min': 'Password must be at least 6 characters long',
         'string.empty': 'Password is required'
     }),
-    role: Joi.string().valid('admin', 'tutor', 'student', 'institution', 'Institution Representative', 'College Administrator', 'institution_representative').required().messages({
-        'any.only': 'Invalid role specified'
+    role: Joi.string().valid('admin', 'institution_representative').required().messages({
+        'any.only': 'Invalid role specified, only admin and institution_representative are allowed'
     }),
-    institution_id: Joi.number().optional()
+    institution_name: Joi.string().optional()
 });
 
 const updateUserSchema = Joi.object({
     full_name: Joi.string().optional(),
     email: Joi.string().email().optional(),
     password: Joi.string().min(6).optional(),
-    role: Joi.string().valid('admin', 'tutor', 'student', 'institution', 'Institution Representative', 'College Administrator', 'institution_representative').optional(),
-    institution_id: Joi.number().optional()
+    role: Joi.string().valid('admin', 'institution_representative').optional(),
+    institution_name: Joi.string().optional()
 });
 
 module.exports = {

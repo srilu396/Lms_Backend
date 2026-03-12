@@ -56,6 +56,60 @@ class UserController {
         }
     }
 
+    // GET /users/count/admins
+    async getTotalAdmins(req, res) {
+        try {
+            const count = await userService.getTotalAdmins();
+            res.status(200).json({
+                success: true,
+                message: 'Total admins retrieved successfully',
+                data: { count }
+            });
+        } catch (error) {
+            console.error('Error getting total admins:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Server error retrieving total admins'
+            });
+        }
+    }
+
+    // GET /users/count/representatives
+    async getTotalRepresentatives(req, res) {
+        try {
+            const count = await userService.getTotalRepresentatives();
+            res.status(200).json({
+                success: true,
+                message: 'Total representatives retrieved successfully',
+                data: { count }
+            });
+        } catch (error) {
+            console.error('Error getting total representatives:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Server error retrieving total representatives'
+            });
+        }
+    }
+
+    // GET /users/count/institutions
+    async getTotalInstitutions(req, res) {
+        try {
+            const count = await userService.getTotalInstitutions();
+            res.status(200).json({
+                success: true,
+                message: 'Total institutions retrieved successfully',
+                data: { count }
+            });
+        } catch (error) {
+            console.error('Error getting total institutions:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Server error retrieving total institutions'
+            });
+        }
+    }
+
     // PUT /users/:id
     async updateUser(req, res) {
         try {

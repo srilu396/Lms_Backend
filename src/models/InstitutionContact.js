@@ -25,6 +25,7 @@ module.exports = (sequelize, DataTypes) => {
             }
         },
         phone: DataTypes.STRING,
+        role: DataTypes.STRING,
         is_primary: {
             type: DataTypes.BOOLEAN,
             defaultValue: false

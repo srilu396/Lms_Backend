@@ -6,6 +6,7 @@ const contactSchema = z.object({
     name: z.string().min(1, 'Contact name is required'),
     email: z.string().email('Invalid contact email').optional().nullable(),
     phone: z.string().optional().nullable(),
+    role: z.string().optional().nullable(),
     is_primary: z.boolean().optional().default(false)
 });
 

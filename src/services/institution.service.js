@@ -16,12 +16,13 @@ class InstitutionService {
 
             // Create contacts if provided
             if (contacts && contacts.length > 0) {
-                // Ignore the 'role' field passed from frontend as per requirements
+                // Include the 'role' field passed from frontend
                 const contactsData = contacts.map(contact => ({
                     institution_id: institution.id,
                     name: contact.name,
                     email: contact.email,
                     phone: contact.phone,
+                    role: contact.role,
                     is_primary: contact.is_primary || false
                 }));
 
@@ -178,6 +179,7 @@ class InstitutionService {
                         name: contact.name,
                         email: contact.email,
                         phone: contact.phone,
+                        role: contact.role,
                         is_primary: contact.is_primary || false
                     }));
 

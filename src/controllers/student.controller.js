@@ -11,6 +11,14 @@ class StudentController {
             });
         } catch (error) {
             console.error('Error creating student:', error);
+            
+            if (error.name === 'SequelizeUniqueConstraintError') {
+                return res.status(400).json({
+                    success: false,
+                    message: error.errors[0].message || 'A record with this information already exists'
+                });
+            }
+
             res.status(error.statusCode || 500).json({
                 success: false,
                 message: error.message || 'Server error creating student'
@@ -21,9 +29,15 @@ class StudentController {
     async getStudents(req, res) {
         try {
             const result = await studentService.getStudents(req.query);
+            
+            let message = 'Students retrieved successfully';
+            if (req.query.search && result.data.length === 0) {
+                message = 'No students found matching your search criteria.';
+            }
+
             res.status(200).json({
                 success: true,
-                message: 'Students retrieved successfully',
+                message: message,
                 data: result.data,
                 pagination: result.pagination
             });
@@ -63,6 +77,14 @@ class StudentController {
             });
         } catch (error) {
             console.error('Error updating student:', error);
+
+            if (error.name === 'SequelizeUniqueConstraintError') {
+                return res.status(400).json({
+                    success: false,
+                    message: error.errors[0].message || 'A record with this information already exists'
+                });
+            }
+
             res.status(error.statusCode || 500).json({
                 success: false,
                 message: error.message || 'Server error updating student'

@@ -164,6 +164,12 @@ class UserService {
             throw error;
         }
 
+        if (user.is_active) {
+            const error = new Error('Active users cannot be deleted. Please deactivate the user first.');
+            error.statusCode = 400;
+            throw error;
+        }
+
         await user.destroy(); // Soft delete because of paranoid: true
         return true;
     }

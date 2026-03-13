@@ -23,9 +23,15 @@ class UserController {
     async getUsers(req, res) {
         try {
             const result = await userService.getUsers(req.query);
+            
+            let message = 'Users retrieved successfully';
+            if (req.query.search && result.data.length === 0) {
+                message = 'No users found matching your search criteria.';
+            }
+
             res.status(200).json({
                 success: true,
-                message: 'Users retrieved successfully',
+                message: message,
                 data: result.data,
                 pagination: result.pagination
             });

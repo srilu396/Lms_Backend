@@ -128,6 +128,12 @@ class StudentService {
             throw error;
         }
 
+        if (student.status === 'active') {
+            const error = new Error('Active students cannot be deleted. Please set the status to inactive first.');
+            error.statusCode = 400;
+            throw error;
+        }
+
         await student.destroy();
         return true;
     }

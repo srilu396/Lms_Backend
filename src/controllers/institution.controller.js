@@ -27,9 +27,15 @@ class InstitutionController {
     async searchInstitutions(req, res) {
         try {
             const result = await institutionService.searchInstitutions(req.query);
+            
+            let message = 'Institutions searched successfully';
+            if (req.query.search && result.data.length === 0) {
+                message = 'No institutions found matching your search criteria.';
+            }
+
             res.status(200).json({
                 success: true,
-                message: 'Institutions searched successfully',
+                message: message,
                 data: result.data
             });
         } catch (error) {
@@ -79,8 +85,14 @@ class InstitutionController {
                 status
             });
 
+            let message = 'Institutions retrieved successfully';
+            if (search && institutions.data.length === 0) {
+                message = 'No institutions found matching your search criteria.';
+            }
+
             res.status(200).json({
                 success: true,
+                message: message,
                 data: institutions.data,
                 meta: institutions.meta,
                 stats: institutions.stats

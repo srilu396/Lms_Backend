@@ -15,7 +15,7 @@ module.exports = (sequelize, DataTypes) => {
         allocation_time: DataTypes.STRING,
         course_id: {
             type: DataTypes.INTEGER,
-            allowNull: false,
+            allowNull: true,
             references: {
                 model: 'courses',
                 key: 'id'
@@ -29,8 +29,16 @@ module.exports = (sequelize, DataTypes) => {
                 key: 'id'
             }
         },
+        instructor_id: {
+            type: DataTypes.BIGINT,
+            allowNull: true,
+            references: {
+                model: 'users',
+                key: 'id'
+            }
+        },
         status: {
-            type: DataTypes.ENUM('active', 'completed', 'cancelled'),
+            type: DataTypes.ENUM('active', 'completed', 'cancelled', 'inactive'),
             defaultValue: 'active'
         }
     }, {
@@ -45,6 +53,7 @@ module.exports = (sequelize, DataTypes) => {
     Batch.associate = (models) => {
         Batch.belongsTo(models.Course, { foreignKey: 'course_id' });
         Batch.belongsTo(models.Institution, { foreignKey: 'institution_id' });
+        Batch.belongsTo(models.User, { foreignKey: 'instructor_id', as: 'instructor' });
         Batch.hasMany(models.BatchTutor, { foreignKey: 'batch_id' });
         Batch.hasMany(models.Enrollment, { foreignKey: 'batch_id' });
         Batch.hasMany(models.AttendanceSession, { foreignKey: 'batch_id' });

@@ -7,10 +7,10 @@ module.exports = (sequelize, DataTypes) => {
             allowNull: false
         },
         student_id: {
-            type: DataTypes.BIGINT,
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
-                model: 'users',
+                model: 'students',
                 key: 'id'
             }
         },
@@ -44,7 +44,7 @@ module.exports = (sequelize, DataTypes) => {
     });
 
     Enrollment.associate = (models) => {
-        Enrollment.belongsTo(models.User, { foreignKey: 'student_id' });
+        Enrollment.belongsTo(models.Student, { foreignKey: 'student_id', as: 'student' });
         Enrollment.belongsTo(models.Batch, { foreignKey: 'batch_id' });
         Enrollment.hasMany(models.QuizSubmission, { foreignKey: 'enrollment_id' });
         Enrollment.hasMany(models.AssignmentSubmission, { foreignKey: 'enrollment_id' });

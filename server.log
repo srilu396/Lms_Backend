@@ -1,0 +1,23 @@
+Successfully connected to PostgreSQL database via Sequelize
+node:events:485
+      throw er; // Unhandled 'error' event
+      ^
+
+Error: listen EADDRINUSE: address already in use :::8000
+    at Server.setupListenHandle [as _listen2] (node:net:1939:16)
+    at listenInCluster (node:net:1996:12)
+    at Server.listen (node:net:2101:7)
+    at Function.listen (/Users/anilsainunnagamil.com/Documents/LMS_Backend/node_modules/express/lib/application.js:635:24)
+    at startServer (/Users/anilsainunnagamil.com/Documents/LMS_Backend/src/index.js:28:13)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+Emitted 'error' event on Server instance at:
+    at emitErrorNT (node:net:1975:8)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 8000
+}
+
+Node.js v23.10.0

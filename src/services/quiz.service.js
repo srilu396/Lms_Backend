@@ -1,6 +1,16 @@
 const { Quiz, QuizQuestion } = require('../models');
 const { Op } = require('sequelize');
 
+// Shuffle utility function
+const shuffleArray = (array) => {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+};
+
 class QuizService {
     async getQuizStats() {
         const totalQuizzes = await Quiz.count();
@@ -12,6 +22,15 @@ class QuizService {
             activeQuizzes,
             pendingQuizzes
         };
+    }
+
+    shuffleArray(array) {
+        const shuffled = [...array];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        return shuffled;
     }
 
     async getQuizzes(queryParams) {
@@ -83,6 +102,14 @@ class QuizService {
             };
         }
 
+        // Get questions
+        let questions = quiz.QuizQuestions || [];
+        
+        // Shuffle questions if shuffle_questions is true
+        if (quiz.shuffle_questions && questions.length > 0) {
+            questions = this.shuffleArray([...questions]);
+        }
+
         return {
             id: quiz.id,
             topic_id: quiz.topic_id,
@@ -95,12 +122,14 @@ class QuizService {
             domain: quiz.domain,
             tags: quiz.tags,
             status: quiz.status,
-            questions: quiz.QuizQuestions || []
+            is_published: quiz.is_published,
+            shuffle_questions: quiz.shuffle_questions,
+            questions: questions
         };
     }
 
     async createQuiz(quizData) {
-        const { quiz_title, instructions, max_attempts, duration, total_marks, passing_score, domain, tags, questions, status, topic_id } = quizData;
+        const { quiz_title, instructions, max_attempts, duration, total_marks, passing_score, domain, tags, questions, status, topic_id, is_published, shuffle_questions } = quizData;
 
         // Validate required fields
         if (!quiz_title) {
@@ -129,6 +158,8 @@ class QuizService {
                 domain: Array.isArray(domain) ? domain : (domain ? [domain] : []),
                 tags: Array.isArray(tags) ? tags : (tags ? [tags] : []),
                 status: status || 'draft',
+                is_published: is_published || false,
+                shuffle_questions: shuffle_questions || false,
                 topic_id: topic_id || null
             });
 
@@ -158,7 +189,7 @@ class QuizService {
     }
 
     async updateQuiz(quizId, updateData) {
-        const { quiz_title, instructions, max_attempts, duration, total_marks, passing_score, domain, tags, questions, status, topic_id } = updateData;
+        const { quiz_title, instructions, max_attempts, duration, total_marks, passing_score, domain, tags, questions, status, is_published, shuffle_questions, topic_id } = updateData;
 
         try {
             const quiz = await Quiz.findByPk(quizId);
@@ -179,6 +210,8 @@ class QuizService {
             if (domain !== undefined) quiz.domain = Array.isArray(domain) ? domain : (domain ? [domain] : []);
             if (tags !== undefined) quiz.tags = Array.isArray(tags) ? tags : (tags ? [tags] : []);
             if (status !== undefined) quiz.status = status;
+            if (is_published !== undefined) quiz.is_published = is_published;
+            if (shuffle_questions !== undefined) quiz.shuffle_questions = shuffle_questions;
             if (topic_id !== undefined) quiz.topic_id = topic_id;
 
             await quiz.save();
@@ -234,6 +267,16 @@ class QuizService {
                 message: error.message || 'Error deleting quiz'
             };
         }
+    }
+
+    // Utility function to shuffle array (Fisher-Yates shuffle algorithm)
+    shuffleArray(array) {
+        const shuffled = [...array];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        return shuffled;
     }
 }
 

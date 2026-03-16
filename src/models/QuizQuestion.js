@@ -21,7 +21,7 @@ module.exports = (sequelize, DataTypes) => {
         options: DataTypes.JSONB,
         correct_answer: DataTypes.STRING,
         type: {
-            type: DataTypes.ENUM('mcq', 'short'),
+            type: DataTypes.ENUM('mcq', 'short', 'true_false'),
             allowNull: false
         },
         marks: {

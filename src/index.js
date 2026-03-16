@@ -19,6 +19,7 @@ app.get('/', (req, res) => {
 app.use('/api/v1/users', require('./routes/user.routes'));
 app.use('/api/v1/institutions', require('./routes/institution.routes'));
 app.use('/api/v1/students', require('./routes/student.routes'));
+app.use('/api/v1/quizzes', require('./routes/quiz.routes'));
 
 // Start the server only after connecting to the database
 const startServer = async () => {

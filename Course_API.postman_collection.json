@@ -1,0 +1,152 @@
+{
+  "info": {
+    "name": "Course API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Courses",
+      "item": [
+        {
+          "name": "Create Course",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "url": { "raw": "{{baseUrl}}/api/courses", "host": ["{{baseUrl}}"], "path": ["api", "courses"] },
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Advanced Node.js\",\n  \"description\": \"Master Node.js and Express.\",\n  \"thumbnail_url\": \"https://example.com/thumb.jpg\",\n  \"instructor_id\": 1\n}" }
+          }
+        },
+        {
+          "name": "Get Courses",
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/courses", "host": ["{{baseUrl}}"], "path": ["api", "courses"] } }
+        },
+        {
+          "name": "Get Course By ID",
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/courses/1", "host": ["{{baseUrl}}"], "path": ["api", "courses", "1"] } }
+        },
+        {
+          "name": "Update Course",
+          "request": {
+            "method": "PUT",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "url": { "raw": "{{baseUrl}}/api/courses/1", "host": ["{{baseUrl}}"], "path": ["api", "courses", "1"] },
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Advanced Node.js Updated\"\n}" }
+          }
+        },
+        {
+          "name": "Delete Course",
+          "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/courses/1", "host": ["{{baseUrl}}"], "path": ["api", "courses", "1"] } }
+        },
+        {
+          "name": "Get Course Curriculum (Sidebar)",
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/courses/1/curriculum?student_id=123", "host": ["{{baseUrl}}"], "path": ["api", "courses", "1", "curriculum"], "query": [ { "key": "student_id", "value": "123" } ] } }
+        },
+        {
+          "name": "Enroll Student",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "url": { "raw": "{{baseUrl}}/api/courses/1/enroll", "host": ["{{baseUrl}}"], "path": ["api", "courses", "1", "enroll"] },
+            "body": { "mode": "raw", "raw": "{\n  \"student_id\": 123\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Modules",
+      "item": [
+        {
+          "name": "Add Module",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "url": { "raw": "{{baseUrl}}/api/courses/1/modules", "host": ["{{baseUrl}}"], "path": ["api", "courses", "1", "modules"] },
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Module 1: Introduction\",\n  \"description\": \"Basics of the course.\",\n  \"order_num\": 1\n}" }
+          }
+        },
+        {
+          "name": "Update Module",
+          "request": {
+            "method": "PUT",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "url": { "raw": "{{baseUrl}}/api/modules/1", "host": ["{{baseUrl}}"], "path": ["api", "modules", "1"] },
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Module 1: Intro Updated\"\n}" }
+          }
+        },
+        {
+          "name": "Delete Module",
+          "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/modules/1", "host": ["{{baseUrl}}"], "path": ["api", "modules", "1"] } }
+        }
+      ]
+    },
+    {
+      "name": "Topics",
+      "item": [
+        {
+          "name": "Add Topic",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "url": { "raw": "{{baseUrl}}/api/modules/1/topics", "host": ["{{baseUrl}}"], "path": ["api", "modules", "1", "topics"] },
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Topic 1: Getting Started\",\n  \"order_num\": 1\n}" }
+          }
+        },
+        {
+          "name": "Update Topic",
+          "request": {
+            "method": "PUT",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "url": { "raw": "{{baseUrl}}/api/topics/1", "host": ["{{baseUrl}}"], "path": ["api", "topics", "1"] },
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Topic 1: Updated\"\n}" }
+          }
+        },
+        {
+          "name": "Delete Topic",
+          "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/topics/1", "host": ["{{baseUrl}}"], "path": ["api", "topics", "1"] } }
+        }
+      ]
+    },
+    {
+      "name": "Lessons & Progress",
+      "item": [
+        {
+          "name": "Add Lesson",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "url": { "raw": "{{baseUrl}}/api/topics/1/lessons", "host": ["{{baseUrl}}"], "path": ["api", "topics", "1", "lessons"] },
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Lesson 1: Hello World\",\n  \"content_text\": \"Welcome to the first lesson.\",\n  \"video_url\": \"http://example.com/video.mp4\",\n  \"duration_minutes\": 10,\n  \"type\": \"video\",\n  \"order_num\": 1\n}" }
+          }
+        },
+        {
+          "name": "Update Lesson",
+          "request": {
+            "method": "PUT",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "url": { "raw": "{{baseUrl}}/api/lessons/1", "host": ["{{baseUrl}}"], "path": ["api", "lessons", "1"] },
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Lesson 1: Updated\"\n}" }
+          }
+        },
+        {
+          "name": "Delete Lesson",
+          "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/lessons/1", "host": ["{{baseUrl}}"], "path": ["api", "lessons", "1"] } }
+        },
+        {
+          "name": "Mark Lesson Complete",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "url": { "raw": "{{baseUrl}}/api/progress/lessons/1/complete", "host": ["{{baseUrl}}"], "path": ["api", "progress", "lessons", "1", "complete"] },
+            "body": { "mode": "raw", "raw": "{\n  \"student_id\": 123\n}" }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000"
+    }
+  ]
+}

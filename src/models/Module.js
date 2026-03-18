@@ -18,6 +18,12 @@ module.exports = (sequelize, DataTypes) => {
             type: DataTypes.STRING,
             allowNull: false
         },
+        description: DataTypes.TEXT,
+        content_text: DataTypes.TEXT,
+        text: DataTypes.TEXT,
+        image_url: DataTypes.STRING,
+        video_url: DataTypes.STRING,
+        url: DataTypes.STRING,
         order_num: {
             type: DataTypes.INTEGER,
             allowNull: false

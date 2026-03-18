@@ -19,6 +19,10 @@ app.get('/', (req, res) => {
 app.use('/api/v1/users', require('./routes/user.routes'));
 app.use('/api/v1/institutions', require('./routes/institution.routes'));
 app.use('/api/v1/students', require('./routes/student.routes'));
+app.use('/api/v1/courses', require('./routes/course.routes'));
+app.use('/api/v1/modules', require('./routes/module.routes'));
+app.use('/api/v1/topics', require('./routes/topic.routes'));
+app.use('/api/v1/lessons', require('./routes/lesson.routes'));
 
 // Start the server only after connecting to the database
 const startServer = async () => {

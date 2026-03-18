@@ -23,8 +23,10 @@ module.exports = (sequelize, DataTypes) => {
             allowNull: false
         },
         content_text: DataTypes.TEXT,
+        text: DataTypes.TEXT,
         image_url: DataTypes.STRING,
         video_url: DataTypes.STRING,
+        url: DataTypes.STRING,
         duration_minutes: DataTypes.INTEGER,
         order_num: {
             type: DataTypes.INTEGER,

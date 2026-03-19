@@ -10,6 +10,7 @@ const {
 
 router.post('/', validate(createCourseSchema), courseController.createCourse);
 router.get('/', courseController.getCourses);
+router.get('/stats', courseController.getCourseStats);
 router.get('/:id', courseController.getCourseById);
 router.put('/:id', validate(updateCourseSchema), courseController.updateCourse);
 router.delete('/:id', courseController.deleteCourse);

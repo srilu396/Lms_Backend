@@ -5,8 +5,65 @@ class CourseService {
         return await Course.create(data);
     }
 
-    async getCourses() {
-        return await Course.findAll();
+    async getCourses(query = {}) {
+        const { search, status, institution_id, page = 1, limit = 10 } = query;
+        const parsedLimit = Math.min(parseInt(limit, 10) || 10, 50);
+        const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
+        const offset = (parsedPage - 1) * parsedLimit;
+
+        const { Op } = require('sequelize');
+        const where = {};
+
+        if (status) {
+            where.status = status;
+        }
+
+        if (institution_id) {
+            where.institution_id = institution_id;
+        }
+
+        if (search) {
+            where.name = { [Op.iLike]: `%${search.trim()}%` };
+        }
+
+        const { count, rows } = await Course.findAndCountAll({
+            where,
+            include: [{
+                model: Module,
+                attributes: []
+            }],
+            attributes: {
+                include: [
+                    [require('sequelize').literal('(SELECT COUNT(*) FROM "modules" WHERE "modules"."course_id" = "Course"."id")'), 'modules_count']
+                ]
+            },
+            limit: parsedLimit,
+            offset: offset,
+            order: [['created_at', 'DESC']],
+            distinct: true
+        });
+
+        return {
+            data: rows,
+            pagination: {
+                total: count,
+                page: parsedPage,
+                limit: parsedLimit,
+                totalPages: Math.ceil(count / parsedLimit)
+            }
+        };
+    }
+
+    async getCourseStats() {
+        const total = await Course.count();
+        const active = await Course.count({ where: { status: 'active' } });
+        const draft = await Course.count({ where: { status: 'draft' } });
+        
+        return {
+            total_courses: total,
+            active_courses: active,
+            draft_courses: draft
+        };
     }
 
     async getCourseById(id) {
@@ -17,14 +74,46 @@ class CourseService {
                     model: Topic,
                     include: [{ model: Lesson }]
                 }]
-            }]
+            }],
+            order: [
+                [Module, 'order_num', 'ASC'],
+                [Module, Topic, 'order_num', 'ASC'],
+                [Module, Topic, Lesson, 'order_num', 'ASC']
+            ]
         });
         if (!course) {
             const error = new Error('Course not found');
             error.statusCode = 404;
             throw error;
         }
-        return course;
+
+        const courseJson = course.toJSON();
+        
+        // Calculate totals for the "View/Implementation" look
+        let totalModules = courseJson.Modules.length;
+        let totalTopics = 0;
+        let totalLessons = 0;
+        let totalDuration = 0;
+
+        courseJson.Modules.forEach(m => {
+            totalTopics += m.Topics.length;
+            m.Topics.forEach(t => {
+                totalLessons += t.Lessons.length;
+                t.Lessons.forEach(l => {
+                    totalDuration += (l.duration_minutes || 0);
+                });
+            });
+        });
+
+        return {
+            ...courseJson,
+            stats: {
+                total_modules: totalModules,
+                total_topics: totalTopics,
+                total_lessons: totalLessons,
+                total_duration_minutes: totalDuration
+            }
+        };
     }
 
     async updateCourse(id, data) {

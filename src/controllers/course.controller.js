@@ -20,17 +20,35 @@ class CourseController {
 
     async getCourses(req, res) {
         try {
-            const courses = await courseService.getCourses();
+            const result = await courseService.getCourses(req.query);
             res.status(200).json({
                 success: true,
                 message: 'Courses retrieved successfully',
-                data: courses
+                data: result.data,
+                pagination: result.pagination
             });
         } catch (error) {
             console.error('Error getting courses:', error);
             res.status(500).json({
                 success: false,
                 message: 'Server error retrieving courses'
+            });
+        }
+    }
+
+    async getCourseStats(req, res) {
+        try {
+            const stats = await courseService.getCourseStats();
+            res.status(200).json({
+                success: true,
+                message: 'Course statistics retrieved successfully',
+                data: stats
+            });
+        } catch (error) {
+            console.error('Error getting course stats:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Server error retrieving course statistics'
             });
         }
     }

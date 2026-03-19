@@ -21,8 +21,8 @@ module.exports = (sequelize, DataTypes) => {
             }
         },
         status: {
-            type: DataTypes.ENUM('active', 'inactive', 'archived'),
-            defaultValue: 'active'
+            type: DataTypes.ENUM('active', 'inactive', 'archived', 'draft'),
+            defaultValue: 'draft'
         }
     }, {
         tableName: 'courses',

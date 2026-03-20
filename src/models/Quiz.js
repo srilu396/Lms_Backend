@@ -47,6 +47,16 @@ module.exports = (sequelize, DataTypes) => {
             defaultValue: 'draft',
             allowNull: false
         },
+        is_published: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            allowNull: false
+        },
+        shuffle_questions: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            allowNull: false
+        },
         passing_score: {
             type: DataTypes.INTEGER,
             allowNull: true

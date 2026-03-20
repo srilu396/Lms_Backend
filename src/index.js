@@ -24,6 +24,7 @@ app.use('/api/v1/modules', require('./routes/module.routes'));
 app.use('/api/v1/topics', require('./routes/topic.routes'));
 app.use('/api/v1/lessons', require('./routes/lesson.routes'));
 app.use('/api/v1/assignments', require('./routes/assignment.routes'));
+app.use('/api/v1/domains', require('./routes/domain.routes'));
 
 // Start the server only after connecting to the database
 const startServer = async () => {

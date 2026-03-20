@@ -8,7 +8,7 @@ module.exports = (sequelize, DataTypes) => {
         },
         topic_id: {
             type: DataTypes.INTEGER,
-            allowNull: false,
+            allowNull: true,
             references: {
                 model: 'topics',
                 key: 'id'
@@ -30,6 +30,23 @@ module.exports = (sequelize, DataTypes) => {
             type: DataTypes.INTEGER,
             allowNull: true
         },
+        total_marks: {
+            type: DataTypes.INTEGER,
+            allowNull: true
+        },
+        domain: {
+            type: DataTypes.JSONB,
+            allowNull: true
+        },
+        tags: {
+            type: DataTypes.JSONB,
+            allowNull: true
+        },
+        status: {
+            type: DataTypes.ENUM('published', 'draft', 'scheduled'),
+            defaultValue: 'draft',
+            allowNull: false
+        },
         passing_score: {
             type: DataTypes.INTEGER,
             allowNull: true
@@ -42,7 +59,7 @@ module.exports = (sequelize, DataTypes) => {
     });
 
     Quiz.associate = (models) => {
-        Quiz.belongsTo(models.Topic, { foreignKey: 'topic_id' });
+        Quiz.belongsTo(models.Topic, { foreignKey: 'topic_id', as: 'topic' });
         Quiz.hasMany(models.QuizQuestion, { foreignKey: 'quiz_id' });
         Quiz.hasMany(models.QuizSubmission, { foreignKey: 'quiz_id' });
     };

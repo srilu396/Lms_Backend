@@ -1,8 +1,47 @@
-const { Course, Module, Topic, Lesson, StudentProgress } = require('../models');
+const { Course, Module, Topic, Lesson, StudentProgress, Assignment, Quiz } = require('../models');
 
 class CourseService {
     async createCourse(data) {
-        return await Course.create(data);
+        const { assignments, quizzes, ...courseData } = data;
+        
+        const course = await Course.create(courseData, {
+            include: [
+                {
+                    model: Module,
+                    as: 'modules',
+                    include: [
+                        {
+                            model: Topic,
+                            as: 'topics',
+                            include: [
+                                {
+                                    model: Lesson,
+                                    as: 'lessons'
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        });
+
+        // Link existing assignments
+        if (assignments && Array.isArray(assignments)) {
+            await Assignment.update(
+                { course_id: course.id },
+                { where: { id: assignments } }
+            );
+        }
+
+        // Link existing quizzes
+        if (quizzes && Array.isArray(quizzes)) {
+            await Quiz.update(
+                { course_id: course.id },
+                { where: { id: quizzes } }
+            );
+        }
+
+        return await this.getCourseById(course.id);
     }
 
     async getCourses(query = {}) {
@@ -70,15 +109,32 @@ class CourseService {
         const course = await Course.findByPk(id, {
             include: [{
                 model: Module,
-                include: [{
-                    model: Topic,
-                    include: [{ model: Lesson }]
-                }]
-            }],
+                as: 'modules',
+                include: [
+                    { model: Assignment, as: 'assignments' },
+                    { model: Quiz, as: 'quizzes' },
+                    {
+                        model: Topic,
+                        as: 'topics',
+                        include: [
+                            { model: Assignment, as: 'assignments' },
+                            { model: Quiz, as: 'quizzes' },
+                            { 
+                                model: Lesson,
+                                as: 'lessons',
+                                include: [
+                                    { model: Assignment, as: 'assignments' },
+                                    { model: Quiz, as: 'quizzes' }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }, { model: Assignment, as: 'assignments' }, { model: Quiz, as: 'quizzes' }],
             order: [
-                [Module, 'order_num', 'ASC'],
-                [Module, Topic, 'order_num', 'ASC'],
-                [Module, Topic, Lesson, 'order_num', 'ASC']
+                [{ model: Module, as: 'modules' }, 'order_num', 'ASC'],
+                [{ model: Module, as: 'modules' }, { model: Topic, as: 'topics' }, 'order_num', 'ASC'],
+                [{ model: Module, as: 'modules' }, { model: Topic, as: 'topics' }, { model: Lesson, as: 'lessons' }, 'order_num', 'ASC']
             ]
         });
         if (!course) {
@@ -90,16 +146,16 @@ class CourseService {
         const courseJson = course.toJSON();
         
         // Calculate totals for the "View/Implementation" look
-        let totalModules = courseJson.Modules.length;
+        let totalModules = courseJson.modules.length;
         let totalTopics = 0;
         let totalLessons = 0;
         let totalDuration = 0;
 
-        courseJson.Modules.forEach(m => {
-            totalTopics += m.Topics.length;
-            m.Topics.forEach(t => {
-                totalLessons += t.Lessons.length;
-                t.Lessons.forEach(l => {
+        courseJson.modules.forEach(m => {
+            totalTopics += m.topics.length;
+            m.topics.forEach(t => {
+                totalLessons += t.lessons.length;
+                t.lessons.forEach(l => {
                     totalDuration += (l.duration_minutes || 0);
                 });
             });
@@ -117,13 +173,32 @@ class CourseService {
     }
 
     async updateCourse(id, data) {
+        const { assignments, quizzes, ...courseData } = data;
         const course = await Course.findByPk(id);
         if (!course) {
             const error = new Error('Course not found');
             error.statusCode = 404;
             throw error;
         }
-        return await course.update(data);
+        await course.update(courseData);
+
+        // Link existing assignments
+        if (assignments && Array.isArray(assignments)) {
+            await Assignment.update(
+                { course_id: course.id },
+                { where: { id: assignments } }
+            );
+        }
+
+        // Link existing quizzes
+        if (quizzes && Array.isArray(quizzes)) {
+            await Quiz.update(
+                { course_id: course.id },
+                { where: { id: quizzes } }
+            );
+        }
+
+        return await this.getCourseById(course.id);
     }
 
     async deleteCourse(id) {
@@ -147,15 +222,32 @@ class CourseService {
         const course = await Course.findByPk(courseId, {
             include: [{
                 model: Module,
-                include: [{
-                    model: Topic,
-                    include: [{ model: Lesson }]
-                }]
-            }],
+                as: 'modules',
+                include: [
+                    { model: Assignment, as: 'assignments' },
+                    { model: Quiz, as: 'quizzes' },
+                    {
+                        model: Topic,
+                        as: 'topics',
+                        include: [
+                            { model: Assignment, as: 'assignments' },
+                            { model: Quiz, as: 'quizzes' },
+                            { 
+                                model: Lesson,
+                                as: 'lessons',
+                                include: [
+                                    { model: Assignment, as: 'assignments' },
+                                    { model: Quiz, as: 'quizzes' }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }, { model: Assignment, as: 'assignments' }, { model: Quiz, as: 'quizzes' }],
             order: [
-                [Module, 'order_num', 'ASC'],
-                [Module, Topic, 'order_num', 'ASC'],
-                [Module, Topic, Lesson, 'order_num', 'ASC']
+                [{ model: Module, as: 'modules' }, 'order_num', 'ASC'],
+                [{ model: Module, as: 'modules' }, { model: Topic, as: 'topics' }, 'order_num', 'ASC'],
+                [{ model: Module, as: 'modules' }, { model: Topic, as: 'topics' }, { model: Lesson, as: 'lessons' }, 'order_num', 'ASC']
             ]
         });
 
@@ -169,7 +261,7 @@ class CourseService {
             where: { student_id: studentId, enrollment_id: enrollmentId }
         });
 
-        const modulesJson = course.Modules.map(m => m.toJSON());
+        const modulesJson = course.modules.map(m => m.toJSON());
 
         for (let i = 0; i < modulesJson.length; i++) {
             const mod = modulesJson[i];
@@ -177,13 +269,11 @@ class CourseService {
             let totalLessonsCount = 0;
             let completedLessonsCount = 0;
             
-            mod.Topics.forEach(t => {
-                totalLessonsCount += t.Lessons.length;
-                t.Lessons.forEach(l => {
+            mod.topics.forEach(t => {
+                totalLessonsCount += t.lessons.length;
+                t.lessons.forEach(l => {
                     const progress = progressRecords.find(p => p.module_id === mod.id);
                     if (progress && progress.is_completed) completedLessonsCount++; 
-                    // Note: Since lesson level tracking uses LessonProgress and the user specified StudentProgress for completion, 
-                    // we'll rely on the simplified StudentProgress records to determine module lock status.
                 });
             });
 
@@ -207,7 +297,7 @@ class CourseService {
 
         return {
             ...course.toJSON(),
-            Modules: modulesJson
+            modules: modulesJson
         };
     }
 }

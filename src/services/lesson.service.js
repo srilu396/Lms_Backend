@@ -1,24 +1,75 @@
-const { Lesson, Topic, Module, StudentProgress, LessonProgress, Enrollment } = require('../models');
+const { Lesson, Topic, Module, StudentProgress, LessonProgress, Enrollment, Assignment, Quiz } = require('../models');
 
 class LessonService {
     async createLesson(topicId, data) {
-        const topic = await Topic.findByPk(topicId);
+        const { assignments, quizzes, ...lessonData } = data;
+        const topic = await Topic.findByPk(topicId, {
+            include: [{ model: Module }]
+        });
         if (!topic) {
             const error = new Error('Topic not found');
             error.statusCode = 404;
             throw error;
         }
-        return await Lesson.create({ ...data, topic_id: topicId });
+        const lesson = await Lesson.create({ ...lessonData, topic_id: topicId });
+
+        // Link assessments
+        if (assignments && Array.isArray(assignments)) {
+            await Assignment.update(
+                { lesson_id: lesson.id, topic_id: topic.id, module_id: topic.module_id, course_id: topic.Module?.course_id },
+                { where: { id: assignments } }
+            );
+        }
+        if (quizzes && Array.isArray(quizzes)) {
+            await Quiz.update(
+                { lesson_id: lesson.id, topic_id: topic.id, module_id: topic.module_id, course_id: topic.Module?.course_id },
+                { where: { id: quizzes } }
+            );
+        }
+
+        return await lesson.reload({
+            include: [
+                { model: Assignment, as: 'assignments' },
+                { model: Quiz, as: 'quizzes' }
+            ]
+        });
     }
 
     async updateLesson(lessonId, data) {
-        const lesson = await Lesson.findByPk(lessonId);
+        const { assignments, quizzes, ...lessonData } = data;
+        const lesson = await Lesson.findByPk(lessonId, {
+            include: [{
+                model: Topic,
+                include: [{ model: Module }]
+            }]
+        });
         if (!lesson) {
             const error = new Error('Lesson not found');
             error.statusCode = 404;
             throw error;
         }
-        return await lesson.update(data);
+        await lesson.update(lessonData);
+
+        // Link assessments
+        if (assignments && Array.isArray(assignments)) {
+            await Assignment.update(
+                { lesson_id: lesson.id, topic_id: lesson.topic_id, module_id: lesson.Topic?.module_id, course_id: lesson.Topic?.Module?.course_id },
+                { where: { id: assignments } }
+            );
+        }
+        if (quizzes && Array.isArray(quizzes)) {
+            await Quiz.update(
+                { lesson_id: lesson.id, topic_id: lesson.topic_id, module_id: lesson.Topic?.module_id, course_id: lesson.Topic?.Module?.course_id },
+                { where: { id: quizzes } }
+            );
+        }
+
+        return await lesson.reload({
+            include: [
+                { model: Assignment, as: 'assignments' },
+                { model: Quiz, as: 'quizzes' }
+            ]
+        });
     }
 
     async deleteLesson(lessonId) {

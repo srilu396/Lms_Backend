@@ -14,6 +14,30 @@ module.exports = (sequelize, DataTypes) => {
                 key: 'id'
             }
         },
+        course_id: {
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            references: {
+                model: 'courses',
+                key: 'id'
+            }
+        },
+        module_id: {
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            references: {
+                model: 'modules',
+                key: 'id'
+            }
+        },
+        lesson_id: {
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            references: {
+                model: 'lessons',
+                key: 'id'
+            }
+        },
         name: {
             type: DataTypes.STRING,
             allowNull: false
@@ -70,6 +94,9 @@ module.exports = (sequelize, DataTypes) => {
 
     Quiz.associate = (models) => {
         Quiz.belongsTo(models.Topic, { foreignKey: 'topic_id', as: 'topic' });
+        Quiz.belongsTo(models.Course, { foreignKey: 'course_id', as: 'course' });
+        Quiz.belongsTo(models.Module, { foreignKey: 'module_id', as: 'module' });
+        Quiz.belongsTo(models.Lesson, { foreignKey: 'lesson_id', as: 'lesson' });
         Quiz.hasMany(models.QuizQuestion, { foreignKey: 'quiz_id' });
         Quiz.hasMany(models.QuizSubmission, { foreignKey: 'quiz_id' });
     };

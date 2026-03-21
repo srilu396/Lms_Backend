@@ -13,7 +13,26 @@ class DomainService {
                 throw error;
             }
         }
-        return await Domain.create(data);
+
+        const domain = await Domain.create(data);
+
+        // Link courses to domain if provided
+        if (data.course_ids && data.course_ids.length > 0) {
+            await Course.update(
+                { domain_id: domain.id },
+                { where: { id: { [Op.in]: data.course_ids } } }
+            );
+        }
+
+        // Link assignments to domain if provided
+        if (data.assignment_ids && data.assignment_ids.length > 0) {
+            await Assignment.update(
+                { domain_id: domain.id },
+                { where: { id: { [Op.in]: data.assignment_ids } } }
+            );
+        }
+
+        return await this.getDomainById(domain.id);
     }
 
     async getDomains(query = {}) {
@@ -32,25 +51,15 @@ class DomainService {
 
         const { count, rows } = await Domain.findAndCountAll({
             where,
-            attributes: {
-                include: [
-                    [
-                        sequelize.literal(`(
-                            SELECT COUNT(DISTINCT ba.batch_id)
-                            FROM batch_assignments AS ba
-                            WHERE ba.assignment_id = ANY("Domain"."assignment_ids")
-                        )`),
-                        'total_courses_count'
-                    ]
-                ]
-            },
+            include: [
+                { model: Course, as: 'courses', attributes: ['id', 'name'] }
+            ],
             limit: parsedLimit,
             offset: offset,
             order: [['updated_at', 'DESC']],
             distinct: true
         });
 
-        // Fetch assignments for each domain manually to provide proper context
         const data = await Promise.all(rows.map(async (domain) => {
             const d = domain.toJSON();
             let assignments = [];
@@ -66,7 +75,8 @@ class DomainService {
                 domain_image_url: d.image_url,
                 domain_name: d.name,
                 tags: d.tags,
-                total_courses_count: parseInt(d.total_courses_count, 10) || 0,
+                total_courses_count: d.courses ? d.courses.length : 0,
+                courses: d.courses || [],
                 last_updated_date: d.updated_at,
                 assignment_ids: d.assignment_ids,
                 assignments: assignments,
@@ -89,18 +99,9 @@ class DomainService {
 
     async getDomainById(id) {
         const domain = await Domain.findByPk(id, {
-            attributes: {
-                include: [
-                    [
-                        sequelize.literal(`(
-                            SELECT COUNT(DISTINCT ba.batch_id)
-                            FROM batch_assignments AS ba
-                            WHERE ba.assignment_id = ANY("Domain"."assignment_ids")
-                        )`),
-                        'total_courses_count'
-                    ]
-                ]
-            }
+            include: [
+                { model: Course, as: 'courses' }
+            ]
         });
 
         if (!domain) {
@@ -122,7 +123,8 @@ class DomainService {
             domain_image_url: d.image_url,
             domain_name: d.name,
             tags: d.tags,
-            total_courses_count: parseInt(d.total_courses_count, 10) || 0,
+            total_courses_count: d.courses ? d.courses.length : 0,
+            courses: d.courses || [],
             last_updated_date: d.updated_at,
             assignment_ids: d.assignment_ids,
             assignments: assignments,
@@ -139,6 +141,8 @@ class DomainService {
             error.statusCode = 404;
             throw error;
         }
+
+        // Validate assignments if provided
         if (data.assignment_ids && data.assignment_ids.length > 0) {
             const count = await Assignment.count({
                 where: { id: { [Op.in]: data.assignment_ids } }
@@ -149,7 +153,37 @@ class DomainService {
                 throw error;
             }
         }
-        return await domain.update(data);
+
+        // Reset domain_id for old courses if course_ids changed
+        if (data.course_ids) {
+            await Course.update(
+                { domain_id: null },
+                { where: { domain_id: id } }
+            );
+            if (data.course_ids.length > 0) {
+                await Course.update(
+                    { domain_id: id },
+                    { where: { id: { [Op.in]: data.course_ids } } }
+                );
+            }
+        }
+
+        // Sync assignments domain_id
+        if (data.assignment_ids) {
+            await Assignment.update(
+                { domain_id: null },
+                { where: { domain_id: id } }
+            );
+            if (data.assignment_ids.length > 0) {
+                await Assignment.update(
+                    { domain_id: id },
+                    { where: { id: { [Op.in]: data.assignment_ids } } }
+                );
+            }
+        }
+
+        await domain.update(data);
+        return await this.getDomainById(id);
     }
 
     async deleteDomain(id) {
@@ -181,23 +215,16 @@ class DomainService {
             where.name = { [Op.iLike]: `%${search.trim()}%` };
         }
 
-        const assignmentIds = domain.assignment_ids || [];
-
-        const { count, rows } = await Batch.findAndCountAll({
+        // For better compatibility with the requested view, we return courses in this domain
+        const { count, rows } = await Course.findAndCountAll({
+            where: {
+                ...where,
+                domain_id: domainId
+            },
             include: [
-                {
-                    model: BatchAssignment,
-                    where: { assignment_id: { [Op.in]: assignmentIds } },
-                    required: true,
-                    attributes: ['due_date', 'status'],
-                    include: [{ model: Assignment, attributes: ['title'] }]
-                },
-                {
-                    model: Course,
-                    attributes: ['id', 'name']
-                }
+                { model: Assignment, as: 'assignments' },
+                { model: Batch, as: 'batches' }
             ],
-            where,
             limit: parsedLimit,
             offset: offset,
             order: [['created_at', 'DESC']],

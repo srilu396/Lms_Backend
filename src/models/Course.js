@@ -20,6 +20,14 @@ module.exports = (sequelize, DataTypes) => {
                 key: 'id'
             }
         },
+        domain_id: {
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            references: {
+                model: 'domains',
+                key: 'id'
+            }
+        },
         status: {
             type: DataTypes.ENUM('active', 'inactive', 'archived', 'draft'),
             defaultValue: 'draft'
@@ -35,6 +43,7 @@ module.exports = (sequelize, DataTypes) => {
 
     Course.associate = (models) => {
         Course.belongsTo(models.Institution, { foreignKey: 'institution_id' });
+        Course.belongsTo(models.Domain, { foreignKey: 'domain_id', as: 'domain' });
         Course.hasMany(models.CourseTutor, { foreignKey: 'course_id', as: 'course_tutors' });
         Course.hasMany(models.Module, { foreignKey: 'course_id', as: 'modules' });
         Course.hasMany(models.Batch, { foreignKey: 'course_id', as: 'batches' });

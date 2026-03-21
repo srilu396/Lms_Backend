@@ -38,6 +38,14 @@ module.exports = (sequelize, DataTypes) => {
                 key: 'id'
             }
         },
+        domain_id: {
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            references: {
+                model: 'domains',
+                key: 'id'
+            }
+        },
         title: {
             type: DataTypes.STRING,
             allowNull: false
@@ -76,6 +84,7 @@ module.exports = (sequelize, DataTypes) => {
         Assignment.belongsTo(models.Module, { foreignKey: 'module_id' });
         Assignment.belongsTo(models.Topic, { foreignKey: 'topic_id' });
         Assignment.belongsTo(models.Lesson, { foreignKey: 'lesson_id' });
+        Assignment.belongsTo(models.Domain, { foreignKey: 'domain_id', as: 'domain' });
         Assignment.hasMany(models.AssignmentCriteria, { foreignKey: 'assignment_id', as: 'evaluation_matrix', onDelete: 'CASCADE' });
         Assignment.hasMany(models.AssignmentSubmission, { foreignKey: 'assignment_id', onDelete: 'RESTRICT' });
         Assignment.hasMany(models.BatchAssignment, { foreignKey: 'assignment_id', onDelete: 'RESTRICT' });

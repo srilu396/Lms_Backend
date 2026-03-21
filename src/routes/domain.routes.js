@@ -15,6 +15,6 @@ router.put('/:id', validate(updateDomainSchema), domainController.updateDomain);
 router.delete('/:id', domainController.deleteDomain);
 
 // Batches under domain
-router.get('/:id/batches', domainController.getDomainBatches);
+router.get('/:id/courses', domainController.getDomainBatches);
 
 module.exports = router;

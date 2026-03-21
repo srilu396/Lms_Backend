@@ -24,6 +24,10 @@ module.exports = (sequelize, DataTypes) => {
             type: DataTypes.ARRAY(DataTypes.INTEGER),
             defaultValue: []
         },
+        course_ids: {
+            type: DataTypes.ARRAY(DataTypes.INTEGER),
+            defaultValue: []
+        },
         tags: {
             type: DataTypes.ARRAY(DataTypes.STRING),
             defaultValue: []
@@ -40,7 +44,8 @@ module.exports = (sequelize, DataTypes) => {
     });
 
     Domain.associate = (models) => {
-        // Assignments are stored as an array of IDs; we fetch them manually in the service
+        Domain.hasMany(models.Course, { foreignKey: 'domain_id', as: 'courses' });
+        Domain.hasMany(models.Assignment, { foreignKey: 'domain_id', as: 'assignments_list' });
     };
 
     return Domain;

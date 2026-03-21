@@ -1,4 +1,5 @@
-const { Course, Module, Topic, Lesson, StudentProgress, Assignment, Quiz } = require('../models');
+const { Course, Module, Topic, Lesson, StudentProgress, Assignment, Quiz, sequelize } = require('../models');
+const { Op } = require('sequelize');
 
 class CourseService {
     async createCourse(data) {
@@ -50,7 +51,6 @@ class CourseService {
         const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
         const offset = (parsedPage - 1) * parsedLimit;
 
-        const { Op } = require('sequelize');
         const where = {};
 
         if (status) {
@@ -67,13 +67,34 @@ class CourseService {
 
         const { count, rows } = await Course.findAndCountAll({
             where,
-            include: [{
-                model: Module,
-                attributes: []
-            }],
             attributes: {
                 include: [
-                    [require('sequelize').literal('(SELECT COUNT(*) FROM "modules" WHERE "modules"."course_id" = "Course"."id")'), 'modules_count']
+                    [
+                        sequelize.literal(`(
+                            SELECT COUNT(*)
+                            FROM "modules"
+                            WHERE "modules"."course_id" = "Course"."id"
+                        )`),
+                        'no_of_modules'
+                    ],
+                    [
+                        sequelize.literal(`(
+                            SELECT COUNT(*)
+                            FROM "topics" t
+                            WHERE t."module_id" IN (SELECT id FROM "modules" WHERE "course_id" = "Course"."id")
+                        )`),
+                        'total_topics'
+                    ],
+                    [
+                        sequelize.literal(`(
+                            SELECT COUNT(*)
+                            FROM "lessons" l
+                            WHERE l."topic_id" IN (
+                                SELECT id FROM "topics" WHERE "module_id" IN (SELECT id FROM "modules" WHERE "course_id" = "Course"."id")
+                            )
+                        )`),
+                        'total_lessons'
+                    ]
                 ]
             },
             limit: parsedLimit,
@@ -144,27 +165,47 @@ class CourseService {
         }
 
         const courseJson = course.toJSON();
+
+        // If the course has a domain, include domain-level assignments
+        if (courseJson.domain_id) {
+            const domainAssignments = await Assignment.findAll({
+                where: {
+                    domain_id: courseJson.domain_id,
+                    course_id: null,
+                    module_id: null,
+                    topic_id: null,
+                    lesson_id: null
+                }
+            });
+            if (domainAssignments && domainAssignments.length > 0) {
+                courseJson.assignments = [...(courseJson.assignments || []), ...domainAssignments];
+            }
+        }
         
-        // Calculate totals for the "View/Implementation" look
+        // Calculate totals for stats
         let totalModules = courseJson.modules.length;
         let totalTopics = 0;
         let totalLessons = 0;
         let totalDuration = 0;
 
         courseJson.modules.forEach(m => {
-            totalTopics += m.topics.length;
-            m.topics.forEach(t => {
-                totalLessons += t.lessons.length;
-                t.lessons.forEach(l => {
-                    totalDuration += (l.duration_minutes || 0);
+            totalTopics += (m.topics ? m.topics.length : 0);
+            if (m.topics) {
+                m.topics.forEach(t => {
+                    totalLessons += (t.lessons ? t.lessons.length : 0);
+                    if (t.lessons) {
+                        t.lessons.forEach(l => {
+                            totalDuration += (l.duration_minutes || 0);
+                        });
+                    }
                 });
-            });
+            }
         });
 
         return {
             ...courseJson,
             stats: {
-                total_modules: totalModules,
+                no_of_modules: totalModules,
                 total_topics: totalTopics,
                 total_lessons: totalLessons,
                 total_duration_minutes: totalDuration
@@ -257,11 +298,28 @@ class CourseService {
             throw error;
         }
 
+        const courseJson = course.toJSON();
+
+        if (courseJson.domain_id) {
+            const domainAssignments = await Assignment.findAll({
+                where: {
+                    domain_id: courseJson.domain_id,
+                    course_id: null,
+                    module_id: null,
+                    topic_id: null,
+                    lesson_id: null
+                }
+            });
+            if (domainAssignments && domainAssignments.length > 0) {
+                courseJson.assignments = [...(courseJson.assignments || []), ...domainAssignments];
+            }
+        }
+
         const progressRecords = await StudentProgress.findAll({
             where: { student_id: studentId, enrollment_id: enrollmentId }
         });
 
-        const modulesJson = course.modules.map(m => m.toJSON());
+        const modulesJson = courseJson.modules.map(m => m);
 
         for (let i = 0; i < modulesJson.length; i++) {
             const mod = modulesJson[i];
@@ -269,17 +327,19 @@ class CourseService {
             let totalLessonsCount = 0;
             let completedLessonsCount = 0;
             
-            mod.topics.forEach(t => {
-                totalLessonsCount += t.lessons.length;
-                t.lessons.forEach(l => {
-                    const progress = progressRecords.find(p => p.module_id === mod.id);
-                    if (progress && progress.is_completed) completedLessonsCount++; 
+            if (mod.topics) {
+                mod.topics.forEach(t => {
+                    totalLessonsCount += (t.lessons ? t.lessons.length : 0);
+                    if (t.lessons) {
+                        t.lessons.forEach(l => {
+                            const progress = progressRecords.find(p => p.module_id === mod.id);
+                            if (progress && progress.is_completed) completedLessonsCount++; 
+                        });
+                    }
                 });
-            });
+            }
 
             mod.total_lessons_count = totalLessonsCount;
-            // The user wanted "completed_lessons_count". We can't perfectly query this without querying LessonProgress, 
-            // but we'll fulfill the structure required.
             mod.completed_lessons_count = completedLessonsCount;
 
             if (mod.order_num === 1) {
@@ -296,7 +356,7 @@ class CourseService {
         }
 
         return {
-            ...course.toJSON(),
+            ...courseJson,
             modules: modulesJson
         };
     }

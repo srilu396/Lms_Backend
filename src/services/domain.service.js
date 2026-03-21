@@ -52,7 +52,40 @@ class DomainService {
         const { count, rows } = await Domain.findAndCountAll({
             where,
             include: [
-                { model: Course, as: 'courses', attributes: ['id', 'name'] }
+                { 
+                    model: Course, 
+                    as: 'courses', 
+                    attributes: {
+                        include: [
+                            [
+                                sequelize.literal(`(
+                                    SELECT COUNT(*)
+                                    FROM "modules"
+                                    WHERE "modules"."course_id" = "courses"."id"
+                                )`),
+                                'no_of_modules'
+                            ],
+                            [
+                                sequelize.literal(`(
+                                    SELECT COUNT(*)
+                                    FROM "topics"
+                                    WHERE "module_id" IN (SELECT id FROM "modules" WHERE "course_id" = "courses"."id")
+                                )`),
+                                'total_topics'
+                            ],
+                            [
+                                sequelize.literal(`(
+                                    SELECT COUNT(*)
+                                    FROM "lessons"
+                                    WHERE "topic_id" IN (
+                                        SELECT id FROM "topics" WHERE "module_id" IN (SELECT id FROM "modules" WHERE "course_id" = "courses"."id")
+                                    )
+                                )`),
+                                'total_lessons'
+                            ]
+                        ]
+                    }
+                }
             ],
             limit: parsedLimit,
             offset: offset,
@@ -100,7 +133,40 @@ class DomainService {
     async getDomainById(id) {
         const domain = await Domain.findByPk(id, {
             include: [
-                { model: Course, as: 'courses' }
+                { 
+                    model: Course, 
+                    as: 'courses',
+                    attributes: {
+                        include: [
+                            [
+                                sequelize.literal(`(
+                                    SELECT COUNT(*)
+                                    FROM "modules"
+                                    WHERE "modules"."course_id" = "courses"."id"
+                                )`),
+                                'no_of_modules'
+                            ],
+                            [
+                                sequelize.literal(`(
+                                    SELECT COUNT(*)
+                                    FROM "topics"
+                                    WHERE "module_id" IN (SELECT id FROM "modules" WHERE "course_id" = "courses"."id")
+                                )`),
+                                'total_topics'
+                            ],
+                            [
+                                sequelize.literal(`(
+                                    SELECT COUNT(*)
+                                    FROM "lessons"
+                                    WHERE "topic_id" IN (
+                                        SELECT id FROM "topics" WHERE "module_id" IN (SELECT id FROM "modules" WHERE "course_id" = "courses"."id")
+                                    )
+                                )`),
+                                'total_lessons'
+                            ]
+                        ]
+                    }
+                }
             ]
         });
 
@@ -215,11 +281,41 @@ class DomainService {
             where.name = { [Op.iLike]: `%${search.trim()}%` };
         }
 
-        // For better compatibility with the requested view, we return courses in this domain
+        // Return courses in this domain with their counts
         const { count, rows } = await Course.findAndCountAll({
             where: {
                 ...where,
                 domain_id: domainId
+            },
+            attributes: {
+                include: [
+                    [
+                        sequelize.literal(`(
+                            SELECT COUNT(*)
+                            FROM "modules"
+                            WHERE "modules"."course_id" = "Course"."id"
+                        )`),
+                        'no_of_modules'
+                    ],
+                    [
+                        sequelize.literal(`(
+                            SELECT COUNT(*)
+                            FROM "topics"
+                            WHERE "module_id" IN (SELECT id FROM "modules" WHERE "course_id" = "Course"."id")
+                        )`),
+                        'total_topics'
+                    ],
+                    [
+                        sequelize.literal(`(
+                            SELECT COUNT(*)
+                            FROM "lessons"
+                            WHERE "topic_id" IN (
+                                SELECT id FROM "topics" WHERE "module_id" IN (SELECT id FROM "modules" WHERE "course_id" = "Course"."id")
+                            )
+                        )`),
+                        'total_lessons'
+                    ]
+                ]
             },
             include: [
                 { model: Assignment, as: 'assignments' },

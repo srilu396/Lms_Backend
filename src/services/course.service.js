@@ -202,6 +202,10 @@ class CourseService {
             }
         });
 
+        courseJson.no_of_modules = totalModules;
+        courseJson.total_topics = totalTopics;
+        courseJson.total_lessons = totalLessons;
+
         return {
             ...courseJson,
             stats: {

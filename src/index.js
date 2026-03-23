@@ -26,6 +26,7 @@ app.use('/api/v1/lessons', require('./routes/lesson.routes'));
 app.use('/api/v1/assignments', require('./routes/assignment.routes'));
 app.use('/api/v1/domains', require('./routes/domain.routes'));
 app.use('/api/v1/quizzes', require('./routes/quiz.routes'));
+app.use('/api/v1/tutors', require('./routes/tutor.routes'));
 app.use('/api/v1/batches', require('./routes/batch.routes'));
 
 // Start the server only after connecting to the database

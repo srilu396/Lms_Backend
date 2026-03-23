@@ -1,18 +1,4 @@
-const { z } = require('zod');
 const batchService = require('../services/batch.service');
-
-// Validations
-const createBatchSchema = z.object({
-    name: z.string().min(1, 'Batch name is required'),
-    start_date: z.string().optional().nullable(),
-    end_date: z.string().optional().nullable(),
-    allocation_time: z.string().optional().nullable(),
-    course_id: z.number().int('Invalid course ID').min(1, 'Course ID is required'),
-    institution_id: z.number().int('Invalid institution ID').optional().nullable(),
-    status: z.enum(['active', 'completed', 'cancelled']).optional().default('active')
-});
-
-const updateBatchSchema = createBatchSchema.partial();
 
 class BatchController {
     /**
@@ -20,21 +6,28 @@ class BatchController {
      */
     async createBatch(req, res) {
         try {
-            const validatedData = createBatchSchema.parse(req.body);
-            const newBatch = await batchService.createBatch(validatedData);
+            const data = { ...req.body };
+            if (req.file) data.file_path = req.file.path;
+            
+            // Note: Validation is done in middleware
+            const newBatch = await batchService.createBatch(data);
+            
+            // If file was provided, trigger bulk upload
+            if (data.file_path) {
+                try {
+                    await batchService.bulkUploadStudentsToBatch(newBatch.id, data.file_path);
+                } catch (bulkError) {
+                    console.error('Error in bulk upload during batch creation:', bulkError);
+                }
+            }
+
             res.status(201).json({
                 success: true,
                 message: 'Batch created successfully',
                 data: newBatch
             });
         } catch (error) {
-            if (error instanceof z.ZodError) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Validation failed',
-                    errors: error.errors
-                });
-            }
+            console.error('Error creating batch:', error);
             res.status(500).json({
                 success: false,
                 message: error.message || 'Internal server error'
@@ -47,14 +40,9 @@ class BatchController {
      */
     async getBatches(req, res) {
         try {
-            const { page, limit, search, status, institution_id, course_id } = req.query;
+            const { page, limit, search, status, institution_id, course_id, instructor_id } = req.query;
             const result = await batchService.getBatches({
-                page: page ? parseInt(page) : 1,
-                limit: limit ? parseInt(limit) : 10,
-                search,
-                status,
-                institution_id: institution_id ? parseInt(institution_id) : null,
-                course_id: course_id ? parseInt(course_id) : null
+                page, limit, search, status, institution_id, course_id, instructor_id
             });
             res.status(200).json({
                 success: true,
@@ -82,10 +70,7 @@ class BatchController {
             const { id } = req.params;
             const batch = await batchService.getBatchById(id);
             if (!batch) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Batch not found'
-                });
+                return res.status(404).json({ success: false, message: 'Batch not found' });
             }
             res.status(200).json({
                 success: true,
@@ -105,26 +90,15 @@ class BatchController {
     async updateBatch(req, res) {
         try {
             const { id } = req.params;
-            const validatedData = updateBatchSchema.parse(req.body);
-            const updatedBatch = await batchService.updateBatch(id, validatedData);
+            const updatedBatch = await batchService.updateBatch(id, req.body);
             res.status(200).json({
                 success: true,
                 message: 'Batch updated successfully',
                 data: updatedBatch
             });
         } catch (error) {
-            if (error instanceof z.ZodError) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Validation failed',
-                    errors: error.errors
-                });
-            }
             if (error.message === 'Batch not found') {
-                return res.status(404).json({
-                    success: false,
-                    message: error.message
-                });
+                return res.status(404).json({ success: false, message: error.message });
             }
             res.status(500).json({
                 success: false,
@@ -146,10 +120,7 @@ class BatchController {
             });
         } catch (error) {
             if (error.message === 'Batch not found') {
-                return res.status(404).json({
-                    success: false,
-                    message: error.message
-                });
+                return res.status(404).json({ success: false, message: error.message });
             }
             res.status(500).json({
                 success: false,
@@ -165,9 +136,7 @@ class BatchController {
         try {
             const { id } = req.params;
             const { tutor_id, is_primary } = req.body;
-            if (!tutor_id) {
-                return res.status(400).json({ success: false, message: 'tutor_id is required' });
-            }
+            if (!tutor_id) return res.status(400).json({ success: false, message: 'tutor_id is required' });
             const result = await batchService.assignTutor(id, tutor_id, is_primary);
             res.status(201).json({
                 success: true,
@@ -226,12 +195,8 @@ class BatchController {
     async getBatchStudents(req, res) {
         try {
             const { id } = req.params;
-            const { page, limit, status } = req.query;
-            const result = await batchService.getBatchStudents(id, {
-                page: page ? parseInt(page) : 1,
-                limit: limit ? parseInt(limit) : 10,
-                status: status || 'active'
-            });
+            const { page, limit, status, search } = req.query;
+            const result = await batchService.getBatchStudents(id, { page, limit, status, search });
             res.status(200).json({
                 success: true,
                 data: result.students,
@@ -241,6 +206,26 @@ class BatchController {
                     limit: result.limit,
                     totalPages: result.totalPages
                 }
+            });
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Internal server error'
+            });
+        }
+    }
+
+    /**
+     * POST /batches/:id/students/bulk-upload
+     */
+    async bulkUploadStudentsToBatch(req, res) {
+        try {
+            if (!req.file) return res.status(400).json({ success: false, message: 'Please upload a valid CSV file' });
+            const result = await batchService.bulkUploadStudentsToBatch(req.params.id, req.file.path);
+            res.status(201).json({
+                success: true,
+                message: 'Bulk upload successful',
+                data: result
             });
         } catch (error) {
             res.status(500).json({

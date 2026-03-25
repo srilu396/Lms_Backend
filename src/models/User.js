@@ -24,16 +24,25 @@ module.exports = (sequelize, DataTypes) => {
             allowNull: false
         },
         role: {
-            type: DataTypes.ENUM('admin', 'tutor', 'student', 'institution_representative'),
+            type: DataTypes.ENUM('admin', 'tutor', 'student', 'institution_representative', 'user'),
             allowNull: false
         },
         password_hash: {
             type: DataTypes.STRING,
             allowNull: false
         },
+        refresh_token: {
+            type: DataTypes.STRING,
+            allowNull: true
+        },
         is_active: {
             type: DataTypes.BOOLEAN,
             defaultValue: true
+        },
+        is_first_login: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: true,
+            allowNull: false
         },
         student_code: {
             type: DataTypes.STRING,

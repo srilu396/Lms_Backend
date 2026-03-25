@@ -2,7 +2,7 @@ const userService = require('../services/user.service');
 
 class UserController {
     // POST /users
-    async createUser(req, res) {
+    async createUser(req, res, next) {
         try {
             const user = await userService.createUser(req.body);
             res.status(201).json({
@@ -11,11 +11,7 @@ class UserController {
                 data: user
             });
         } catch (error) {
-            console.error('Error creating user:', error);
-            res.status(error.statusCode || 500).json({
-                success: false,
-                message: error.message || 'Server error creating user'
-            });
+            next(error);
         }
     }
 

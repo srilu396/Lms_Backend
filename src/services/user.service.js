@@ -4,27 +4,23 @@ const bcrypt = require('bcryptjs');
 
 class UserService {
     async createUser(data) {
-        const { full_name, email, password, role, institution_name } = data;
-        let institutionId = null;
+        const { full_name, email, password, role, institution_id } = data;
+        let institutionIdToAssign = null;
 
         // Validate institution requirements
         if (role === 'institution_representative') {
-            if (!institution_name) {
-                const error = new Error('institution_name is required for institution_representative');
+            if (!institution_id) {
+                const error = new Error('institution_id is required for institution_representative');
                 error.statusCode = 400;
                 throw error;
             }
-            const institution = await Institution.findOne({ 
-                where: { 
-                    name: { [Op.iLike]: institution_name.trim() }
-                } 
-            });
+            const institution = await Institution.findByPk(institution_id);
             if (!institution) {
-                const error = new Error(`Institution with name "${institution_name}" not found`);
+                const error = new Error(`Institution with id "${institution_id}" not found`);
                 error.statusCode = 404;
                 throw error;
             }
-            institutionId = institution.id;
+            institutionIdToAssign = institution.id;
         }
 
         // Default username generation if needed to satisfy DB unique constraint
@@ -47,10 +43,10 @@ class UserService {
             }, { transaction: t });
 
             // If an institution ID was resolved, link user to institution
-            if (institutionId && role === 'institution_representative') {
+            if (institutionIdToAssign && role === 'institution_representative') {
                 await TutorInstitutionAssignment.create({
                     tutor_id: user.id,
-                    institution_id: institutionId
+                    institution_id: institutionIdToAssign
                 }, { transaction: t });
             }
 
@@ -96,7 +92,7 @@ class UserService {
             where,
             limit: parsedLimit,
             offset: offset,
-            attributes: { exclude: ['password_hash'] },
+            attributes: { exclude: ['password_hash', 'refresh_token'] },
             order: [['created_at', 'DESC']]
         });
 
@@ -113,7 +109,7 @@ class UserService {
 
     async getUserById(id) {
         const user = await User.findByPk(id, {
-            attributes: { exclude: ['password_hash'] }
+            attributes: { exclude: ['password_hash', 'refresh_token'] }
         });
         if (!user) {
             const error = new Error('User not found');

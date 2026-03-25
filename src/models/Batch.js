@@ -12,7 +12,6 @@ module.exports = (sequelize, DataTypes) => {
         },
         start_date: DataTypes.DATEONLY,
         end_date: DataTypes.DATEONLY,
-        allocation_time: DataTypes.STRING,
         course_id: {
             type: DataTypes.INTEGER,
             allowNull: true,
@@ -29,8 +28,9 @@ module.exports = (sequelize, DataTypes) => {
                 key: 'id'
             }
         },
-        instructor_id: {
+        tutor_id: {
             type: DataTypes.BIGINT,
+            field: 'instructor_id', // Maps the model's tutor_id to DB's instructor_id column
             allowNull: true,
             references: {
                 model: 'users',
@@ -53,7 +53,7 @@ module.exports = (sequelize, DataTypes) => {
     Batch.associate = (models) => {
         Batch.belongsTo(models.Course, { foreignKey: 'course_id' });
         Batch.belongsTo(models.Institution, { foreignKey: 'institution_id' });
-        Batch.belongsTo(models.User, { foreignKey: 'instructor_id', as: 'instructor' });
+        Batch.belongsTo(models.User, { foreignKey: 'tutor_id', as: 'tutor' });
         Batch.hasMany(models.BatchTutor, { foreignKey: 'batch_id' });
         Batch.hasMany(models.Enrollment, { foreignKey: 'batch_id' });
         Batch.hasMany(models.AttendanceSession, { foreignKey: 'batch_id' });

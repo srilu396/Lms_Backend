@@ -40,9 +40,9 @@ class BatchController {
      */
     async getBatches(req, res) {
         try {
-            const { page, limit, search, status, institution_id, course_id, instructor_id } = req.query;
+            const { page, limit, search, status, institution_id, course_id, tutor_id } = req.query;
             const result = await batchService.getBatches({
-                page, limit, search, status, institution_id, course_id, instructor_id
+                page, limit, search, status, institution_id, course_id, tutor_id
             });
             res.status(200).json({
                 success: true,

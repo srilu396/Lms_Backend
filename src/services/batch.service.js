@@ -1,4 +1,4 @@
-const { Batch, Course, Institution, Enrollment, BatchTutor, BatchAssignment, Assignment, BatchPerformance, User, sequelize } = require('../models');
+const { Batch, Course, Institution, Enrollment, BatchTutor, BatchAssignment, Assignment, BatchPerformance, User, Student, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const fs = require('fs');
 const csvParser = require('csv-parser');
@@ -10,9 +10,10 @@ class BatchService {
     async createBatch(data) {
         const { enroll_students, ...batchData } = data;
         const transaction = await sequelize.transaction();
+        let batch;
 
         try {
-            const batch = await Batch.create(batchData, { transaction });
+            batch = await Batch.create(batchData, { transaction });
 
             if (enroll_students && Array.isArray(enroll_students) && enroll_students.length > 0) {
                 const enrollments = enroll_students.map(studentId => ({
@@ -24,10 +25,16 @@ class BatchService {
             }
 
             await transaction.commit();
-            return await this.getBatchById(batch.id);
         } catch (error) {
-            await transaction.rollback();
+            if (transaction) await transaction.rollback();
             throw error;
+        }
+
+        try {
+            return await this.getBatchById(batch.id);
+        } catch (fetchError) {
+            console.error('Batch created but could not fetch full details:', fetchError);
+            return batch;
         }
     }
 
@@ -42,7 +49,7 @@ class BatchService {
             status = 'all',
             institution_id = null,
             course_id = null,
-            instructor_id = null
+            tutor_id = null
         } = query;
 
         const offset = (page - 1) * limit;
@@ -60,8 +67,8 @@ class BatchService {
             whereClause.course_id = course_id;
         }
 
-        if (instructor_id) {
-            whereClause.instructor_id = instructor_id;
+        if (tutor_id) {
+            whereClause.tutor_id = tutor_id;
         }
 
         if (search) {
@@ -73,15 +80,29 @@ class BatchService {
             include: [
                 { model: Course, attributes: ['id', 'name'] },
                 { model: Institution, attributes: ['id', 'name'] },
-                { model: User, as: 'instructor', attributes: ['id', 'full_name'] }
+                { model: User, as: 'tutor', attributes: ['id', 'full_name'] }
             ],
             limit,
             offset,
             order: [['created_at', 'DESC']]
         });
 
+        const formattedBatches = batches.map(batch => {
+            const batchJson = batch.toJSON();
+            return {
+                id: batchJson.id,
+                batch_id: `#BATCH-${batchJson.id}`,
+                batch_name: batchJson.name,
+                institution_name: batchJson.Institution?.name || 'N/A',
+                tutor: batchJson.tutor?.full_name || 'Not Assigned',
+                course: batchJson.Course?.name || 'N/A',
+                start_date: batchJson.start_date,
+                status: batchJson.status
+            };
+        });
+
         return {
-            batches,
+            batches: formattedBatches,
             totalCount: count,
             totalPages: Math.ceil(count / limit),
             currentPage: parseInt(page)
@@ -96,15 +117,16 @@ class BatchService {
             include: [
                 { model: Course, attributes: ['id', 'name'] },
                 { model: Institution, attributes: ['id', 'name'] },
-                { model: User, as: 'instructor', attributes: ['id', 'full_name'] },
+                { model: User, as: 'tutor', attributes: ['id', 'full_name'] },
                 { 
                     model: BatchTutor, 
                     include: [{ model: User, attributes: ['id', 'full_name', 'email'] }]
                 },
                 { 
                     model: Enrollment, 
-                    include: [{ model: User, attributes: ['id', 'full_name', 'email'] }] 
-                }
+                    include: [{ model: Student, as: 'student', attributes: ['id', 'first_name', 'last_name', 'email'] }] 
+                },
+                { model: BatchPerformance }
             ]
         });
     }
@@ -135,11 +157,12 @@ class BatchService {
             }
 
             await transaction.commit();
-            return await this.getBatchById(id);
         } catch (error) {
-            await transaction.rollback();
+            if (transaction) await transaction.rollback();
             throw error;
         }
+
+        return await this.getBatchById(id);
     }
 
     /**
@@ -202,28 +225,32 @@ class BatchService {
             whereEnrollment.status = status;
         }
 
-        const whereUser = {};
+        const whereStudent = {};
         if (search) {
-            whereUser.full_name = { [Op.iLike]: `%${search}%` };
+            whereStudent[Op.or] = [
+                { first_name: { [Op.iLike]: `%${search}%` } },
+                { last_name: { [Op.iLike]: `%${search}%` } }
+            ];
         }
 
         const { rows: enrollments, count } = await Enrollment.findAndCountAll({
             where: whereEnrollment,
             include: [{ 
-                model: User, 
-                where: Object.keys(whereUser).length ? whereUser : undefined,
-                attributes: ['id', 'full_name', 'email', 'is_active'] 
+                model: Student, 
+                as: 'student',
+                where: Object.keys(whereStudent).length ? whereStudent : undefined,
+                attributes: ['id', 'first_name', 'last_name', 'email'] 
             }],
             limit,
             offset,
-            order: [[User, 'full_name', 'ASC']]
+            order: [[{ model: Student, as: 'student' }, 'first_name', 'ASC']]
         });
 
         return {
             students: enrollments.map(e => ({
-                id: e.User?.id,
-                full_name: e.User?.full_name,
-                email: e.User?.email,
+                id: e.student?.id,
+                full_name: `${e.student?.first_name || ''} ${e.student?.last_name || ''}`.trim(),
+                email: e.student?.email,
                 enrollment_date: e.enrollment_date,
                 status: e.status
             })),
@@ -254,10 +281,10 @@ class BatchService {
                         const allIds = Array.from(studentIdsToEnroll);
                         if (allIds.length === 0) return reject(new Error('No valid student IDs found in CSV'));
 
-                        const validUsers = await User.findAll({
-                            where: { id: { [Op.in]: allIds }, role: 'student' }
+                        const validStudents = await Student.findAll({
+                            where: { id: { [Op.in]: allIds } }
                         });
-                        const validIds = validUsers.map(u => u.id);
+                        const validIds = validStudents.map(s => s.id);
 
                         const enrollments = validIds.map(id => ({
                             student_id: id,

@@ -127,6 +127,88 @@ class AuthController {
             res.status(500).json({ success: false, message: 'Server error during logout' });
         }
     }
+
+    async forgotPassword(req, res, next) {
+        try {
+            const { email } = req.body;
+            const user = await User.findOne({ where: { email } });
+            
+            // Return validation error if email does not exist in the database
+            if (!user) {
+                return res.status(404).json({ success: false, message: 'User with this email does not exist' });
+            }
+
+            // Generate secure pseudo-random hex token
+            const crypto = require('crypto');
+            const token = crypto.randomBytes(32).toString('hex');
+
+            // Expire in 1 hour
+            const expires_at = new Date(Date.now() + 60 * 60 * 1000);
+
+            const { PasswordResetToken } = require('../models');
+
+            await PasswordResetToken.create({
+                user_id: user.id,
+                token,
+                expires_at,
+                is_used: false
+            });
+
+            // TODO: In production, use nodemailer or a service like SendGrid to email the token
+            // For now, we console log it and optionally return it so you can test in Postman!
+            const resetLink = `http://localhost:5000/auth/reset-password?token=${token}`;
+            console.log(`Password reset link for ${email}: ${resetLink}`);
+
+            res.status(200).json({ 
+                success: true, 
+                message: 'If that email is registered, we have sent a password reset link.',
+                // TEMPORARY: Exposing token for your Postman testing flow
+                test_token: token 
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async resetPassword(req, res, next) {
+        try {
+            const { token, newPassword } = req.body;
+            const { PasswordResetToken } = require('../models');
+
+            const resetRecord = await PasswordResetToken.findOne({ 
+                where: { token, is_used: false } 
+            });
+
+            if (!resetRecord) {
+                return res.status(400).json({ success: false, message: 'Invalid or expired password reset token' });
+            }
+
+            if (new Date() > resetRecord.expires_at) {
+                return res.status(400).json({ success: false, message: 'Password reset token has expired' });
+            }
+
+            const user = await User.findByPk(resetRecord.user_id);
+            if (!user) {
+                return res.status(404).json({ success: false, message: 'User not found' });
+            }
+
+            // Hash new password
+            const salt = await bcrypt.genSalt(10);
+            user.password_hash = await bcrypt.hash(newPassword, salt);
+            
+            // Invalidate existing sessions/refresh tokens for security!
+            user.refresh_token = null;
+            await user.save();
+
+            // Mark token as used
+            resetRecord.is_used = true;
+            await resetRecord.save();
+
+            res.status(200).json({ success: true, message: 'Password has been successfully restored. Please login with your new password.' });
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 module.exports = new AuthController();

@@ -30,7 +30,27 @@ const adminCreateUserSchema = Joi.object({
     institution_id: Joi.number().optional()
 });
 
+const forgotPasswordSchema = Joi.object({
+    email: Joi.string().email().required().messages({
+        'string.email': 'Must be a valid email',
+        'string.empty': 'Email is required'
+    })
+});
+
+const resetPasswordSchema = Joi.object({
+    token: Joi.string().required().messages({
+        'string.empty': 'Token is required'
+    }),
+    newPassword: Joi.string().min(8).regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).required().messages({
+        'string.min': 'Password must be at least 8 characters long',
+        'string.pattern.base': 'Password must contain at least one uppercase letter, one lowercase letter, and one number',
+        'string.empty': 'New Password is required'
+    })
+});
+
 module.exports = {
     loginSchema,
-    adminCreateUserSchema
+    adminCreateUserSchema,
+    forgotPasswordSchema,
+    resetPasswordSchema
 };

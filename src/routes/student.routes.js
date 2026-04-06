@@ -5,6 +5,12 @@ const os = require('os');
 const studentController = require('../controllers/student.controller');
 const validate = require('../middlewares/validate');
 const { createStudentSchema, updateStudentSchema } = require('../utils/validations/student.validation');
+const authMiddleware = require('../middlewares/auth.middleware');
+const roleMiddleware = require('../middlewares/role.middleware');
+
+// Only admin can manage students
+router.use(authMiddleware);
+router.use(roleMiddleware('admin'));
 
 // Setup multer for CSV upload (max 10MB)
 const upload = multer({

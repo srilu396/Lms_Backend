@@ -6,12 +6,54 @@ const models = require('../models');
 
 class StudentService {
     async createStudent(data) {
+        let passwordProvided = true;
+        
+        if (!data.password) {
+            passwordProvided = false;
+            // Generate impossible-to-guess placeholder since DB strictly requires a password string
+            const crypto = require('crypto');
+            data.password = crypto.randomBytes(32).toString('hex');
+        }
+
         // Will trigger beforeCreate hook to hash password
         const student = await Student.create(data);
+
+        const { User, PasswordResetToken } = require('../models');
+
+        // Provision central authenticating user
+        const [user, created] = await User.findOrCreate({
+            where: { email: student.email },
+            defaults: {
+                full_name: student.first_name + ' ' + (student.last_name || ''),
+                email: student.email,
+                username: student.email.split('@')[0] + Math.floor(Math.random() * 10000),
+                password_hash: student.password, 
+                role: 'student'
+            }
+        });
+
+        if (!passwordProvided) {
+            const crypto = require('crypto');
+            const token = crypto.randomBytes(32).toString('hex');
+            const expires_at = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24hr validity
+            
+            await PasswordResetToken.create({
+                user_id: user.id,
+                token: token,
+                expires_at: expires_at,
+                is_used: false
+            });
+            
+            const resetLink = `https://your-frontend-domain.com/setup-password?token=${token}`;
+            // Log for local dev / simulated email dispatch. NEVER return in API.
+            console.log(`[SECURE EMAIL DISPATCH MOCK] -> Student setup link for ${student.email}: ${resetLink}`);
+        }
         
-        return await Student.findByPk(student.id, {
+        const result = await Student.findByPk(student.id, {
             attributes: { exclude: ['password'] }
         });
+        
+        return result;
     }
 
     async getStudents(query) {
@@ -207,11 +249,11 @@ class StudentService {
                             where: { email: { [Op.in]: emails } },
                             attributes: ['email']
                         });
-                        
+
                         const existingEmails = new Set(existingStudents.map(s => s.email));
                         const uniqueStudentsToInsert = [];
                         const seenEmailsInCsv = new Set();
-                        
+
                         for (const student of students) {
                             if (!existingEmails.has(student.email) && !seenEmailsInCsv.has(student.email)) {
                                 uniqueStudentsToInsert.push(student);

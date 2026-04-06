@@ -1,12 +1,19 @@
 const express = require('express');
 const router = express.Router();
 const institutionController = require('../controllers/institution.controller');
+const authMiddleware = require('../middlewares/auth.middleware');
+const roleMiddleware = require('../middlewares/role.middleware');
+
+router.use(authMiddleware);
+
+const adminOnly = roleMiddleware('admin');
+const adminAndRep = roleMiddleware('admin', 'institution_representative');
 
 // Search endpoint for institutions
 router.get('/search', institutionController.searchInstitutions);
 
 // Create a new institution
-router.post('/', institutionController.createInstitution);
+router.post('/', adminOnly, institutionController.createInstitution);
 
 // Get list of institutions with pagination and search
 router.get('/', institutionController.getInstitutions);
@@ -18,12 +25,12 @@ router.get('/stats', institutionController.getInstitutionStats);
 router.get('/:id', institutionController.getInstitutionById);
 
 // Update an institution completely (including contacts)
-router.put('/:id', institutionController.updateInstitution);
+router.put('/:id', adminAndRep, institutionController.updateInstitution);
 
 // Update institution status (activate / deactivate)
-router.patch('/:id/status', institutionController.updateInstitutionStatus);
+router.patch('/:id/status', adminOnly, institutionController.updateInstitutionStatus);
 
 // Delete an institution
-router.delete('/:id', institutionController.deleteInstitution);
+router.delete('/:id', adminOnly, institutionController.deleteInstitution);
 
 module.exports = router;

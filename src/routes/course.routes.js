@@ -7,19 +7,26 @@ const validate = require('../middlewares/validate');
 const { 
     createCourseSchema, updateCourseSchema, createModuleSchema, enrollStudentSchema
 } = require('../utils/validations/course.validation');
+const authMiddleware = require('../middlewares/auth.middleware');
+const roleMiddleware = require('../middlewares/role.middleware');
 
-router.post('/', validate(createCourseSchema), courseController.createCourse);
-router.get('/', courseController.getCourses);
-router.get('/stats', courseController.getCourseStats);
-router.get('/:id', courseController.getCourseById);
-router.put('/:id', validate(updateCourseSchema), courseController.updateCourse);
-router.delete('/:id', courseController.deleteCourse);
+router.use(authMiddleware);
+
+const adminAndTutor = roleMiddleware('admin', 'tutor');
+const adminOnly = roleMiddleware('admin');
+
+router.post('/', adminAndTutor, validate(createCourseSchema), courseController.createCourse);
+router.get('/', courseController.getCourses); // All authenticated roles (authMiddleware handles it) 
+router.get('/stats', adminAndTutor, courseController.getCourseStats);
+router.get('/:id', courseController.getCourseById); // All authenticated roles
+router.put('/:id', adminAndTutor, validate(updateCourseSchema), courseController.updateCourse);
+router.delete('/:id', adminOnly, courseController.deleteCourse);
 
 // Modules in course
-router.post('/:courseId/modules', validate(createModuleSchema), moduleController.addModule);
+router.post('/:courseId/modules', adminAndTutor, validate(createModuleSchema), moduleController.addModule);
 
-// Enrollment
-router.post('/enroll', validate(enrollStudentSchema), enrollmentController.enrollStudent);
+// Enrollment (students shouldn't enroll themselves directly here, maybe admin does?)
+router.post('/enroll', adminOnly, validate(enrollStudentSchema), enrollmentController.enrollStudent);
 
 // Curriculum
 router.get('/:id/curriculum', courseController.getCurriculum);

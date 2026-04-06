@@ -3,6 +3,14 @@ const { Op } = Sequelize;
 
 class TutorService {
     async createTutor(data) {
+        let passwordProvided = true;
+        if (!data.password) {
+            passwordProvided = false;
+            // Generate impossible-to-guess placeholder since DB strictly requires a password string
+            const crypto = require('crypto');
+            data.password = crypto.randomBytes(32).toString('hex');
+        }
+
         const tutor = await Tutor.create({
             full_name: data.full_name || data.fullName || data['Full name'],
             email: data.email || data['Email address'],
@@ -12,7 +20,38 @@ class TutorService {
             tags: Array.isArray(data.tags) ? data.tags : [],
             status: data.status || 'active'
         });
-        
+
+        const { User, PasswordResetToken } = require('../models');
+
+        // Provision central authenticating user
+        const [user, created] = await User.findOrCreate({
+            where: { email: tutor.email },
+            defaults: {
+                full_name: tutor.full_name,
+                email: tutor.email,
+                username: tutor.email.split('@')[0] + Math.floor(Math.random() * 10000),
+                password_hash: tutor.password,
+                role: 'tutor'
+            }
+        });
+
+        if (!passwordProvided) {
+            const crypto = require('crypto');
+            const token = crypto.randomBytes(32).toString('hex');
+            const expires_at = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24hr validity
+            
+            await PasswordResetToken.create({
+                user_id: user.id,
+                token: token,
+                expires_at: expires_at,
+                is_used: false
+            });
+            
+            const resetLink = `https://your-frontend-domain.com/setup-password?token=${token}`;
+            // Log for local dev / simulated email dispatch. NEVER return in API.
+            console.log(`[SECURE EMAIL DISPATCH MOCK] -> Tutor setup link for ${tutor.email}: ${resetLink}`);
+        }
+
         return this.formatTutorOutput(tutor);
     }
 
@@ -34,7 +73,7 @@ class TutorService {
             const domainArray = domains.split(',').map(d => d.trim());
             // Filter tutors that have any of the specified domains using LIKE operator
             // This works by checking if the JSON contains the domain string
-            where[Op.and] = domainArray.map(domain => 
+            where[Op.and] = domainArray.map(domain =>
                 sequelize.where(
                     sequelize.col('domains'),
                     Op.like,
@@ -141,7 +180,7 @@ class TutorService {
         // get first day of current month
         const date = new Date();
         const firstDayOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
-        
+
         const count = await Tutor.count({
             where: {
                 created_at: {

@@ -44,7 +44,7 @@ class EnrollmentService {
                 },
                 {
                     model: Batch,
-                    include: [{ model: Course, as: 'course', attributes: ['id', 'name'] }]
+                    include: [{ model: Course, attributes: ['id', 'name'] }]
                 }
             ],
             order: [['created_at', 'DESC']]
@@ -60,7 +60,7 @@ class EnrollmentService {
                 },
                 {
                     model: Batch,
-                    include: [{ model: Course, as: 'course', attributes: ['id', 'name'] }]
+                    include: [{ model: Course, attributes: ['id', 'name'] }]
                 }
             ]
         });

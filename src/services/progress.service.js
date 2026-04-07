@@ -19,9 +19,16 @@ class ProgressService {
             throw error;
         }
 
-        // Verify enrollment
+        // Verify enrollment by matching the logged-in User's email to the Student record
+        const user = await require('../models').User.findByPk(studentId);
+        
         const enrollment = await Enrollment.findOne({
-            where: { id: enrollmentId, student_id: studentId }
+            where: { id: enrollmentId },
+            include: [{
+                model: require('../models').Student,
+                as: 'student',
+                where: { email: user.email }
+            }]
         });
 
         if (!enrollment) {
@@ -126,16 +133,25 @@ class ProgressService {
      */
     async getCourseProgressSummary(studentId, enrollmentId) {
         // Verify enrollment
+        const user = await require('../models').User.findByPk(studentId);
+        
         const enrollment = await Enrollment.findOne({
-            where: { id: enrollmentId, student_id: studentId },
-            include: [{
-                model: Batch,
-                include: [{ model: Course }]
-            }]
+            where: { id: enrollmentId },
+            include: [
+                {
+                    model: require('../models').Student,
+                    as: 'student',
+                    where: { email: user.email }
+                },
+                {
+                    model: Batch,
+                    include: [{ model: Course }]
+                }
+            ]
         });
 
         if (!enrollment) {
-            const error = new Error('Enrollment not found');
+            const error = new Error('Enrollment not found or unauthorized');
             error.statusCode = 404;
             throw error;
         }

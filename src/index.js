@@ -50,6 +50,7 @@ app.use('/api/v1/batches', require('./routes/batch.routes'));
 app.use('/api/v1/contact-requests', require('./routes/contact.routes'));
 app.use('/api/v1/enrollments', require('./routes/enrollment.routes'));
 app.use('/api/v1/progress', require('./routes/progress.routes'));
+app.use('/api/v1/attendance', require('./routes/attendance.routes'));
 
 // Global Error Handler
 const errorHandler = require('./middlewares/error.middleware');

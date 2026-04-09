@@ -28,52 +28,66 @@ class AttendanceService {
         }
 
         const markedRecords = [];
+        const skippedRecords = [];
         
         // Upsert attendance records
         for (const record of attendanceData) {
-            const { student_id, enrollment_id, status } = record;
+            const { student_id, status } = record;
             
-            // Automatically find enrollment if not fully provided, or validate if provided
+            // Automatically find enrollment by student_id and batch_id
             let whereClause = {
                 student_id,
                 batch_id: session.batch_id
             };
-            if (record.enrollment_id) whereClause.id = record.enrollment_id;
 
             const enrollment = await Enrollment.findOne({ where: whereClause });
 
             if (!enrollment) {
-                // Instead of throwing an error and crashing the whole request, we skip and continue
+                // Record the fact that this student was not enrolled in this batch
+                skippedRecords.push({
+                    student_id,
+                    reason: `Student ${student_id} is not enrolled in Batch ${session.batch_id}`
+                });
                 continue;
             }
 
             const trueEnrollmentId = enrollment.id;
 
-            // check if exists
-            let studentAttendance = await StudentAttendance.findOne({
-                where: {
-                    session_id: sessionId,
-                    student_id
-                }
-            });
+            try {
+                // check if exists
+                let studentAttendance = await StudentAttendance.findOne({
+                    where: {
+                        session_id: sessionId,
+                        student_id
+                    }
+                });
 
-            if (studentAttendance) {
-                studentAttendance.status = status;
-                studentAttendance.marked_at = new Date();
-                await studentAttendance.save();
-            } else {
-                studentAttendance = await StudentAttendance.create({
-                    session_id: sessionId,
+                if (studentAttendance) {
+                    studentAttendance.status = status;
+                    studentAttendance.marked_at = new Date();
+                    await studentAttendance.save();
+                } else {
+                    studentAttendance = await StudentAttendance.create({
+                        session_id: sessionId,
+                        student_id,
+                        enrollment_id: trueEnrollmentId,
+                        status
+                    });
+                }
+
+                markedRecords.push(studentAttendance);
+            } catch (err) {
+                skippedRecords.push({
                     student_id,
-                    enrollment_id: trueEnrollmentId,
-                    status
+                    reason: `Database error: failed to save record. ${err.message}`
                 });
             }
-
-            markedRecords.push(studentAttendance);
         }
 
-        return markedRecords;
+        return {
+            saved_attendance: markedRecords,
+            skipped_invalid_students: skippedRecords
+        };
     }
 
     async getBatchAttendanceReport(batchId) {

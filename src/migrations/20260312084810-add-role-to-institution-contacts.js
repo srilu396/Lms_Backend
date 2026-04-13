@@ -3,10 +3,13 @@
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up (queryInterface, Sequelize) {
-    await queryInterface.addColumn('institution_contacts', 'role', {
-      type: Sequelize.STRING,
-      allowNull: true
-    });
+    const tableDefinition = await queryInterface.describeTable('institution_contacts');
+    if (!tableDefinition.role) {
+      await queryInterface.addColumn('institution_contacts', 'role', {
+        type: Sequelize.STRING,
+        allowNull: true
+      });
+    }
   },
 
   async down (queryInterface, Sequelize) {

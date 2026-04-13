@@ -4,36 +4,37 @@ const { User, sequelize } = require('../src/models'); // Need sequelize to close
 
 async function createAdmin() {
     try {
-        const email = 'admin@admin.com';
-        const password = 'AdminPassword123!';
+        const email = 'superadmin@lms.com';
+        const password = 'SuperLmsPassword@2026';
         
-        console.log("Checking for existing admin...");
-        // Check if admin already exists
-        const existingAdmin = await User.findOne({ where: { email } });
-        if (existingAdmin) {
-            console.log(`\nAdmin user with email ${email} already exists!`);
-            process.exit(0);
-        }
-
         console.log("Hashing password...");
         const salt = await bcrypt.genSalt(10);
         const password_hash = await bcrypt.hash(password, salt);
 
-        console.log("Creating admin user in database...");
-        const admin = await User.create({
-            username: 'superadmin',
-            email: email,
-            full_name: 'System Administrator',
-            role: 'admin',
-            password_hash: password_hash,
-            is_active: true,
-            is_first_login: false
-        });
+        console.log("Checking for existing admin...");
+        // Check if admin already exists
+        let admin = await User.findOne({ where: { email } });
+        
+        if (admin) {
+            console.log(`\nAdmin user exists. Forcing password reset!`);
+            admin.password_hash = password_hash;
+            await admin.save();
+        } else {
+            console.log("Creating new admin user in database...");
+            admin = await User.create({
+                username: 'superadmin',
+                email: email,
+                full_name: 'Ultimate System Administrator',
+                role: 'admin',
+                password_hash: password_hash,
+                is_active: true,
+                is_first_login: false
+            });
+        }
 
-        console.log(`\n✅ Successfully created initial admin user!`);
+        console.log(`\n✅ Successfully configured Admin User!`);
         console.log(`-------------------------------------------`);
         console.log(`Email: ${admin.email}`);
-        console.log(`Username: ${admin.username}`);
         console.log(`Password: ${password}`);
         console.log(`-------------------------------------------\n`);
         

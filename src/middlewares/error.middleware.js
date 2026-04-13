@@ -10,10 +10,17 @@ const errorHandler = (err, req, res, next) => {
         message = err.errors.map(e => e.message).join(', ');
     }
 
-    res.status(statusCode).json({
+    // Hide stack trace in production
+    const response = {
         success: false,
         message: message,
-    });
+    };
+    
+    if (process.env.NODE_ENV === 'development') {
+        response.stack = err.stack;
+    }
+
+    res.status(statusCode).json(response);
 };
 
 module.exports = errorHandler;

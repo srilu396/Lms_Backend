@@ -2,14 +2,33 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const rateLimit = require('express-rate-limit');
 const { connectDB } = require('./db/connect');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware setup
-app.use(cors()); // Used to enable CORS
-app.use(express.json()); // Used to parse JSON bodies
+const corsOptions = {
+    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : '*', // Allow specific origins or all
+    credentials: true, // Allow cookies to be sent with requests
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+};
+app.use(cors(corsOptions)); 
+
+// Apply rate limiting to all requests
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+    message: { success: false, message: 'Too many requests from this IP, please try again after 15 minutes' }
+});
+app.use(limiter);
+
+app.use(express.json({ limit: '10mb' })); // Used to parse JSON bodies, with limit
+app.use(express.urlencoded({ extended: true, limit: '10mb' })); // Parse URL-encoded bodies
 app.use(cookieParser());
 
 // Default status route

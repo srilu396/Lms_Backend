@@ -103,8 +103,8 @@ class AttendanceService {
                     model: StudentAttendance,
                     include: [
                         {
-                            model: User,
-                            attributes: ['id', 'full_name', 'email', 'student_code']
+                            model: require('../models').Student,
+                            attributes: ['id', 'first_name', 'last_name', 'email']
                         }
                     ]
                 }

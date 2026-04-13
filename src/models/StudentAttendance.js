@@ -10,7 +10,7 @@ module.exports = (sequelize, DataTypes) => {
             type: DataTypes.BIGINT,
             allowNull: false,
             references: {
-                model: 'users',
+                model: 'students',
                 key: 'id'
             }
         },
@@ -50,7 +50,7 @@ module.exports = (sequelize, DataTypes) => {
     });
 
     StudentAttendance.associate = (models) => {
-        StudentAttendance.belongsTo(models.User, { foreignKey: 'student_id' });
+        StudentAttendance.belongsTo(models.Student, { foreignKey: 'student_id' });
         StudentAttendance.belongsTo(models.AttendanceSession, { foreignKey: 'session_id' });
         StudentAttendance.belongsTo(models.Enrollment, { foreignKey: 'enrollment_id' });
     };

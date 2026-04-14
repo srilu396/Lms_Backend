@@ -12,8 +12,12 @@ async function createAdmin() {
         const password_hash = await bcrypt.hash(password, salt);
 
         console.log("Checking for existing admin...");
-        // Check if admin already exists
-        let admin = await User.findOne({ where: { email } });
+        // Check if admin already exists by username or email
+        let admin = await User.findOne({ where: { username: 'superadmin' } });
+        
+        if (!admin) {
+            admin = await User.findOne({ where: { email } });
+        }
         
         if (admin) {
             console.log(`\nAdmin user exists. Forcing password reset!`);

@@ -9,12 +9,12 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware setup
-const corsOptions = {
-    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : '*', // Allow specific origins or all
-    credentials: true, // Allow cookies to be sent with requests
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-};
+const corsOptions = require('./config/corsOptions');
+
+// Handle Pre-flight requests for all routes (important for Authorization headers / Credentials)
+app.options('*', cors(corsOptions));
+
+// Apply CORS middleware
 app.use(cors(corsOptions)); 
 
 // Apply rate limiting to all requests

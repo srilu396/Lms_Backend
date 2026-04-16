@@ -52,6 +52,9 @@ app.use('/api/v1/enrollments', require('./routes/enrollment.routes'));
 app.use('/api/v1/progress', require('./routes/progress.routes'));
 app.use('/api/v1/attendance', require('./routes/attendance.routes'));
 
+// Tutor Portal Routes
+app.use('/api/v1/tutor-portal', require('./routes/tutor-portal.routes'));
+
 // Global Error Handler
 const errorHandler = require('./middlewares/error.middleware');
 app.use(errorHandler);

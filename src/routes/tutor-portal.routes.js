@@ -20,4 +20,16 @@ router.get('/dashboard', tutorPortalController.getDashboard);
 // Full nested course structure for a specific batch (Modules → Topics → Lessons)
 router.get('/batch/:batchId/course', tutorPortalController.getBatchCourse);
 
+// GET /tutor-portal/batch/:batchId/attendance-stats?date=YYYY-MM-DD
+// Returns attendance statistics (Total, Present, Absent, Late)
+router.get('/batch/:batchId/attendance-stats', tutorPortalController.getAttendanceStats);
+
+// GET /tutor-portal/batch/:batchId/students?date=YYYY-MM-DD&page=1&limit=10&search=&status=
+// Student list for a specific batch/date for attendance tagging
+router.get('/batch/:batchId/students', tutorPortalController.getBatchStudents);
+
+// POST /tutor-portal/batch/:batchId/attendance
+// Mark or update attendance for students in a batch
+router.post('/batch/:batchId/attendance', tutorPortalController.markAttendance);
+
 module.exports = router;

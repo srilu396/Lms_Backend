@@ -37,6 +37,10 @@ module.exports = (sequelize, DataTypes) => {
         marked_at: {
             type: DataTypes.DATE,
             defaultValue: DataTypes.NOW
+        },
+        notes: {
+            type: DataTypes.TEXT,
+            allowNull: true
         }
     }, {
         tableName: 'student_attendance',

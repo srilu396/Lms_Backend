@@ -40,6 +40,10 @@ module.exports = (sequelize, DataTypes) => {
         status: {
             type: DataTypes.ENUM('active', 'completed', 'cancelled', 'inactive'),
             defaultValue: 'active'
+        },
+        department: {
+            type: DataTypes.STRING,
+            allowNull: true
         }
     }, {
         tableName: 'batches',

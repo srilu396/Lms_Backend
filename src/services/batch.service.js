@@ -97,7 +97,8 @@ class BatchService {
                 tutor: batchJson.tutor?.full_name || 'Not Assigned',
                 course: batchJson.Course?.name || 'N/A',
                 start_date: batchJson.start_date,
-                status: batchJson.status
+                status: batchJson.status,
+                department: batchJson.department || 'N/A'
             };
         });
 
@@ -326,6 +327,53 @@ class BatchService {
             activeBatches,
             averageStudentsPerBatch: parseFloat(average)
         };
+    }
+
+    /**
+     * Bulk Create Batches from CSV
+     * Expected CSV format: name,course_id,department,start_date,end_date,institution_id
+     */
+    async bulkCreateBatchesFromCSV(filePath, defaultInstitutionId) {
+        return new Promise((resolve, reject) => {
+            const batchesToCreate = [];
+
+            fs.createReadStream(filePath)
+                .pipe(csvParser())
+                .on('data', (row) => {
+                    if (row.name) {
+                        batchesToCreate.push({
+                            name: row.name,
+                            course_id: row.course_id ? parseInt(row.course_id) : null,
+                            department: row.department || null,
+                            start_date: row.start_date || null,
+                            end_date: row.end_date || null,
+                            institution_id: row.institution_id ? parseInt(row.institution_id) : defaultInstitutionId,
+                            status: 'active'
+                        });
+                    }
+                })
+                .on('end', async () => {
+                    try {
+                        if (batchesToCreate.length === 0) return reject(new Error('No valid batch data found in CSV'));
+
+                        const createdBatches = await Batch.bulkCreate(batchesToCreate);
+                        
+                        try { fs.unlinkSync(filePath); } catch (e) {}
+                        
+                        resolve({
+                            processed_rows: batchesToCreate.length,
+                            created_count: createdBatches.length
+                        });
+                    } catch (error) {
+                        try { fs.unlinkSync(filePath); } catch (e) {}
+                        reject(error);
+                    }
+                })
+                .on('error', (error) => {
+                    try { fs.unlinkSync(filePath); } catch (e) {}
+                    reject(error);
+                });
+        });
     }
 }
 

@@ -243,7 +243,18 @@ class StudentService {
                             return reject(new Error('No valid student data found in CSV'));
                         }
 
-                        // Handle duplicate emails safely
+                        // 1. Validate course_ids
+                        const courseIds = [...new Set(students.filter(s => s.course_id !== null).map(s => s.course_id))];
+                        let validCourseIds = new Set();
+                        if (courseIds.length > 0) {
+                            const validCourses = await models.Course.findAll({
+                                where: { id: { [Op.in]: courseIds } },
+                                attributes: ['id']
+                            });
+                            validCourseIds = new Set(validCourses.map(c => c.id));
+                        }
+
+                        // 2. Handle duplicate emails and invalid course_ids safely
                         const emails = students.map(s => s.email);
                         const existingStudents = await Student.findAll({
                             where: { email: { [Op.in]: emails } },
@@ -251,32 +262,42 @@ class StudentService {
                         });
 
                         const existingEmails = new Set(existingStudents.map(s => s.email));
-                        const uniqueStudentsToInsert = [];
+                        const finalStudentsToInsert = [];
                         const seenEmailsInCsv = new Set();
+                        let invalidCourseCount = 0;
 
                         for (const student of students) {
+                            // Skip if course_id is provided but invalid
+                            if (student.course_id !== null && !validCourseIds.has(student.course_id)) {
+                                invalidCourseCount++;
+                                continue;
+                            }
+
                             if (!existingEmails.has(student.email) && !seenEmailsInCsv.has(student.email)) {
-                                uniqueStudentsToInsert.push(student);
+                                finalStudentsToInsert.push(student);
                                 seenEmailsInCsv.add(student.email);
                             }
                         }
 
-                        if (uniqueStudentsToInsert.length > 0) {
+                        if (finalStudentsToInsert.length > 0) {
                             // individualHooks: true allows password hashing beforeCreate on bulkCreate
-                            await Student.bulkCreate(uniqueStudentsToInsert, { individualHooks: true });
+                            await Student.bulkCreate(finalStudentsToInsert, { individualHooks: true });
                         }
 
                         // Remove temp file
                         try {
-                            fs.unlinkSync(filePath);
+                            if (fs.existsSync(filePath)) {
+                                fs.unlinkSync(filePath);
+                            }
                         } catch (err) {
                             console.error('Error deleting temp file:', err);
                         }
 
                         resolve({
                             processed: students.length,
-                            inserted: uniqueStudentsToInsert.length,
-                            duplicates_ignored: students.length - uniqueStudentsToInsert.length
+                            inserted: finalStudentsToInsert.length,
+                            duplicates_ignored: students.length - finalStudentsToInsert.length - invalidCourseCount,
+                            invalid_courses_ignored: invalidCourseCount
                         });
                     } catch (error) {
                         reject(error);

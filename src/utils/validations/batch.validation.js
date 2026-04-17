@@ -10,7 +10,8 @@ const createBatchSchema = Joi.object({
     start_date: Joi.date().iso().optional().allow(null),
     end_date: Joi.date().iso().optional().allow(null),
     enroll_students: Joi.array().items(Joi.number().integer()).optional(),
-    status: Joi.string().valid('active', 'completed', 'cancelled', 'inactive').optional()
+    status: Joi.string().valid('active', 'completed', 'cancelled', 'inactive').optional(),
+    department: Joi.string().optional().allow(null, '')
 });
 
 const updateBatchSchema = Joi.object({
@@ -21,7 +22,8 @@ const updateBatchSchema = Joi.object({
     start_date: Joi.date().iso().optional().allow(null),
     end_date: Joi.date().iso().optional().allow(null),
     enroll_students: Joi.array().items(Joi.number().integer()).optional(),
-    status: Joi.string().valid('active', 'completed', 'cancelled', 'inactive').optional()
+    status: Joi.string().valid('active', 'completed', 'cancelled', 'inactive').optional(),
+    department: Joi.string().optional().allow(null, '')
 });
 
 module.exports = {

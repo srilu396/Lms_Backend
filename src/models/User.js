@@ -61,6 +61,14 @@ module.exports = (sequelize, DataTypes) => {
         last_login_at: {
             type: DataTypes.DATE,
             allowNull: true
+        },
+        institution_id: {
+            type: DataTypes.BIGINT,
+            allowNull: true,
+            references: {
+                model: 'institutions',
+                key: 'id'
+            }
         }
     }, {
         tableName: 'users',
@@ -72,6 +80,7 @@ module.exports = (sequelize, DataTypes) => {
     });
 
     User.associate = (models) => {
+        User.belongsTo(models.Institution, { foreignKey: 'institution_id' });
         User.hasMany(models.PasswordResetToken, { foreignKey: 'user_id' });
         User.hasMany(models.UserSession, { foreignKey: 'user_id' });
         User.hasOne(models.TutorProfile, { foreignKey: 'tutor_id' });

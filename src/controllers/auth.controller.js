@@ -4,7 +4,7 @@ const { User } = require('../models');
 
 const generateTokens = (user) => {
     const accessToken = jwt.sign(
-        { userId: user.id, role: user.role },
+        { userId: user.id, role: user.role, institutionId: user.institution_id },
         process.env.JWT_ACCESS_SECRET || 'fallback_access_secret',
         { expiresIn: '15m' }
     );

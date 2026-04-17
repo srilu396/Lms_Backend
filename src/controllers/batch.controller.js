@@ -252,6 +252,30 @@ class BatchController {
             });
         }
     }
+
+    /**
+     * POST /batches/bulk-upload
+     */
+    async bulkCreateBatches(req, res) {
+        try {
+            if (!req.file) return res.status(400).json({ success: false, message: 'Please upload a valid CSV file' });
+            
+            // institution_id might come from req.body if provided by admin
+            const defaultInstitutionId = req.body.institution_id || null;
+            
+            const result = await batchService.bulkCreateBatchesFromCSV(req.file.path, defaultInstitutionId);
+            res.status(201).json({
+                success: true,
+                message: 'Batches created successfully',
+                data: result
+            });
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Internal server error'
+            });
+        }
+    }
 }
 
 module.exports = new BatchController();

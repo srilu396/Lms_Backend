@@ -1,4 +1,4 @@
-const { Batch, Course, Institution, Enrollment, BatchTutor, BatchAssignment, Assignment, BatchPerformance, User, Student, sequelize } = require('../models');
+const { Batch, Course, Institution, Enrollment, BatchTutor, BatchAssignment, Assignment, BatchPerformance, User, Student, Tutor, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const fs = require('fs');
 const csvParser = require('csv-parser');
@@ -111,7 +111,7 @@ class BatchService {
                 {
                     model: BatchTutor,
                     as: 'batchTutors',
-                    include: [{ model: User, attributes: ['id', 'full_name'] }],
+                    include: [{ model: Tutor, attributes: ['id', 'full_name'] }],
                     required: false
                 }
             ],
@@ -124,8 +124,8 @@ class BatchService {
         const formattedBatches = batches.map(batch => {
             const batchJson = batch.toJSON();
             // Get primary tutor name from batchTutors junction
-            const primaryTutor = batchJson.batchTutors?.find(bt => bt.is_primary)?.User
-                || batchJson.batchTutors?.[0]?.User
+            const primaryTutor = batchJson.batchTutors?.find(bt => bt.is_primary)?.Tutor
+                || batchJson.batchTutors?.[0]?.Tutor
                 || null;
             return {
                 id: batchJson.id,
@@ -158,7 +158,7 @@ class BatchService {
                 {
                     model: BatchTutor,
                     as: 'batchTutors',
-                    include: [{ model: User, attributes: ['id', 'full_name', 'email'] }],
+                    include: [{ model: Tutor, attributes: ['id', 'full_name', 'email'] }],
                     required: false
                 },
                 {

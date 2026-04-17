@@ -6,8 +6,7 @@ class TutorPortalController {
     // Returns the 4 overview card values for the tutor dashboard
     async getStats(req, res, next) {
         try {
-            const tutorId = req.user.id;
-            const stats = await tutorPortalService.getStatsData(tutorId);
+            const stats = await tutorPortalService.getStatsData(req.user);
 
             res.status(200).json({
                 success: true,
@@ -23,10 +22,9 @@ class TutorPortalController {
     // Returns paginated, filterable batch list for the tutor's Batch Management table
     async getDashboard(req, res, next) {
         try {
-            const tutorId = req.user.id;
             const { page, limit, search, status } = req.query;
 
-            const dashboardData = await tutorPortalService.getDashboardData(tutorId, {
+            const dashboardData = await tutorPortalService.getDashboardData(req.user, {
                 page,
                 limit,
                 search,
@@ -49,9 +47,8 @@ class TutorPortalController {
         try {
             const { batchId } = req.params;
             const courseData = await tutorPortalService.getBatchCourseStructure(
-                batchId,
-                req.user.id,
-                req.user.role
+                req.user,
+                batchId
             );
 
             res.status(200).json({

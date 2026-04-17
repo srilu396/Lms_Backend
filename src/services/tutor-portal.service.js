@@ -8,14 +8,35 @@ const {
     Lesson,
     BatchPerformance,
     BatchTutor,
-    Quiz
+    Quiz,
+    Tutor
 } = require('../models');
 const { Op } = require('sequelize');
 
 class TutorPortalService {
 
+    /**
+     * Helper to resolve the Tutor ID (business entity) from the User object (auth entity).
+     * Senior Pattern: Separation of Auth User (ID 40) and Business Tutor (ID 14).
+     */
+    async _getTutorId(user) {
+        if (!user) throw { statusCode: 401, message: 'User not authenticated' };
+        
+        const tutor = await Tutor.findOne({
+            where: { email: user.email },
+            attributes: ['id']
+        });
+
+        if (!tutor) {
+            throw { statusCode: 404, message: 'No tutor profile found for this user email.' };
+        }
+
+        return tutor.id;
+    }
+
     // ─── 1. Stats API (Overview Cards) ──────────────────────────────────────────
-    async getStatsData(tutorId) {
+    async getStatsData(user) {
+        const tutorId = await this._getTutorId(user);
         const tId = String(tutorId);
         // Total batches assigned to this tutor via batch_tutors junction table
         const totalAssignedBatches = await BatchTutor.count({
@@ -52,7 +73,8 @@ class TutorPortalService {
     }
 
     // ─── 2. Dashboard API (Batches List) ────────────────────────────────────────
-    async getDashboardData(tutorId, filters = {}) {
+    async getDashboardData(user, filters = {}) {
+        const tutorId = await this._getTutorId(user);
         const { page = 1, limit = 10, search = '', status } = filters;
         const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
@@ -149,7 +171,10 @@ class TutorPortalService {
     }
 
     // ─── 3. View Batch Course Structure ─────────────────────────────────────────
-    async getBatchCourseStructure(batchId, tutorId, role) {
+    async getBatchCourseStructure(user, batchId) {
+        const tutorId = await this._getTutorId(user);
+        const role = user.role;
+
         // Verify the batch exists
         const batch = await Batch.findByPk(batchId, {
             include: [

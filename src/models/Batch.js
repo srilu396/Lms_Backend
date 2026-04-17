@@ -45,7 +45,7 @@ module.exports = (sequelize, DataTypes) => {
         Batch.belongsTo(models.Course, { foreignKey: 'course_id' });
         Batch.belongsTo(models.Institution, { foreignKey: 'institution_id' });
         Batch.hasMany(models.BatchTutor, { foreignKey: 'batch_id', as: 'batchTutors' });
-        Batch.belongsToMany(models.User, { through: models.BatchTutor, foreignKey: 'batch_id', otherKey: 'tutor_id', as: 'tutors' });
+        Batch.belongsToMany(models.Tutor, { through: models.BatchTutor, foreignKey: 'batch_id', otherKey: 'tutor_id', as: 'tutors' });
         Batch.hasMany(models.Enrollment, { foreignKey: 'batch_id' });
         Batch.hasMany(models.AttendanceSession, { foreignKey: 'batch_id' });
         Batch.hasMany(models.StudentRiskReport, { foreignKey: 'batch_id' });

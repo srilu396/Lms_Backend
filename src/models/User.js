@@ -77,7 +77,8 @@ module.exports = (sequelize, DataTypes) => {
         User.hasOne(models.TutorProfile, { foreignKey: 'tutor_id' });
         User.hasMany(models.TutorInstitutionAssignment, { foreignKey: 'tutor_id' });
         User.hasMany(models.CourseTutor, { foreignKey: 'tutor_id' });
-        User.hasMany(models.BatchTutor, { foreignKey: 'tutor_id' });
+        // User is no longer directly associated with BatchTutor.
+        // BatchTutor now belongs to the Tutor entity.
         User.hasMany(models.Enrollment, { foreignKey: 'student_id' });
         User.hasMany(models.QuizSubmission, { foreignKey: 'student_id' });
         User.hasMany(models.AssignmentSubmission, { foreignKey: 'student_id' });

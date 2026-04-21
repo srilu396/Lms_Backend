@@ -5,7 +5,7 @@ const institutionRepAuth = require('../../middlewares/institutionRepAuth');
 
 /**
  * @route   GET /api/v1/institution-rep/batches/:batchId/grade-distribution
- * @desc    Get student count distribution by grade buckets
+ * @desc    Get grade distribution buckets (Fail/Average/Excellent)
  * @access  Private (Institution Representative)
  */
 router.get('/:batchId/grade-distribution', institutionRepAuth, gradeDistributionController.getGradeDistribution);

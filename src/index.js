@@ -49,7 +49,7 @@ app.use('/api/v1/tutors', require('./routes/tutor.routes'));
 app.use('/api/v1/batches', require('./routes/batch.routes'));
 app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/batches.routes'));
 app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/batch-details.routes'));
-
+app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/grade-distribution.routes'));
 app.use('/api/v1/contact-requests', require('./routes/contact.routes'));
 app.use('/api/v1/enrollments', require('./routes/enrollment.routes'));
 app.use('/api/v1/progress', require('./routes/progress.routes'));

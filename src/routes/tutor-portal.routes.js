@@ -32,4 +32,28 @@ router.get('/batch/:batchId/students', tutorPortalController.getBatchStudents);
 // Mark or update attendance for students in a batch
 router.post('/batch/:batchId/attendance', tutorPortalController.markAttendance);
 
+// --------------------------------------------------
+// QUIZ MODULE
+// --------------------------------------------------
+
+// GET /tutor-portal/quizzes/stats
+// Global quiz statistics for the tutor's dashboard
+router.get('/quizzes/stats', tutorPortalController.getQuizStats);
+
+// GET /tutor-portal/quizzes
+// Batch-wise quiz overview (table data)
+router.get('/quizzes', tutorPortalController.getQuizzesOverview);
+
+// GET /tutor-portal/batch/:batchId/quiz-stats
+// Quiz statistics for a specific batch
+router.get('/batch/:batchId/quiz-stats', tutorPortalController.getBatchQuizStats);
+
+// GET /tutor-portal/batch/:batchId/quizzes
+// Student quiz list in a specific batch (table data)
+router.get('/batch/:batchId/quizzes', tutorPortalController.getBatchStudentQuizzes);
+
+// GET /tutor-portal/quiz/:quizId/submission/:studentId
+// Full review data for a specific student quiz submission
+router.get('/quiz/:quizId/submission/:studentId', tutorPortalController.getQuizReview);
+
 module.exports = router;

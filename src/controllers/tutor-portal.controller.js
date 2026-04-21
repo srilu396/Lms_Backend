@@ -127,6 +127,92 @@ class TutorPortalController {
             next(error);
         }
     }
+
+    // --------------------------------------------------
+    // QUIZ MODULE
+    // --------------------------------------------------
+
+    // GET /tutor-portal/quizzes/stats
+    async getQuizStats(req, res, next) {
+        try {
+            const stats = await tutorPortalService.getQuizStats(req.user);
+            res.status(200).json({
+                success: true,
+                message: 'Global quiz stats retrieved successfully',
+                data: stats
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // GET /tutor-portal/quizzes
+    async getQuizzesOverview(req, res, next) {
+        try {
+            const { page, limit, search } = req.query;
+            const data = await tutorPortalService.getQuizzesOverview(req.user, { page, limit, search });
+            res.status(200).json({
+                success: true,
+                message: 'Quizzes overview retrieved successfully',
+                data: data.data,
+                pagination: data.pagination
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // GET /tutor-portal/batch/:batchId/quiz-stats
+    async getBatchQuizStats(req, res, next) {
+        try {
+            const { batchId } = req.params;
+            const stats = await tutorPortalService.getBatchQuizStats(req.user, batchId);
+            res.status(200).json({
+                success: true,
+                message: 'Batch quiz stats retrieved successfully',
+                data: stats
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // GET /tutor-portal/batch/:batchId/quizzes
+    async getBatchStudentQuizzes(req, res, next) {
+        try {
+            const { batchId } = req.params;
+            const { page, limit, search, status } = req.query;
+            const data = await tutorPortalService.getBatchStudentQuizzes(req.user, batchId, { page, limit, search, status });
+            res.status(200).json({
+                success: true,
+                message: 'Batch student quizzes retrieved successfully',
+                data: data.data,
+                pagination: data.pagination
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // GET /tutor-portal/quiz/:quizId/submission/:studentId
+    async getQuizReview(req, res, next) {
+        try {
+            const { quizId, studentId } = req.params;
+            const reviewData = await tutorPortalService.getQuizSubmissionReview(
+                req.user,
+                quizId,
+                studentId
+            );
+
+            res.status(200).json({
+                success: true,
+                message: 'Quiz submission review data retrieved successfully',
+                data: reviewData
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 module.exports = new TutorPortalController();

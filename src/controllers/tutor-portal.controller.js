@@ -213,6 +213,73 @@ class TutorPortalController {
             next(error);
         }
     }
+
+    // --------------------------------------------------
+    // ASSIGNMENT MODULE
+    // --------------------------------------------------
+
+    // GET /tutor-portal/assignments/stats
+    async getAssignmentStats(req, res, next) {
+        try {
+            const stats = await tutorPortalService.getAssignmentStats(req.user.id);
+            res.status(200).json({
+                success: true,
+                message: 'Global assignment stats retrieved successfully',
+                data: stats
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // GET /tutor-portal/assignments
+    async getAssignmentsOverview(req, res, next) {
+        try {
+            const { page, limit, search } = req.query;
+            const data = await tutorPortalService.getAssignmentsOverview(req.user.id, { page, limit, search });
+            res.status(200).json({
+                success: true,
+                message: 'Assignments overview retrieved successfully',
+                data: data.data,
+                pagination: data.pagination
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // GET /tutor-portal/batch/:batchId/assignment-stats
+    async getBatchAssignmentStats(req, res, next) {
+        try {
+            const { batchId } = req.params;
+            const stats = await tutorPortalService.getBatchAssignmentStats(req.user.id, batchId);
+            res.status(200).json({
+                success: true,
+                message: 'Batch assignment stats retrieved successfully',
+                data: stats
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // GET /tutor-portal/batch/:batchId/assignments
+    async getBatchStudentAssignments(req, res, next) {
+        try {
+            const { batchId } = req.params;
+            const { page, limit, search, status } = req.query;
+            const data = await tutorPortalService.getBatchStudentAssignments(req.user.id, batchId, { page, limit, search, status });
+            res.status(200).json({
+                success: true,
+                message: 'Batch student assignments retrieved successfully',
+                data: data.data,
+                pagination: data.pagination
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
 }
+
 
 module.exports = new TutorPortalController();

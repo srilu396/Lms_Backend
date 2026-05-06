@@ -56,4 +56,25 @@ router.get('/batch/:batchId/quizzes', tutorPortalController.getBatchStudentQuizz
 // Full review data for a specific student quiz submission
 router.get('/quiz/:quizId/submission/:studentId', tutorPortalController.getQuizReview);
 
+// --------------------------------------------------
+// ASSIGNMENT MODULE
+// --------------------------------------------------
+
+// GET /tutor-portal/assignments/stats
+// Global assignment statistics for the tutor's dashboard
+router.get('/assignments/stats', tutorPortalController.getAssignmentStats);
+
+// GET /tutor-portal/assignments
+// Batch-wise assignment overview (table data)
+router.get('/assignments', tutorPortalController.getAssignmentsOverview);
+
+// GET /tutor-portal/batch/:batchId/assignment-stats
+// Assignment statistics for a specific batch
+router.get('/batch/:batchId/assignment-stats', tutorPortalController.getBatchAssignmentStats);
+
+// GET /tutor-portal/batch/:batchId/assignments
+// Student assignment list in a specific batch (table data)
+router.get('/batch/:batchId/assignments', tutorPortalController.getBatchStudentAssignments);
+
 module.exports = router;
+

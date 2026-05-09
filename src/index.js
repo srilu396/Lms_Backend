@@ -2,6 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const path = require('path');
+
 const { connectDB } = require('./db/connect');
 
 const app = express();
@@ -11,6 +13,10 @@ const PORT = process.env.PORT || 5000;
 app.use(cors()); // Used to enable CORS
 app.use(express.json()); // Used to parse JSON bodies
 app.use(cookieParser());
+
+// Static folder for file uploads
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
 
 // Default status route
 app.get('/', (req, res) => {
@@ -54,6 +60,9 @@ app.use('/api/v1/attendance', require('./routes/attendance.routes'));
 
 // Tutor Portal Routes
 app.use('/api/v1/tutor-portal', require('./routes/tutor-portal.routes'));
+
+// Student Portal Routes
+app.use('/api/v1/student-portal', require('./routes/student-portal.routes'));
 
 // Global Error Handler
 const errorHandler = require('./middlewares/error.middleware');

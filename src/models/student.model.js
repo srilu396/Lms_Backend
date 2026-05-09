@@ -42,6 +42,10 @@ module.exports = (sequelize, DataTypes) => {
         status: {
             type: DataTypes.ENUM('active', 'inactive'),
             defaultValue: 'active'
+        },
+        profile_image: {
+            type: DataTypes.STRING,
+            allowNull: true
         }
     }, {
         tableName: 'students',

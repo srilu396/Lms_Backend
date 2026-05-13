@@ -27,6 +27,38 @@ class StudentPerformanceController {
             });
         }
     }
+
+    /**
+     * GET /api/v1/institution-rep/student-performance/metrics
+     */
+    async getMetrics(req, res) {
+        try {
+            const institutionId = req.user.institution_id;
+            const params = {
+                page: req.query.page,
+                limit: req.query.limit,
+                search: req.query.search,
+                batch_id: req.query.batch_id
+            };
+
+            const data = await studentPerformanceService.getMetrics(institutionId, params);
+
+            return res.status(200).json({
+                success: true,
+                data
+            });
+        } catch (error) {
+            console.error('getMetrics controller error:', error);
+            
+            const statusCode = error.statusCode || 500;
+            const message = error.message || 'Internal Server Error';
+
+            return res.status(statusCode).json({
+                success: false,
+                message
+            });
+        }
+    }
 }
 
 module.exports = new StudentPerformanceController();

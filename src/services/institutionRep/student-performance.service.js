@@ -1,4 +1,4 @@
-const { Batch, Enrollment, QuizSubmission, Quiz, User, sequelize } = require('../../models');
+const { Batch, Enrollment, QuizSubmission, Quiz, User, Student, BatchAssignment, AssignmentSubmission, sequelize } = require('../../models');
 const { Op } = require('sequelize');
 
 class StudentPerformanceService {
@@ -217,6 +217,172 @@ class StudentPerformanceService {
         });
 
         return finalScores;
+    }
+
+    async getMetrics(institutionId, params) {
+        const { page = 1, limit = 10, search = '', batch_id = 'all' } = params;
+        const offset = (page - 1) * limit;
+
+        // 1. Get all batches for this institution for filters
+        const allBatches = await Batch.findAll({
+            where: { institution_id: institutionId },
+            attributes: ['id', 'name']
+        });
+
+        const batch_filters = allBatches.map(b => ({
+            batch_id: b.id,
+            batch_name: b.name
+        }));
+
+        // 2. Identify selected batches
+        let selectedBatchIds;
+        if (batch_id && batch_id !== 'all') {
+            const batchIdInt = parseInt(batch_id);
+            const exists = allBatches.find(b => b.id === batchIdInt);
+            if (!exists) {
+                const error = new Error('Access denied: Batch does not belong to this institution');
+                error.statusCode = 403;
+                throw error;
+            }
+            selectedBatchIds = [batchIdInt];
+        } else {
+            selectedBatchIds = allBatches.map(b => b.id);
+        }
+
+        if (selectedBatchIds.length === 0) {
+            return {
+                students: [],
+                batch_filters,
+                pagination: { 
+                    page: parseInt(page), 
+                    limit: parseInt(limit), 
+                    total: 0, 
+                    totalPages: 0 
+                }
+            };
+        }
+
+        // 3. Get students in these batches with search filter
+        let studentWhere = {};
+        if (search) {
+            studentWhere[Op.or] = [
+                { first_name: { [Op.iLike]: `%${search}%` } },
+                { last_name: { [Op.iLike]: `%${search}%` } }
+            ];
+        }
+        
+        // Find students matching search
+        const matchingStudents = await Student.findAll({
+            where: studentWhere,
+            attributes: ['id']
+        });
+        const matchingStudentIds = matchingStudents.map(s => s.id);
+
+        if (matchingStudentIds.length === 0) {
+            return {
+                students: [],
+                batch_filters,
+                pagination: { 
+                    page: parseInt(page), 
+                    limit: parseInt(limit), 
+                    total: 0, 
+                    totalPages: 0 
+                }
+            };
+        }
+
+        // 4. Find enrollments with pagination
+        const { count, rows: enrollments } = await Enrollment.findAndCountAll({
+            where: { 
+                batch_id: { [Op.in]: selectedBatchIds },
+                student_id: { [Op.in]: matchingStudentIds }
+            },
+            include: [
+                {
+                    model: Batch,
+                    attributes: ['id', 'name']
+                },
+                {
+                    model: Student,
+                    as: 'student',
+                    attributes: ['id', 'first_name', 'last_name']
+                }
+            ],
+            limit: parseInt(limit),
+            offset: parseInt(offset),
+            order: [['created_at', 'DESC']]
+        });
+
+        // 5. Calculate metrics for each student in the batch
+        const studentsData = await Promise.all(enrollments.map(async (enrollment) => {
+            const studentId = enrollment.student_id;
+            const enrollmentId = enrollment.id;
+            const batchId = enrollment.batch_id;
+            const student = enrollment.student;
+
+            const studentName = student ? `${student.first_name} ${student.last_name}`.trim() : 'Unknown';
+
+            // Calculate avg_quiz_score
+            const quizSubmissions = await QuizSubmission.findAll({
+                where: { enrollment_id: enrollmentId },
+                include: [{ model: Quiz, attributes: ['total_marks'] }]
+            });
+
+            let avg_quiz_score = 0;
+            if (quizSubmissions.length > 0) {
+                let totalPct = 0;
+                quizSubmissions.forEach(sub => {
+                    const score = parseFloat(sub.score) || 0;
+                    const totalMarks = (sub.Quiz && sub.Quiz.total_marks) ? parseFloat(sub.Quiz.total_marks) : 100;
+                    totalPct += (score / totalMarks) * 100;
+                });
+                avg_quiz_score = parseFloat((totalPct / quizSubmissions.length).toFixed(1));
+            }
+
+            // Calculate assignments_completed
+            const assignments_completed = await AssignmentSubmission.count({
+                where: { 
+                    enrollment_id: enrollmentId, 
+                    status: { [Op.in]: ['submitted', 'graded'] } 
+                }
+            });
+
+            // Calculate assignments_total
+            const assignments_total = await BatchAssignment.count({
+                where: { batch_id: batchId }
+            });
+
+            // Determine overall_grade
+            let overall_grade = 'F';
+            if (avg_quiz_score >= 90) overall_grade = 'A+';
+            else if (avg_quiz_score >= 80) overall_grade = 'A';
+            else if (avg_quiz_score >= 70) overall_grade = 'B';
+            else if (avg_quiz_score >= 60) overall_grade = 'C';
+            else if (avg_quiz_score >= 50) overall_grade = 'D';
+
+            return {
+                student_id: Number(studentId),
+                student_name: studentName,
+                avatar_url: null,
+                batch_id: batchId,
+                batch_name: enrollment.Batch ? enrollment.Batch.name : 'Unknown',
+                avg_quiz_score,
+                assignments_completed,
+                assignments_total,
+                overall_grade
+            };
+        }));
+
+        return {
+            students: studentsData,
+            batch_filters,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total: count,
+                totalPages: Math.ceil(count / limit)
+            }
+        };
     }
 
     getEmptyResponse(term) {

@@ -3,18 +3,26 @@ const bcrypt = require('bcryptjs');
 const { User } = require('../models');
 
 const generateTokens = (user) => {
+    const accessSecret = process.env.JWT_ACCESS_SECRET;
+    const refreshSecret = process.env.JWT_REFRESH_SECRET;
+
+    if (process.env.NODE_ENV === 'production' && (!accessSecret || !refreshSecret)) {
+        throw new Error('JWT secrets must be set in production environment');
+    }
+
     const accessToken = jwt.sign(
         { userId: user.id, role: user.role },
-        process.env.JWT_ACCESS_SECRET || 'fallback_access_secret',
+        accessSecret || 'fallback_access_secret',
         { expiresIn: '30m' }
     );
     const refreshToken = jwt.sign(
         { userId: user.id },
-        process.env.JWT_REFRESH_SECRET || 'fallback_refresh_secret',
+        refreshSecret || 'fallback_refresh_secret',
         { expiresIn: '7d' }
     );
     return { accessToken, refreshToken };
 };
+
 
 class AuthController {
     async login(req, res, next) {
@@ -156,14 +164,15 @@ class AuthController {
 
             // TODO: In production, use nodemailer or a service like SendGrid to email the token
             // For now, we console log it and optionally return it so you can test in Postman!
-            const resetLink = `http://localhost:5000/auth/reset-password?token=${token}`;
+            const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+            const resetLink = `${frontendUrl}/reset-password?token=${token}`;
             console.log(`Password reset link for ${email}: ${resetLink}`);
 
             res.status(200).json({ 
                 success: true, 
                 message: 'If that email is registered, we have sent a password reset link.',
-                // TEMPORARY: Exposing token for your Postman testing flow
-                test_token: token 
+                // TEMPORARY: Exposing token for your Postman testing flow (only in dev)
+                ...(process.env.NODE_ENV !== 'production' && { test_token: token })
             });
         } catch (error) {
             next(error);

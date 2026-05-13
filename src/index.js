@@ -3,16 +3,31 @@ const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const path = require('path');
+const helmet = require('helmet');
+const compression = require('compression');
 
 const { connectDB } = require('./db/connect');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Security Headers
+app.use(helmet());
+
+// CORS Configuration
+const allowedOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000'];
+app.use(cors({
+    origin: allowedOrigins,
+    credentials: true
+}));
+
+// Compress responses
+app.use(compression());
+
 // Middleware setup
-app.use(cors()); // Used to enable CORS
 app.use(express.json()); // Used to parse JSON bodies
 app.use(cookieParser());
+
 
 // Static folder for file uploads
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));

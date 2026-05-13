@@ -81,4 +81,37 @@ router.get('/quiz/:quizId/review', studentPortalController.getQuizReview);
 // All courses enrolled by the student with progress and tutor details
 router.get('/enrolled-courses', studentPortalController.getEnrolledCourses);
 
+// GET /student-portal/course/:courseId/view
+// Detailed course structure with completion status for the learning page
+router.get('/course/:courseId/view', studentPortalController.getCourseView);
+
+// POST /student-portal/lesson/:lessonId/complete
+// Marks a lesson as completed and updates progress
+router.post('/lesson/:lessonId/complete', studentPortalController.completeLesson);
+
+// POST /student-portal/lesson/:lessonId/read
+// Marks a lesson as read (typically for text-based lessons)
+router.post('/lesson/:lessonId/read', studentPortalController.markAsRead);
+
+// GET /student-portal/course/:courseId/sidebar
+// Lightweight structure for the learning page sidebar
+router.get('/course/:courseId/sidebar', studentPortalController.getCourseSidebar);
+
+// Notes API
+router.get('/notes/lesson/:lessonId', studentPortalController.getNote);
+router.put('/notes/lesson/:lessonId', studentPortalController.saveNote);
+
+// Course Completion
+router.post('/course/:courseId/complete', studentPortalController.completeCourse);
+
+// Student Quiz APIs
+router.get('/course/:courseId/quiz/:quizId', studentPortalController.getCourseQuiz);
+router.post('/course/:courseId/quiz/:quizId/submit', studentPortalController.submitQuiz);
+router.get('/course/quiz/result', studentPortalController.getQuizResult);
+router.get('/course/:courseId/quiz/:quizId/review', studentPortalController.getCourseQuizReview);
+
+// Attendance APIs
+router.get('/attendance/stats', studentPortalController.getAttendanceStats);
+router.get('/attendance/table', studentPortalController.getAttendanceTable);
+
 module.exports = router;

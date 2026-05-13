@@ -11,11 +11,13 @@ const {
     QuizSubmission,
     AssignmentSubmission,
     StudentAttendance,
+    AttendanceSession,
     LessonProgress,
     User,
     Assignment,
     QuizAnswer,
-    QuizQuestion
+    QuizQuestion,
+    Note
 } = models;
 const { Op } = require('sequelize');
 
@@ -489,6 +491,667 @@ class StudentPortalService {
                 totalRecords: count,
                 rowsPerPage: parsedLimit
             }
+        };
+    }
+
+    // ─── 11. Inside Course View (Learning Page) ─────────────────────────────────
+    async getCourseView(userId, courseId) {
+        const student = await this._getStudentByUserId(userId);
+
+        // 1. Find the active enrollment for this student and course
+        const enrollment = await Enrollment.findOne({
+            include: [{
+                model: Batch,
+                where: { course_id: courseId },
+                required: true
+            }],
+            where: { student_id: student.id, status: 'active' }
+        });
+
+        if (!enrollment) {
+            throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
+        }
+
+        // 2. Fetch full course structure with content
+        const course = await Course.findByPk(courseId, {
+            attributes: ['id', 'name', 'description', 'thumbnail_url'],
+            include: [
+                {
+                    model: Module,
+                    as: 'modules',
+                    attributes: ['id', 'name', 'order_num', 'description'],
+                    include: [
+                        {
+                            model: Topic,
+                            as: 'topics',
+                            attributes: ['id', 'name', 'order_num'],
+                            include: [
+                                {
+                                    model: Lesson,
+                                    as: 'lessons',
+                                    attributes: ['id', 'name', 'order_num', 'type', 'content_text', 'video_url', 'image_url', 'duration_minutes'],
+                                    include: [
+                                        { model: Quiz, as: 'quizzes', attributes: ['id', 'name'] },
+                                        { model: Assignment, as: 'assignments', attributes: ['id', 'title'] }
+                                    ]
+                                },
+                                { model: Quiz, as: 'quizzes', attributes: ['id', 'name'] },
+                                { model: Assignment, as: 'assignments', attributes: ['id', 'title'] }
+                            ]
+                        },
+                        { model: Quiz, as: 'quizzes', attributes: ['id', 'name'] },
+                        { model: Assignment, as: 'assignments', attributes: ['id', 'title'] }
+                    ]
+                }
+            ],
+            order: [
+                [{ model: Module, as: 'modules' }, 'order_num', 'ASC'],
+                [{ model: Module, as: 'modules' }, { model: Topic, as: 'topics' }, 'order_num', 'ASC'],
+                [{ model: Module, as: 'modules' }, { model: Topic, as: 'topics' }, { model: Lesson, as: 'lessons' }, 'order_num', 'ASC']
+            ]
+        });
+
+        // 3. Fetch lesson progress for this enrollment
+        const lessonProgress = await LessonProgress.findAll({
+            where: { enrollment_id: enrollment.id }
+        });
+        const progressMap = {};
+        lessonProgress.forEach(lp => {
+            progressMap[lp.lesson_id] = lp;
+        });
+
+        // 4. Transform data and calculate module-level locking
+        let totalLessonsInCourse = 0;
+        let completedLessonsInCourse = 0;
+        let prevModuleCompleted = true; // First module is always unlocked
+
+        const modules = course.modules.map((mod, modIdx) => {
+            let totalLessonsInMod = 0;
+            let completedLessonsInMod = 0;
+
+            const topics = mod.topics.map(top => {
+                const lessons = top.lessons.map(les => {
+                    totalLessonsInMod++;
+                    totalLessonsInCourse++;
+                    const progress = progressMap[les.id];
+                    const isCompleted = progress ? progress.is_completed : false;
+                    if (isCompleted) {
+                        completedLessonsInMod++;
+                        completedLessonsInCourse++;
+                    }
+
+                    return {
+                        ...les.toJSON(),
+                        isCompleted,
+                        progressPct: progress ? parseFloat(progress.video_watch_pct || 0) : 0,
+                        lastAccessed: progress ? progress.last_accessed : null
+                    };
+                });
+
+                return {
+                    ...top.toJSON(),
+                    isCompleted: lessons.length > 0 && lessons.every(l => l.isCompleted),
+                    lessons
+                };
+            });
+
+            const progressPct = totalLessonsInMod > 0 ? Math.round((completedLessonsInMod / totalLessonsInMod) * 100) : 0;
+            const isLocked = !prevModuleCompleted;
+            
+            // Update prevModuleCompleted for the next module
+            prevModuleCompleted = (progressPct === 100);
+
+            return {
+                ...mod.toJSON(),
+                progressPct,
+                isLocked,
+                isCompleted: progressPct === 100,
+                topics
+            };
+        });
+
+        return {
+            course: {
+                id: course.id,
+                name: course.name,
+                description: course.description,
+                thumbnail: course.thumbnail_url,
+                totalProgress: totalLessonsInCourse > 0 ? Math.round((completedLessonsInCourse / totalLessonsInCourse) * 100) : 0,
+                enrollmentId: enrollment.id,
+                modules
+            }
+        };
+    }
+
+    // ─── 12. Mark Lesson Completed ───────────────────────────────────────────────
+    async completeLesson(userId, lessonId, data = {}) {
+        const student = await this._getStudentByUserId(userId);
+        
+        // Find enrollment for this lesson's course
+        const lesson = await Lesson.findByPk(lessonId, {
+            include: [{ model: Topic, include: [{ model: Module }] }]
+        });
+        if (!lesson) throw { statusCode: 404, message: 'Lesson not found' };
+
+        const enrollment = await Enrollment.findOne({
+            include: [{
+                model: Batch,
+                where: { course_id: lesson.Topic.Module.course_id },
+                required: true
+            }],
+            where: { student_id: student.id, status: 'active' }
+        });
+
+        if (!enrollment) throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
+
+        // Use the existing ProgressService logic
+        const progressService = require('./progress.service');
+        return await progressService.updateLessonProgress(userId, enrollment.id, lessonId, {
+            is_completed: data.is_completed !== undefined ? data.is_completed : true,
+            video_watch_pct: data.video_watch_pct || 100
+        });
+    }
+
+    // ─── 13. Course Sidebar API (Lightweight Structure) ────────────────────────
+    async getCourseSidebar(userId, courseId) {
+        const student = await this._getStudentByUserId(userId);
+
+        const enrollment = await Enrollment.findOne({
+            include: [{ model: Batch, where: { course_id: courseId }, required: true }],
+            where: { student_id: student.id, status: 'active' }
+        });
+        if (!enrollment) throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
+
+        const course = await Course.findByPk(courseId, {
+            attributes: ['id', 'name'],
+            include: [
+                {
+                    model: Module,
+                    as: 'modules',
+                    attributes: ['id', 'name', 'order_num'],
+                    include: [
+                        {
+                            model: Topic,
+                            as: 'topics',
+                            attributes: ['id', 'name', 'order_num'],
+                            include: [
+                                {
+                                    model: Lesson,
+                                    as: 'lessons',
+                                    attributes: ['id', 'name', 'order_num', 'type']
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            order: [
+                [{ model: Module, as: 'modules' }, 'order_num', 'ASC'],
+                [{ model: Module, as: 'modules' }, { model: Topic, as: 'topics' }, 'order_num', 'ASC'],
+                [{ model: Module, as: 'modules' }, { model: Topic, as: 'topics' }, { model: Lesson, as: 'lessons' }, 'order_num', 'ASC']
+            ]
+        });
+
+        const lessonProgress = await LessonProgress.findAll({
+            where: { enrollment_id: enrollment.id },
+            attributes: ['lesson_id', 'is_completed']
+        });
+        const progressMap = {};
+        lessonProgress.forEach(lp => progressMap[lp.lesson_id] = lp.is_completed);
+
+        const sidebarData = [];
+        let prevModuleCompleted = true; // Module 1 is never locked
+
+        for (const mod of course.modules) {
+            let totalLessonsInMod = 0;
+            let completedLessonsInMod = 0;
+
+            const topics = mod.topics.map(top => {
+                const lessons = top.lessons.map(les => {
+                    totalLessonsInMod++;
+                    const isCompleted = progressMap[les.id] || false;
+                    if (isCompleted) completedLessonsInMod++;
+                    return { id: les.id, name: les.name, type: les.type, isCompleted };
+                });
+                return {
+                    id: top.id,
+                    name: top.name,
+                    isCompleted: lessons.length > 0 && lessons.every(l => l.isCompleted),
+                    lessons
+                };
+            });
+
+            const progressPct = totalLessonsInMod > 0 ? Math.round((completedLessonsInMod / totalLessonsInMod) * 100) : 0;
+            const isLocked = !prevModuleCompleted;
+            
+            // Update for next iteration
+            prevModuleCompleted = (progressPct === 100);
+
+            sidebarData.push({
+                id: mod.id,
+                name: mod.name,
+                progressPct,
+                isLocked,
+                topics
+            });
+        }
+
+        return {
+            courseId: course.id,
+            courseName: course.name,
+            sidebar: sidebarData
+        };
+    }
+
+    // ─── 14. Simplified Notes API ──────────────────────────────────────────────
+    async getLessonNote(userId, lessonId) {
+        return await Note.findOne({
+            where: { student_id: userId, lesson_id: lessonId }
+        });
+    }
+
+    async saveLessonNote(userId, lessonId, data) {
+        const { courseId, content } = data;
+        
+        // Find if note exists, if so update it, otherwise create it
+        const [note, created] = await Note.findOrCreate({
+            where: { student_id: userId, lesson_id: lessonId },
+            defaults: {
+                course_id: courseId,
+                content: content || ''
+            }
+        });
+
+        if (!created) {
+            await note.update({ content });
+        }
+
+        return note;
+    }
+
+    // ─── 15. Course Completion ──────────────────────────────────────────────────
+    async completeCourse(userId, courseId) {
+        const student = await this._getStudentByUserId(userId);
+
+        // 1. Find the enrollment
+        const enrollment = await Enrollment.findOne({
+            include: [{ model: Batch, where: { course_id: courseId }, required: true }],
+            where: { student_id: student.id, status: 'active' }
+        });
+        if (!enrollment) throw { statusCode: 403, message: 'Active enrollment not found for this course.' };
+
+        // 2. Calculate current progress to ensure it's 100%
+        const courseData = await this.getCourseView(userId, courseId);
+        if (courseData.course.totalProgress < 100) {
+            throw { 
+                statusCode: 400, 
+                message: `Course is only ${courseData.course.totalProgress}% complete. Please finish all lessons before completing the course.` 
+            };
+        }
+
+        // 3. Update Enrollment status
+        await enrollment.update({ status: 'completed' });
+
+        return {
+            success: true,
+            message: 'Congratulations! You have successfully completed the course.',
+            courseId: courseId,
+            completedAt: new Date()
+        };
+    }
+
+    // ─── 16. Attendance APIs ──────────────────────────────────────────────────
+    
+    async getAttendanceStats(userId) {
+        const student = await this._getStudentByUserId(userId);
+        
+        // 1. Get all attendance records for the student
+        const attendance = await StudentAttendance.findAll({
+            where: { student_id: student.id },
+            include: [{ 
+                model: AttendanceSession, 
+                attributes: ['session_date'] 
+            }],
+            order: [[AttendanceSession, 'session_date', 'DESC']]
+        });
+
+        const totalSessions = attendance.length;
+        if (totalSessions === 0) {
+            return {
+                total_days_present: 0,
+                average_attendance_percentage: 0,
+                streak: 0
+            };
+        }
+
+        const presentDays = attendance.filter(a => a.status === 'present' || a.status === 'late').length;
+        const avgPercentage = Math.round((presentDays / totalSessions) * 100);
+
+        // 2. Calculate Streak
+        let streak = 0;
+        for (const record of attendance) {
+            if (record.status === 'present' || record.status === 'late') {
+                streak++;
+            } else {
+                break; // Streak broken
+            }
+        }
+
+        return {
+            total_days_present: presentDays,
+            average_attendance_percentage: avgPercentage,
+            streak: streak
+        };
+    }
+
+    async getAttendanceTable(userId, query) {
+        const student = await this._getStudentByUserId(userId);
+        const { page = 1, limit = 10, search = '', status } = query;
+        const offset = (page - 1) * limit;
+
+        const whereClause = { student_id: student.id };
+        if (status) whereClause.status = status;
+
+        // Fetch attendance with sessions and batches for course name
+        const { count, rows } = await StudentAttendance.findAndCountAll({
+            where: whereClause,
+            include: [
+                {
+                    model: AttendanceSession,
+                    attributes: ['session_date'],
+                    include: [{
+                        model: Batch,
+                        attributes: ['name'],
+                        include: [{ model: Course, attributes: ['name'] }]
+                    }]
+                }
+            ],
+            limit: parseInt(limit),
+            offset: parseInt(offset),
+            order: [[AttendanceSession, 'session_date', 'DESC']]
+        });
+
+        // Helper to get day name
+        const getDayName = (dateStr) => {
+            const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            return days[new Date(dateStr).getDay()];
+        };
+
+        const data = rows.map(a => ({
+            id: a.id,
+            date: a.AttendanceSession.session_date,
+            day: getDayName(a.AttendanceSession.session_date),
+            course: a.AttendanceSession.Batch.Course.name,
+            batch: a.AttendanceSession.Batch.name,
+            status: a.status,
+            notes: a.notes
+        }));
+
+        return {
+            data,
+            pagination: {
+                total: count,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                totalPages: Math.ceil(count / limit)
+            }
+        };
+    }
+
+    // ─── 16. Student Quiz APIs ──────────────────────────────────────────────────
+    
+    async getCourseQuiz(userId, courseId, quizId) {
+        const student = await this._getStudentByUserId(userId);
+
+        // 1. Verify student is enrolled in this course
+        const enrollment = await Enrollment.findOne({
+            include: [{ model: Batch, where: { course_id: courseId }, required: true }],
+            where: { student_id: student.id, status: 'active' }
+        });
+        if (!enrollment) {
+            throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
+        }
+
+        // 2. Fetch quiz
+        const quiz = await Quiz.findByPk(quizId, {
+            attributes: ['id', 'name', 'time_limit_minutes']
+        });
+        if (!quiz) throw { statusCode: 404, message: 'Quiz not found' };
+
+        // 3. Fetch questions
+        const questions = await QuizQuestion.findAll({
+            where: { quiz_id: quizId },
+            attributes: ['id', 'question_text', 'options', 'type'],
+            order: [['order_num', 'ASC']]
+        });
+
+        // 4. Format options if they are stored as array of strings
+        const formattedQuestions = questions.map(q => {
+            let options = q.options;
+            if (Array.isArray(options) && typeof options[0] === 'string') {
+                options = options.map((opt, index) => ({
+                    optionId: String(index),
+                    option: opt
+                }));
+            }
+            return {
+                questionId: String(q.id),
+                question: q.question_text,
+                options: options || []
+            };
+        });
+
+        return {
+            quizId: String(quiz.id),
+            quizTitle: quiz.name,
+            quizTime: quiz.time_limit_minutes || 0,
+            courseId: String(courseId),
+            questions: formattedQuestions
+        };
+    }
+
+    async submitQuiz(userId, courseId, quizId, data) {
+        const student = await this._getStudentByUserId(userId);
+        const { answers, submittedAt, isAutoSubmitted } = data;
+
+        if (!answers || !Array.isArray(answers) || answers.length === 0) {
+            throw { statusCode: 400, message: 'No answers provided' };
+        }
+
+        // Verify student is enrolled in this course
+        const enrollment = await Enrollment.findOne({
+            include: [{ model: Batch, where: { course_id: courseId }, required: true }],
+            where: { student_id: student.id, status: 'active' }
+        });
+        
+        if (!enrollment) {
+            throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
+        }
+
+        // 3. Prevent duplicate final submissions
+        const existingSubmission = await QuizSubmission.findOne({
+            where: { student_id: userId, quiz_id: quizId, enrollment_id: enrollment.id }
+        });
+        if (existingSubmission) {
+            throw { statusCode: 400, message: 'Quiz already submitted' };
+        }
+
+        // 4. Calculate score
+        let score = 0;
+        const totalQuestions = await QuizQuestion.count({ where: { quiz_id: quizId } });
+
+        // Fetch all questions for this quiz to compare answers
+        const quizQuestions = await QuizQuestion.findAll({ where: { quiz_id: quizId } });
+        const questionMap = {};
+        quizQuestions.forEach(q => questionMap[q.id] = q);
+
+        // 5. Create submission record
+        const submission = await QuizSubmission.create({
+            student_id: userId, // Use userId to avoid foreign key violation
+            quiz_id: quizId,
+            enrollment_id: enrollment.id,
+            attempt_number: 1,
+            status: 'completed',
+            submitted_at: submittedAt || new Date()
+        });
+
+        // 6. Save answers and calculate score
+        for (const ans of answers) {
+            const q = questionMap[ans.questionId];
+            if (!q) continue;
+
+            let selectedAnswerText = null;
+            if (ans.selectedOptionId !== null && ans.selectedOptionId !== undefined) {
+                const optionIndex = parseInt(ans.selectedOptionId, 10);
+                if (Array.isArray(q.options) && optionIndex >= 0 && optionIndex < q.options.length) {
+                    selectedAnswerText = q.options[optionIndex];
+                }
+            }
+
+            const isCorrect = selectedAnswerText === q.correct_answer;
+            if (isCorrect) {
+                score += q.marks || 1;
+            }
+
+            await QuizAnswer.create({
+                submission_id: submission.id,
+                question_id: q.id,
+                selected_answer: selectedAnswerText,
+                is_correct: isCorrect
+            });
+        }
+
+        // Update submission with score
+        await submission.update({ score });
+
+        return {
+            submissionId: String(submission.id),
+            quizId: String(quizId),
+            courseId: String(courseId),
+            studentId: String(student.id),
+            submittedAt: submission.submitted_at,
+            isAutoSubmitted: isAutoSubmitted || false,
+            totalQuestions,
+            answeredQuestions: answers.length
+        };
+    }
+
+    async getQuizResult(userId, courseId, quizId) {
+        const student = await this._getStudentByUserId(userId);
+
+        const submission = await QuizSubmission.findOne({
+            where: { student_id: userId, quiz_id: quizId },
+            order: [['attempt_number', 'DESC']]
+        });
+
+        if (!submission) {
+            throw { statusCode: 404, message: 'Quiz submission not found' };
+        }
+
+        const totalQuestions = await QuizQuestion.count({ where: { quiz_id: quizId } });
+        
+        const quizAnswers = await QuizAnswer.findAll({
+            where: { submission_id: submission.id }
+        });
+
+        const correctAnswers = quizAnswers.filter(a => a.is_correct).length;
+        const wrongAnswers = quizAnswers.length - correctAnswers;
+        const quizPercentage = totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0;
+
+        // Grade calculation
+        let grade = 'D';
+        if (quizPercentage >= 90) grade = 'A+';
+        else if (quizPercentage >= 80) grade = 'A';
+        else if (quizPercentage >= 70) grade = 'B';
+        else if (quizPercentage >= 50) grade = 'C';
+
+        return {
+            quizId: String(quizId),
+            courseId: String(courseId),
+            studentId: String(student.id),
+            result: {
+                totalQuestions,
+                correctAnswers,
+                wrongAnswers,
+                quizPercentage,
+                timeTaken: {
+                    minutes: 10, // Fallback as we don't track start time
+                    seconds: 0
+                },
+                grade
+            }
+        };
+    }
+
+    async getCourseQuizReview(userId, courseId, quizId, filters = {}) {
+        const student = await this._getStudentByUserId(userId);
+        const { status } = filters;
+
+        const submission = await QuizSubmission.findOne({
+            where: { student_id: userId, quiz_id: quizId },
+            include: [
+                {
+                    model: QuizAnswer,
+                    include: [
+                        {
+                            model: QuizQuestion,
+                            attributes: ['id', 'question_text', 'options', 'correct_answer']
+                        }
+                    ]
+                }
+            ],
+            order: [['attempt_number', 'DESC']]
+        });
+
+        if (!submission) {
+            throw { statusCode: 404, message: 'Quiz submission not found' };
+        }
+
+        let review = submission.QuizAnswers.map(ans => {
+            const q = ans.QuizQuestion;
+            
+            let selectedOptionId = null;
+            let selectedOptionText = ans.selected_answer;
+            if (Array.isArray(q.options)) {
+                const idx = q.options.indexOf(selectedOptionText);
+                if (idx !== -1) selectedOptionId = String(idx);
+            }
+
+            let correctOptionId = null;
+            let correctOptionText = q.correct_answer;
+            if (Array.isArray(q.options)) {
+                const idx = q.options.indexOf(correctOptionText);
+                if (idx !== -1) correctOptionId = String(idx);
+            }
+
+            return {
+                questionId: String(q.id),
+                question: q.question_text,
+                studentSelectedAnswer: {
+                    optionId: selectedOptionId,
+                    option: selectedOptionText
+                },
+                correctAnswer: {
+                    optionId: correctOptionId,
+                    option: correctOptionText
+                },
+                isCorrect: ans.is_correct,
+                explanation: "Explanation for this answer is currently unavailable." // Fallback for UI
+            };
+        });
+
+        // Apply filtering if requested
+        if (status === 'correct') {
+            review = review.filter(r => r.isCorrect);
+        } else if (status === 'incorrect') {
+            review = review.filter(r => !r.isCorrect);
+        }
+
+        return {
+            quizId: String(quizId),
+            courseId: String(courseId),
+            studentId: String(student.id),
+            review
         };
     }
 }

@@ -399,6 +399,35 @@ class StudentPortalController {
             next(error);
         }
     }
+
+    // GET /student-portal/assignment/stats
+    async getAssignmentStats(req, res, next) {
+        try {
+            const stats = await studentPortalService.getAssignmentStats(req.user.id);
+            res.status(200).json({
+                success: true,
+                message: 'Assignment statistics retrieved successfully',
+                data: stats
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // GET /student-portal/assignment/table
+    async getAssignmentTable(req, res, next) {
+        try {
+            const result = await studentPortalService.getAssignmentTable(req.user.id, req.query);
+            res.status(200).json({
+                success: true,
+                message: 'Assignment table data retrieved successfully',
+                data: result.data,
+                pagination: result.pagination
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 module.exports = new StudentPortalController();

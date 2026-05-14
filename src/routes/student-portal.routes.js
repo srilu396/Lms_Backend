@@ -114,4 +114,8 @@ router.get('/course/:courseId/quiz/:quizId/review', studentPortalController.getC
 router.get('/attendance/stats', studentPortalController.getAttendanceStats);
 router.get('/attendance/table', studentPortalController.getAttendanceTable);
 
+// Assignment APIs
+router.get('/assignment/stats', studentPortalController.getAssignmentStats);
+router.get('/assignment/table', studentPortalController.getAssignmentTable);
+
 module.exports = router;

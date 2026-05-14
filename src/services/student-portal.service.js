@@ -807,7 +807,7 @@ class StudentPortalService {
         
         // 1. Get all attendance records for the student
         const attendance = await StudentAttendance.findAll({
-            where: { student_id: student.id },
+            where: { student_id: userId },
             include: [{ 
                 model: AttendanceSession, 
                 attributes: ['session_date'] 
@@ -849,7 +849,7 @@ class StudentPortalService {
         const { page = 1, limit = 10, search = '', status } = query;
         const offset = (page - 1) * limit;
 
-        const whereClause = { student_id: student.id };
+        const whereClause = { student_id: userId };
         if (status) whereClause.status = status;
 
         // Fetch attendance with sessions and batches for course name
@@ -1152,6 +1152,149 @@ class StudentPortalService {
             courseId: String(courseId),
             studentId: String(student.id),
             review
+        };
+    }
+
+    async getAssignmentStats(userId) {
+        const student = await this._getStudentByUserId(userId);
+        
+        const enrollments = await Enrollment.findAll({
+            where: { student_id: student.id, status: 'active' },
+            attributes: ['batch_id']
+        });
+        
+        const batchIds = enrollments.map(e => e.batch_id);
+        
+        if (batchIds.length === 0) {
+            return {
+                total_assignment: 0,
+                completed_assignments: 0,
+                assignment_completion_percentage: 0
+            };
+        }
+        
+        const batchAssignments = await models.BatchAssignment.findAll({
+            where: { batch_id: { [Op.in]: batchIds }, status: 'active' },
+            attributes: ['assignment_id']
+        });
+        
+        const assignmentIds = batchAssignments.map(ba => ba.assignment_id);
+        const totalAssignments = assignmentIds.length;
+        
+        if (totalAssignments === 0) {
+            return {
+                total_assignment: 0,
+                completed_assignments: 0,
+                assignment_completion_percentage: 0
+            };
+        }
+        
+        const submissions = await AssignmentSubmission.findAll({
+            where: {
+                student_id: userId,
+                assignment_id: { [Op.in]: assignmentIds },
+                status: { [Op.in]: ['submitted', 'graded'] }
+            },
+            attributes: ['assignment_id']
+        });
+        
+        const completedAssignments = submissions.length;
+        const completionPercentage = totalAssignments > 0 ? Math.round((completedAssignments / totalAssignments) * 100) : 0;
+        
+        return {
+            total_assignment: totalAssignments,
+            completed_assignments: completedAssignments,
+            assignment_completion_percentage: completionPercentage
+        };
+    }
+
+    async getAssignmentTable(userId, query) {
+        const student = await this._getStudentByUserId(userId);
+        const { page = 1, limit = 10, search = '', status } = query;
+        const offset = (page - 1) * limit;
+        
+        const enrollments = await Enrollment.findAll({
+            where: { student_id: student.id, status: 'active' },
+            attributes: ['batch_id']
+        });
+        
+        const batchIds = enrollments.map(e => e.batch_id);
+        
+        if (batchIds.length === 0) {
+            return {
+                data: [],
+                pagination: { total: 0, page: parseInt(page), limit: parseInt(limit), totalPages: 0 }
+            };
+        }
+        
+        const whereClause = { batch_id: { [Op.in]: batchIds }, status: 'active' };
+        
+        if (status === 'pending') {
+            const completedOrSubmittedSubmissions = await AssignmentSubmission.findAll({
+                where: {
+                    student_id: userId,
+                    status: { [Op.in]: ['submitted', 'graded'] }
+                },
+                attributes: ['assignment_id']
+            });
+            const completedIds = completedOrSubmittedSubmissions.map(s => s.assignment_id);
+            
+            whereClause.assignment_id = { [Op.notIn]: completedIds };
+        }
+        
+        const include = [
+            {
+                model: Assignment,
+                where: search ? { title: { [Op.iLike]: `%${search}%` } } : {},
+                required: true,
+                include: [
+                    { model: Course, attributes: ['name'] },
+                    {
+                        model: AssignmentSubmission,
+                        where: { student_id: userId },
+                        required: false
+                    }
+                ]
+            }
+        ];
+
+        if (status === 'submitted' || status === 'graded') {
+            include[0].include[1].required = true;
+            include[0].include[1].where.status = status;
+        }
+        
+        const { count, rows } = await models.BatchAssignment.findAndCountAll({
+            where: whereClause,
+            include: include,
+            limit: parseInt(limit),
+            offset: parseInt(offset),
+            order: [['due_date', 'ASC']]
+        });
+        
+        const data = rows.map(r => {
+            const submission = r.Assignment.AssignmentSubmissions && r.Assignment.AssignmentSubmissions[0];
+            let currentStatus = 'pending';
+            if (submission) {
+                currentStatus = submission.status;
+            }
+            
+            return {
+                assignment_id: r.Assignment.id,
+                assignment_name: r.Assignment.title,
+                course: r.Assignment.Course ? r.Assignment.Course.name : 'N/A',
+                due_date: r.due_date,
+                status: currentStatus
+            };
+        });
+        
+        return {
+            data,
+            pagination: {
+                total: count,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                totalPages: Math.ceil(count / limit)
+            }
         };
     }
 }

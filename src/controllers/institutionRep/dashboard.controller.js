@@ -2,21 +2,21 @@ const dashboardService = require('../../services/institutionRep/dashboard.servic
 
 class DashboardController {
     /**
-     * GET /api/v1/institution-rep/dashboard/overview
-     * Get dashboard overview for institution representative
+     * Get dashboard stats for the institution
      */
-    async getOverview(req, res, next) {
+    async getDashboardStats(req, res, next) {
         try {
+            // institution_id is attached to req.user by institutionRepAuth middleware
             const institutionId = req.user.institution_id;
             
-            const dashboardData = await dashboardService.getOverview(institutionId);
+            const stats = await dashboardService.getStats(institutionId);
 
             res.json({
                 success: true,
-                data: dashboardData
+                data: stats
             });
         } catch (error) {
-            console.error('Dashboard Overview Error:', error);
+            console.error('Error fetching dashboard stats:', error);
             next(error);
         }
     }

@@ -4,10 +4,10 @@ const dashboardController = require('../../controllers/institutionRep/dashboard.
 const institutionRepAuth = require('../../middlewares/institutionRepAuth');
 
 /**
- * @route   GET /api/v1/institution-rep/dashboard/overview
- * @desc    Get dashboard overview data
+ * @route   GET /api/v1/institution-rep/dashboard/stats
+ * @desc    Get dashboard KPI cards and stats for the institution
  * @access  Private (Institution Representative)
  */
-router.get('/overview', institutionRepAuth, dashboardController.getOverview);
+router.get('/stats', institutionRepAuth, dashboardController.getDashboardStats);
 
 module.exports = router;

@@ -7,6 +7,7 @@ const {
     BatchAssignment, 
     AttendanceSession, 
     StudentAttendance,
+    Student,
     sequelize 
 } = require('../../models');
 const { Op } = require('sequelize');
@@ -167,6 +168,154 @@ class DashboardService {
                 count: atRiskCount,
                 today_change: 0, // Cannot reliably determine historical change without snapshotting
                 urgency_label: urgencyLabel
+            }
+        };
+    }
+
+    /**
+     * Get monitoring list (at-risk and warning students)
+     */
+    async getMonitoringList(institutionId, { page, limit, search, batch_id }) {
+        // Step 1: Get all batches for this institution
+        const allBatches = await Batch.findAll({
+            where: { institution_id: institutionId },
+            attributes: ['id', 'name']
+        });
+
+        const batchFilters = allBatches.map(b => ({ batch_id: b.id, batch_name: b.name }));
+        let targetBatchIds = allBatches.map(b => b.id);
+
+        if (batch_id && batch_id !== 'all') {
+            const selectedBatchId = parseInt(batch_id);
+            if (!targetBatchIds.includes(selectedBatchId)) {
+                throw new Error('Unauthorized batch access');
+            }
+            targetBatchIds = [selectedBatchId];
+        }
+
+        if (targetBatchIds.length === 0) {
+            return {
+                students: [],
+                batch_filters: batchFilters,
+                pagination: { page, limit, total: 0, totalPages: 0 }
+            };
+        }
+
+        // Step 2 & 3: Get all students and calculate metrics
+        const enrollments = await Enrollment.findAll({
+            where: { batch_id: { [Op.in]: targetBatchIds } },
+            include: [
+                {
+                    model: Student,
+                    as: 'student',
+                    attributes: ['id', 'first_name', 'last_name']
+                },
+                {
+                    model: Batch,
+                    attributes: ['id', 'name']
+                },
+                {
+                    model: QuizSubmission,
+                    include: [{ model: Quiz, attributes: ['total_marks'] }]
+                },
+                {
+                    model: StudentAttendance
+                }
+            ]
+        });
+
+        // Get total sessions per batch for attendance calculation
+        const batchSessions = await AttendanceSession.findAll({
+            where: { batch_id: { [Op.in]: targetBatchIds } },
+            attributes: ['batch_id', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
+            group: ['batch_id'],
+            raw: true
+        });
+        
+        const batchSessionMap = {};
+        batchSessions.forEach(s => {
+            batchSessionMap[s.batch_id] = parseInt(s.count);
+        });
+
+        let students = enrollments.map(e => {
+            // Avg Quiz Score
+            let avgQuizScore = 0;
+            if (e.QuizSubmissions && e.QuizSubmissions.length > 0) {
+                let totalPct = 0;
+                let count = 0;
+                e.QuizSubmissions.forEach(sub => {
+                    const score = parseFloat(sub.score) || 0;
+                    const maxMarks = (sub.Quiz && sub.Quiz.total_marks) ? parseFloat(sub.Quiz.total_marks) : 100;
+                    totalPct += (score / maxMarks) * 100;
+                    count++;
+                });
+                avgQuizScore = count > 0 ? parseFloat((totalPct / count).toFixed(1)) : 0.0;
+            }
+
+            // Attendance
+            let sessionsAttended = 0;
+            let totalSessions = batchSessionMap[e.batch_id] || 0;
+            let attendancePercent = 0;
+
+            if (totalSessions > 0) {
+                sessionsAttended = e.StudentAttendances.filter(a => a.status === 'present' || a.status === 'late').length;
+                attendancePercent = Math.round((sessionsAttended / totalSessions) * 100);
+            } else {
+                attendancePercent = 100;
+            }
+
+            // Status logic
+            let status = 'on_track';
+            if (avgQuizScore < 50 || attendancePercent < 65) {
+                status = 'critical';
+            } else if (avgQuizScore < 70 || attendancePercent < 75) {
+                status = 'warning';
+            }
+
+            return {
+                student_id: e.student ? e.student.id : null,
+                student_name: e.student ? `${e.student.first_name} ${e.student.last_name}` : 'Unknown',
+                avatar_url: null,
+                batch_id: e.Batch ? e.Batch.id : null,
+                batch_name: e.Batch ? e.Batch.name : 'Unknown',
+                avg_quiz_score: avgQuizScore,
+                attendance_percent: attendancePercent,
+                sessions_attended: sessionsAttended,
+                total_sessions: totalSessions,
+                status: status
+            };
+        });
+
+        // Step 4: Filter - include ONLY critical or warning
+        students = students.filter(s => s.status === 'critical' || s.status === 'warning');
+
+        // Step 6: Apply search filter
+        if (search) {
+            const lowerSearch = search.toLowerCase();
+            students = students.filter(s => s.student_name.toLowerCase().includes(lowerSearch));
+        }
+
+        // Step 5: Sort - critical first, then warning. Within groups, lowest avg_quiz_score first.
+        students.sort((a, b) => {
+            if (a.status === b.status) {
+                return a.avg_quiz_score - b.avg_quiz_score;
+            }
+            return a.status === 'critical' ? -1 : 1;
+        });
+
+        // Step 6: Apply pagination
+        const total = students.length;
+        const totalPages = Math.ceil(total / limit);
+        const paginatedStudents = students.slice((page - 1) * limit, page * limit);
+
+        return {
+            students: paginatedStudents,
+            batch_filters: batchFilters,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages
             }
         };
     }

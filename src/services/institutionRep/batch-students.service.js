@@ -8,6 +8,7 @@ const {
     AttendanceSession,
     StudentAttendance,
     Quiz,
+    Course,
     sequelize
 } = require('../../models');
 const { Op } = require('sequelize');
@@ -132,6 +133,144 @@ class BatchStudentsService {
                 total: total,
                 totalPages: Math.ceil(total / limit)
             }
+        };
+    }
+
+    /**
+     * Get statistics for a specific student in a batch
+     */
+    async getStudentStats(batchId, studentId, institutionId) {
+        // 1. Verify batch belongs to institution
+        const batch = await Batch.findOne({
+            where: { id: batchId, institution_id: institutionId }
+        });
+
+        if (!batch) {
+            const error = new Error('Batch not found or access denied');
+            error.statusCode = 403;
+            throw error;
+        }
+
+        // 2. Verify student is enrolled in this batch
+        const enrollment = await Enrollment.findOne({
+            where: { batch_id: batchId, student_id: studentId },
+            include: [{ model: Student, as: 'student' }]
+        });
+
+        if (!enrollment) {
+            const error = new Error('Student not found in this batch');
+            error.statusCode = 403;
+            throw error;
+        }
+
+        const student = enrollment.student;
+
+        // Step 1: Student Basic Info
+        const student_info = {
+            student_id: `#STU-${new Date(student.created_at).getFullYear()}-${student.id.toString().padStart(3, '0')}`,
+            student_name: `${student.first_name} ${student.last_name}`,
+            email: student.email,
+            avatar_url: student.avatar_url || null,
+            status: student.status,
+            batch_name: batch.name
+        };
+
+        // Step 2: Card 1 - Overall Attendance
+        const total_working_days = await AttendanceSession.count({
+            where: { batch_id: batchId }
+        });
+
+        const days_present = await StudentAttendance.count({
+            where: { enrollment_id: enrollment.id, status: 'present' }
+        });
+
+        const attendance_percent = total_working_days > 0 
+            ? Math.round((days_present / total_working_days) * 100) 
+            : 0;
+
+        let attendance_label = 'Below average attendance';
+        if (attendance_percent >= 85) {
+            attendance_label = 'Above average attendance';
+        } else if (attendance_percent >= 75) {
+            attendance_label = 'Average attendance';
+        }
+
+        const attendance = {
+            attendance_percent,
+            days_present,
+            total_working_days,
+            attendance_label
+        };
+
+        // Step 3: Card 2 - Completed Assessments (Assignments only)
+        const assignments_submitted = await AssignmentSubmission.count({
+            where: { 
+                enrollment_id: enrollment.id,
+                status: { [Op.in]: ['submitted', 'graded'] }
+            }
+        });
+
+        const assignments_total = await BatchAssignment.count({
+            where: { batch_id: batchId }
+        });
+
+        const submission_rate_percent = assignments_total > 0 
+            ? Math.round((assignments_submitted / assignments_total) * 100) 
+            : 0;
+
+        const assessments = {
+            assignments_submitted,
+            assignments_total,
+            submission_rate_percent
+        };
+
+        // Step 4: Card 3 - Completed Quizzes (Quizzes only)
+        const quizzes_submitted_records = await QuizSubmission.findAll({
+            where: { enrollment_id: enrollment.id },
+            include: [{ model: Quiz, attributes: ['total_marks'] }]
+        });
+
+        const quizzes_submitted = quizzes_submitted_records.length;
+
+        const quizzes_total = await Quiz.count({
+            where: { 
+                course_id: batch.course_id,
+                is_published: true
+            }
+        });
+
+        let total_score_percent = 0;
+        quizzes_submitted_records.forEach(sub => {
+            const total_marks = (sub.Quiz && sub.Quiz.total_marks) ? sub.Quiz.total_marks : 100;
+            const score = parseFloat(sub.score || 0);
+            total_score_percent += (score / total_marks) * 100;
+        });
+
+        const quiz_proficiency_percent = quizzes_submitted > 0 
+            ? Math.round(total_score_percent / quizzes_submitted) 
+            : 0;
+
+        let proficiency_label = 'Needs Improvement';
+        if (quiz_proficiency_percent >= 85) {
+            proficiency_label = 'Excellent Proficiency';
+        } else if (quiz_proficiency_percent >= 70) {
+            proficiency_label = 'Good Proficiency';
+        } else if (quiz_proficiency_percent >= 50) {
+            proficiency_label = 'Average Proficiency';
+        }
+
+        const quizzes = {
+            quizzes_submitted,
+            quizzes_total,
+            quiz_proficiency_percent,
+            proficiency_label
+        };
+
+        return {
+            student_info,
+            attendance,
+            assessments,
+            quizzes
         };
     }
 }

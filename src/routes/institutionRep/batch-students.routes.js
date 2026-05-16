@@ -9,5 +9,6 @@ const institutionRepAuth = require('../../middlewares/institutionRepAuth');
  * @access  Private (Institution Representative)
  */
 router.get('/:batchId/students', institutionRepAuth, batchStudentsController.getBatchStudents);
+router.get('/:batchId/students/:studentId/stats', institutionRepAuth, batchStudentsController.getStudentStats);
 
 module.exports = router;

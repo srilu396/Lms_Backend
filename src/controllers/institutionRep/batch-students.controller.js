@@ -33,6 +33,33 @@ class BatchStudentsController {
             });
         }
     }
+
+    /**
+     * GET /api/v1/institution-rep/batches/:batchId/students/:studentId/stats
+     */
+    async getStudentStats(req, res) {
+        try {
+            const { batchId, studentId } = req.params;
+            const institutionId = req.user.institution_id;
+
+            const data = await batchStudentsService.getStudentStats(batchId, studentId, institutionId);
+
+            return res.status(200).json({
+                success: true,
+                data
+            });
+        } catch (error) {
+            console.error('getStudentStats controller error:', error);
+            
+            const statusCode = error.statusCode || 500;
+            const message = error.message || 'Internal Server Error';
+
+            return res.status(statusCode).json({
+                success: false,
+                message
+            });
+        }
+    }
 }
 
 module.exports = new BatchStudentsController();

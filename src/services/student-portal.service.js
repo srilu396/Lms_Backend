@@ -1155,17 +1155,203 @@ class StudentPortalService {
         };
     }
 
+    // ─── 17. Student Assignment Completion APIs ────────────────────────────────
+    
+    async getCourseAssignment(userId, courseId, assignmentId) {
+        const student = await this._getStudentByUserId(userId);
+
+        const enrollment = await Enrollment.findOne({
+            include: [{ model: Batch, where: { course_id: courseId }, required: true }],
+            where: { student_id: student.id, status: 'active' }
+        });
+        if (!enrollment) {
+            throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
+        }
+
+        const assignment = await Assignment.findByPk(assignmentId, {
+            include: [{ model: Module, attributes: ['id', 'name'] }]
+        });
+        if (!assignment || assignment.course_id !== parseInt(courseId, 10)) {
+            throw { statusCode: 404, message: 'Assignment not found or does not belong to this course' };
+        }
+
+        const submission = await AssignmentSubmission.findOne({
+            where: { student_id: userId, assignment_id: assignmentId, enrollment_id: enrollment.id }
+        });
+
+        const batchAssignment = await models.BatchAssignment.findOne({
+            where: { batch_id: enrollment.batch_id, assignment_id: assignmentId }
+        });
+
+        let uploadedFiles = [];
+        let draftContent = null;
+        
+        if (submission) {
+            if (submission.submission_data) {
+                draftContent = submission.submission_data.submissionContent || null;
+                if (submission.submission_data.attachments && submission.submission_data.attachments.length > 0) {
+                    uploadedFiles = submission.submission_data.attachments;
+                }
+            } else if (submission.file_url) {
+                uploadedFiles.push({
+                    fileId: 'file_1',
+                    fileName: submission.file_url.split('/').pop() || 'uploaded_file',
+                    fileUrl: submission.file_url,
+                    fileType: 'unknown'
+                });
+            }
+        }
+
+        return {
+            assignmentId: String(assignment.id),
+            courseId: String(courseId),
+            moduleId: assignment.module_id ? String(assignment.module_id) : null,
+            assignmentTitle: assignment.title,
+            moduleName: assignment.Module ? assignment.Module.name : null,
+            description: assignment.description || '',
+            dueDate: batchAssignment ? batchAssignment.due_date : null,
+            maxMarks: assignment.max_score ? parseFloat(assignment.max_score) : 100,
+            draftContent: draftContent,
+            uploadedFiles: uploadedFiles
+        };
+    }
+
+    async submitCourseAssignment(userId, courseId, assignmentId, data) {
+        const student = await this._getStudentByUserId(userId);
+
+        const enrollment = await Enrollment.findOne({
+            include: [{ model: Batch, where: { course_id: courseId }, required: true }],
+            where: { student_id: student.id, status: 'active' }
+        });
+        
+        if (!enrollment) {
+            throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
+        }
+
+        const assignment = await Assignment.findByPk(assignmentId);
+        if (!assignment || assignment.course_id !== parseInt(courseId, 10)) {
+            throw { statusCode: 404, message: 'Assignment not found' };
+        }
+
+        const existingSubmission = await AssignmentSubmission.findOne({
+            where: { student_id: userId, assignment_id: assignmentId, enrollment_id: enrollment.id }
+        });
+
+        if (existingSubmission && existingSubmission.status === 'submitted') {
+            throw { statusCode: 400, message: 'Assignment already submitted' };
+        }
+
+        let fileUrl = null;
+        if (data.attachments && data.attachments.length > 0) {
+            fileUrl = data.attachments[0].fileUrl;
+        }
+
+        const submissionData = {
+            submissionContent: data.submissionContent || null,
+            socialLinks: data.socialLinks || [],
+            githubLinks: data.githubLinks || [],
+            attachments: data.attachments || []
+        };
+
+        const isDraft = data.isDraft || false;
+        const status = isDraft ? 'pending' : 'submitted';
+
+        let submission;
+        if (existingSubmission) {
+            submission = await existingSubmission.update({
+                file_url: fileUrl || existingSubmission.file_url,
+                submission_data: submissionData,
+                status: status,
+                submitted_at: isDraft ? existingSubmission.submitted_at : (data.submittedAt || new Date())
+            });
+        } else {
+            submission = await AssignmentSubmission.create({
+                student_id: userId,
+                assignment_id: assignmentId,
+                enrollment_id: enrollment.id,
+                file_url: fileUrl,
+                submission_data: submissionData,
+                status: status,
+                submitted_at: isDraft ? null : (data.submittedAt || new Date())
+            });
+        }
+
+        return {
+            submissionId: String(submission.id),
+            studentId: String(userId),
+            assignmentId: String(assignmentId),
+            submittedAt: submission.submitted_at,
+            status: submission.status
+        };
+    }
+
+    async getCourseAssignmentResult(userId, courseId, assignmentId) {
+        const student = await this._getStudentByUserId(userId);
+
+        const enrollment = await Enrollment.findOne({
+            include: [{ model: Batch, where: { course_id: courseId }, required: true }],
+            where: { student_id: student.id, status: 'active' }
+        });
+        
+        if (!enrollment) {
+            throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
+        }
+
+        const submission = await AssignmentSubmission.findOne({
+            where: { student_id: userId, assignment_id: assignmentId, enrollment_id: enrollment.id }
+        });
+
+        const assignment = await Assignment.findByPk(assignmentId);
+
+        let uploadedFiles = [];
+        let submittedContent = null;
+        if (submission) {
+            if (submission.submission_data) {
+                submittedContent = submission.submission_data.submissionContent || null;
+                if (submission.submission_data.attachments && submission.submission_data.attachments.length > 0) {
+                    uploadedFiles = submission.submission_data.attachments;
+                }
+            } else if (submission.file_url) {
+                uploadedFiles.push({
+                    fileName: submission.file_url.split('/').pop() || 'uploaded_file',
+                    fileUrl: submission.file_url,
+                    fileType: 'unknown'
+                });
+            }
+        }
+
+        return {
+            assignmentId: String(assignmentId),
+            studentId: String(userId),
+            result: {
+                obtainedMarks: submission && submission.grade ? parseFloat(submission.grade) : null,
+                totalMarks: assignment && assignment.max_score ? parseFloat(assignment.max_score) : 100,
+                passMarks: assignment && assignment.max_score ? parseFloat(assignment.max_score) * 0.4 : 40,
+                status: submission ? submission.status : 'pending',
+                submittedAt: submission ? submission.submitted_at : null,
+                feedback: submission && submission.feedback ? {
+                    reviewedBy: "Tutor",
+                    comments: submission.feedback,
+                    tags: []
+                } : null,
+                submittedContent: submittedContent,
+                submittedFiles: uploadedFiles
+            }
+        };
+    }
+
+
     async getAssignmentStats(userId) {
         const student = await this._getStudentByUserId(userId);
         
         const enrollments = await Enrollment.findAll({
             where: { student_id: student.id, status: 'active' },
-            attributes: ['batch_id']
+            include: [{ model: Batch, required: true, attributes: ['course_id'] }]
         });
         
-        const batchIds = enrollments.map(e => e.batch_id);
+        const courseIds = [...new Set(enrollments.map(e => e.Batch.course_id))];
         
-        if (batchIds.length === 0) {
+        if (courseIds.length === 0) {
             return {
                 total_assignment: 0,
                 completed_assignments: 0,
@@ -1173,32 +1359,23 @@ class StudentPortalService {
             };
         }
         
-        const batchAssignments = await models.BatchAssignment.findAll({
-            where: { batch_id: { [Op.in]: batchIds }, status: 'active' },
-            attributes: ['assignment_id']
+        const totalAssignments = await Assignment.count({
+            where: { course_id: { [Op.in]: courseIds }, status: 'active' }
         });
-        
-        const assignmentIds = batchAssignments.map(ba => ba.assignment_id);
-        const totalAssignments = assignmentIds.length;
-        
-        if (totalAssignments === 0) {
-            return {
-                total_assignment: 0,
-                completed_assignments: 0,
-                assignment_completion_percentage: 0
-            };
-        }
         
         const submissions = await AssignmentSubmission.findAll({
             where: {
                 student_id: userId,
-                assignment_id: { [Op.in]: assignmentIds },
                 status: { [Op.in]: ['submitted', 'graded'] }
             },
-            attributes: ['assignment_id']
+            include: [{
+                model: Assignment,
+                where: { course_id: { [Op.in]: courseIds } },
+                required: true
+            }]
         });
         
-        const completedAssignments = submissions.length;
+        const completedAssignments = new Set(submissions.map(s => s.assignment_id)).size;
         const completionPercentage = totalAssignments > 0 ? Math.round((completedAssignments / totalAssignments) * 100) : 0;
         
         return {
@@ -1215,74 +1392,80 @@ class StudentPortalService {
         
         const enrollments = await Enrollment.findAll({
             where: { student_id: student.id, status: 'active' },
-            attributes: ['batch_id']
+            include: [{ model: Batch, required: true, attributes: ['course_id'] }]
         });
         
         const batchIds = enrollments.map(e => e.batch_id);
+        const courseIds = [...new Set(enrollments.map(e => e.Batch.course_id))];
         
-        if (batchIds.length === 0) {
+        if (courseIds.length === 0) {
             return {
                 data: [],
                 pagination: { total: 0, page: parseInt(page), limit: parseInt(limit), totalPages: 0 }
             };
         }
         
-        const whereClause = { batch_id: { [Op.in]: batchIds }, status: 'active' };
+        const whereClause = { 
+            course_id: { [Op.in]: courseIds },
+            status: 'active' 
+        };
         
-        if (status === 'pending') {
-            const completedOrSubmittedSubmissions = await AssignmentSubmission.findAll({
-                where: {
-                    student_id: userId,
-                    status: { [Op.in]: ['submitted', 'graded'] }
-                },
-                attributes: ['assignment_id']
-            });
-            const completedIds = completedOrSubmittedSubmissions.map(s => s.assignment_id);
-            
-            whereClause.assignment_id = { [Op.notIn]: completedIds };
+        if (search) {
+            whereClause.title = { [Op.iLike]: `%${search}%` };
         }
         
         const include = [
+            { model: Course, attributes: ['name'] },
             {
-                model: Assignment,
-                where: search ? { title: { [Op.iLike]: `%${search}%` } } : {},
-                required: true,
-                include: [
-                    { model: Course, attributes: ['name'] },
-                    {
-                        model: AssignmentSubmission,
-                        where: { student_id: userId },
-                        required: false
-                    }
-                ]
+                model: AssignmentSubmission,
+                where: { student_id: userId },
+                required: false
             }
         ];
 
-        if (status === 'submitted' || status === 'graded') {
-            include[0].include[1].required = true;
-            include[0].include[1].where.status = status;
+        if (status === 'pending') {
+            const completedSubmissions = await AssignmentSubmission.findAll({
+                where: { student_id: userId, status: { [Op.in]: ['submitted', 'graded'] } },
+                attributes: ['assignment_id']
+            });
+            const completedIds = completedSubmissions.map(s => s.assignment_id);
+            if (completedIds.length > 0) {
+                whereClause.id = { [Op.notIn]: completedIds };
+            }
+        } else if (status === 'submitted' || status === 'graded') {
+            include[1].required = true;
+            include[1].where.status = status;
         }
         
-        const { count, rows } = await models.BatchAssignment.findAndCountAll({
+        const { count, rows } = await Assignment.findAndCountAll({
             where: whereClause,
             include: include,
             limit: parseInt(limit),
             offset: parseInt(offset),
-            order: [['due_date', 'ASC']]
+            order: [['created_at', 'DESC']],
+            distinct: true
+        });
+        
+        const batchAssignments = await models.BatchAssignment.findAll({
+            where: { batch_id: { [Op.in]: batchIds } }
+        });
+        const dueDateMap = {};
+        batchAssignments.forEach(ba => {
+            dueDateMap[ba.assignment_id] = ba.due_date;
         });
         
         const data = rows.map(r => {
-            const submission = r.Assignment.AssignmentSubmissions && r.Assignment.AssignmentSubmissions[0];
+            const submission = r.AssignmentSubmissions && r.AssignmentSubmissions[0];
             let currentStatus = 'pending';
             if (submission) {
                 currentStatus = submission.status;
             }
             
             return {
-                assignment_id: r.Assignment.id,
-                assignment_name: r.Assignment.title,
-                course: r.Assignment.Course ? r.Assignment.Course.name : 'N/A',
-                due_date: r.due_date,
+                assignment_id: r.id,
+                assignment_name: r.title,
+                course: r.Course ? r.Course.name : 'N/A',
+                due_date: dueDateMap[r.id] || null,
                 status: currentStatus
             };
         });

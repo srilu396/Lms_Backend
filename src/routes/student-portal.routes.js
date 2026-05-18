@@ -117,5 +117,8 @@ router.get('/attendance/table', studentPortalController.getAttendanceTable);
 // Assignment APIs
 router.get('/assignment/stats', studentPortalController.getAssignmentStats);
 router.get('/assignment/table', studentPortalController.getAssignmentTable);
+router.get('/course/:courseId/assignment/:assignmentId', studentPortalController.getCourseAssignment);
+router.post('/course/:courseId/assignment/:assignmentId/submit', studentPortalController.submitCourseAssignment);
+router.get('/course/:courseId/assignment/:assignmentId/result', studentPortalController.getCourseAssignmentResult);
 
 module.exports = router;

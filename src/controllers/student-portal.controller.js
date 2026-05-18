@@ -428,6 +428,43 @@ class StudentPortalController {
             next(error);
         }
     }
+
+    // GET /student-portal/course/:courseId/assignment/:assignmentId
+    async getCourseAssignment(req, res, next) {
+        try {
+            const { courseId, assignmentId } = req.params;
+            const data = await studentPortalService.getCourseAssignment(req.user.id, courseId, assignmentId);
+            res.status(200).json(data);
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // POST /student-portal/course/:courseId/assignment/:assignmentId/submit
+    async submitCourseAssignment(req, res, next) {
+        try {
+            const { courseId, assignmentId } = req.params;
+            const result = await studentPortalService.submitCourseAssignment(req.user.id, courseId, assignmentId, req.body);
+            res.status(200).json({
+                success: true,
+                message: 'Assignment submitted successfully',
+                submission: result
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // GET /student-portal/course/:courseId/assignment/:assignmentId/result
+    async getCourseAssignmentResult(req, res, next) {
+        try {
+            const { courseId, assignmentId } = req.params;
+            const data = await studentPortalService.getCourseAssignmentResult(req.user.id, courseId, assignmentId);
+            res.status(200).json(data);
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 module.exports = new StudentPortalController();

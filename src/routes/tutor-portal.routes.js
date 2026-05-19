@@ -3,10 +3,27 @@ const router = express.Router();
 const tutorPortalController = require('../controllers/tutor-portal.controller');
 const authMiddleware = require('../middlewares/auth.middleware');
 const roleMiddleware = require('../middlewares/role.middleware');
+const { Tutor } = require('../models');
 
 // All tutor portal routes require authentication + tutor role
 router.use(authMiddleware);
 router.use(roleMiddleware('tutor'));
+
+// Middleware to resolve the internal tutor_id from the users table email
+const attachTutorId = async (req, res, next) => {
+    try {
+        const tutor = await Tutor.findOne({ where: { email: req.user.email } });
+        if (!tutor) {
+            return res.status(403).json({ success: false, message: 'Tutor profile not found for this user.' });
+        }
+        req.tutorId = tutor.id;
+        next();
+    } catch (error) {
+        next(error);
+    }
+};
+
+router.use(attachTutorId);
 
 // GET /tutor-portal/stats
 // Overview cards: Total Batches, Total Students, Pending Evaluations, Today's Sessions
@@ -55,6 +72,18 @@ router.get('/batch/:batchId/quizzes', tutorPortalController.getBatchStudentQuizz
 // GET /tutor-portal/quiz/:quizId/submission/:studentId
 // Full review data for a specific student quiz submission
 router.get('/quiz/:quizId/submission/:studentId', tutorPortalController.getQuizReview);
+
+// GET /tutor-portal/quiz/:quizId/submission/:studentId/download
+// Download quiz submission review as PDF
+router.get('/quiz/:quizId/submission/:studentId/download', tutorPortalController.downloadQuizReviewPDF);
+
+// GET /tutor-portal/batch/:batchId/quiz/:quizId/submission/:studentId
+// Batch-specific student quiz submission review
+router.get('/batch/:batchId/quiz/:quizId/submission/:studentId', tutorPortalController.getQuizReview);
+
+// GET /tutor-portal/batch/:batchId/quiz/:quizId/submission/:studentId/download
+// Batch-specific student quiz submission download
+router.get('/batch/:batchId/quiz/:quizId/submission/:studentId/download', tutorPortalController.downloadQuizReviewPDF);
 
 // --------------------------------------------------
 // ASSIGNMENT MODULE

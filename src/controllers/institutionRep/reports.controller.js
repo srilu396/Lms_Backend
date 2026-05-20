@@ -22,6 +22,38 @@ const getRecentReports = async (req, res) => {
     }
 };
 
+const downloadReport = async (req, res) => {
+    try {
+        const institutionId = req.user.institution_id;
+        const { reportType } = req.params;
+
+        const validTypes = ['attendance', 'performance', 'progress', 'at_risk'];
+        if (!validTypes.includes(reportType)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid reportType. Must be attendance, performance, progress, or at_risk.'
+            });
+        }
+
+        const { filename, doc } = await reportsService.generateReportPdf(institutionId, reportType);
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+        doc.pipe(res);
+        doc.end();
+    } catch (error) {
+        console.error('Error downloading report:', error);
+        if (!res.headersSent) {
+            return res.status(500).json({
+                success: false,
+                message: 'Internal server error'
+            });
+        }
+    }
+};
+
 module.exports = {
-    getRecentReports
+    getRecentReports,
+    downloadReport
 };

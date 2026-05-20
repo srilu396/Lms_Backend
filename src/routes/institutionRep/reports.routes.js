@@ -10,4 +10,11 @@ const institutionRepAuth = require('../../middlewares/institutionRepAuth');
  */
 router.get('/recent', institutionRepAuth, reportsController.getRecentReports);
 
+/**
+ * @route   GET /api/v1/institution-rep/reports/:reportType/download
+ * @desc    Download PDF report
+ * @access  Private (Institution Representative)
+ */
+router.get('/:reportType/download', institutionRepAuth, reportsController.downloadReport);
+
 module.exports = router;

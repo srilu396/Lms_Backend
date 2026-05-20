@@ -50,7 +50,7 @@ module.exports = (sequelize, DataTypes) => {
         Enrollment.hasMany(models.AssignmentSubmission, { foreignKey: 'enrollment_id' });
         Enrollment.hasMany(models.StudentProgress, { foreignKey: 'enrollment_id' });
         Enrollment.hasMany(models.LessonProgress, { foreignKey: 'enrollment_id' });
-        Enrollment.hasMany(models.StudentAttendance, { foreignKey: 'enrollment_id' });
+        Enrollment.hasMany(models.StudentAttendance, { foreignKey: 'enrollment_id', as: 'attendances' });
         Enrollment.hasMany(models.StudentRiskReport, { foreignKey: 'enrollment_id' });
     };
 

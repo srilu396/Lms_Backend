@@ -28,15 +28,6 @@ module.exports = (sequelize, DataTypes) => {
                 key: 'id'
             }
         },
-        tutor_id: {
-            type: DataTypes.BIGINT,
-            field: 'instructor_id', // Maps the model's tutor_id to DB's instructor_id column
-            allowNull: true,
-            references: {
-                model: 'users',
-                key: 'id'
-            }
-        },
         status: {
             type: DataTypes.ENUM('active', 'completed', 'cancelled', 'inactive'),
             defaultValue: 'active'
@@ -57,8 +48,8 @@ module.exports = (sequelize, DataTypes) => {
     Batch.associate = (models) => {
         Batch.belongsTo(models.Course, { foreignKey: 'course_id' });
         Batch.belongsTo(models.Institution, { foreignKey: 'institution_id' });
-        Batch.belongsTo(models.User, { foreignKey: 'tutor_id', as: 'tutor' });
-        Batch.hasMany(models.BatchTutor, { foreignKey: 'batch_id' });
+        Batch.hasMany(models.BatchTutor, { foreignKey: 'batch_id', as: 'batchTutors' });
+        Batch.belongsToMany(models.User, { through: models.BatchTutor, foreignKey: 'batch_id', otherKey: 'tutor_id', as: 'tutors' });
         Batch.hasMany(models.Enrollment, { foreignKey: 'batch_id' });
         Batch.hasMany(models.AttendanceSession, { foreignKey: 'batch_id' });
         Batch.hasMany(models.StudentRiskReport, { foreignKey: 'batch_id' });

@@ -50,7 +50,7 @@ app.use('/api/v1/batches', require('./routes/batch.routes'));
 app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/batches.routes'));
 app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/batch-details.routes'));
 app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/batch-students.routes'));
-app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/grade-distribution.routes'));
+app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/export-report.routes'));
 app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/attendance-calendar.routes'));
 app.use('/api/v1/institution-rep/dashboard', require('./routes/institutionRep/dashboard.routes'));
 app.use('/api/v1/institution-rep/student-performance', require('./routes/institutionRep/student-performance.routes'));

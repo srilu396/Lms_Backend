@@ -60,6 +60,39 @@ class BatchStudentsController {
             });
         }
     }
+
+    /**
+     * GET /api/v1/institution-rep/batches/:batchId/students/:studentId/academic-performance
+     */
+    async getAcademicPerformance(req, res) {
+        try {
+            const { batchId, studentId } = req.params;
+            const institutionId = req.user.institution_id;
+            const { page, limit, search, type } = req.query;
+
+            const data = await batchStudentsService.getAcademicPerformance(batchId, studentId, institutionId, {
+                page: page ? parseInt(page) : 1,
+                limit: limit ? parseInt(limit) : 10,
+                search,
+                type: type || 'all'
+            });
+
+            return res.status(200).json({
+                success: true,
+                data
+            });
+        } catch (error) {
+            console.error('getAcademicPerformance controller error:', error);
+            
+            const statusCode = error.statusCode || 500;
+            const message = error.message || 'Internal Server Error';
+
+            return res.status(statusCode).json({
+                success: false,
+                message
+            });
+        }
+    }
 }
 
 module.exports = new BatchStudentsController();

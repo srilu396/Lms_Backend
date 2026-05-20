@@ -10,5 +10,6 @@ const institutionRepAuth = require('../../middlewares/institutionRepAuth');
  */
 router.get('/:batchId/students', institutionRepAuth, batchStudentsController.getBatchStudents);
 router.get('/:batchId/students/:studentId/stats', institutionRepAuth, batchStudentsController.getStudentStats);
+router.get('/:batchId/students/:studentId/academic-performance', institutionRepAuth, batchStudentsController.getAcademicPerformance);
 
 module.exports = router;

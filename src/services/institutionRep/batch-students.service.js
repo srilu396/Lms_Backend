@@ -4,11 +4,14 @@ const {
     Enrollment, 
     QuizSubmission, 
     AssignmentSubmission, 
+    Assignment,
     BatchAssignment,
     AttendanceSession,
     StudentAttendance,
     Quiz,
     Course,
+    Module,
+    Topic,
     sequelize
 } = require('../../models');
 const { Op } = require('sequelize');
@@ -272,6 +275,144 @@ class BatchStudentsService {
             assessments,
             quizzes
         };
+    }
+
+    /**
+     * Get academic performance for a student in a batch
+     */
+    async getAcademicPerformance(batchId, studentId, institutionId, queryParams) {
+        const { page = 1, limit = 10, search = '', type = 'all' } = queryParams;
+
+        // 1. Verify batch belongs to institution
+        const batch = await Batch.findOne({
+            where: { id: batchId, institution_id: institutionId }
+        });
+
+        if (!batch) {
+            const error = new Error('Batch not found or access denied');
+            error.statusCode = 403;
+            throw error;
+        }
+
+        // 2. Verify student is enrolled in this batch
+        const enrollment = await Enrollment.findOne({
+            where: { batch_id: batchId, student_id: studentId }
+        });
+
+        if (!enrollment) {
+            const error = new Error('Student not found in this batch');
+            error.statusCode = 403;
+            throw error;
+        }
+
+        let combinedSubmissions = [];
+
+        // Fetch Assignments if type is 'all' or 'assignment'
+        if (type === 'all' || type === 'assignment') {
+            const assignmentSubmissions = await AssignmentSubmission.findAll({
+                where: { enrollment_id: enrollment.id },
+                include: [
+                    {
+                        model: Assignment,
+                        include: [
+                            { model: Module, attributes: ['name'] },
+                            { model: Topic, attributes: ['name'] }
+                        ]
+                    }
+                ]
+            });
+
+            assignmentSubmissions.forEach(sub => {
+                const assignment = sub.Assignment;
+                if (!assignment) return;
+
+                const score_obtained = parseFloat(sub.grade || 0);
+                const score_total = parseFloat(assignment.max_score || 100);
+                const score_percent = score_total > 0 ? Math.round((score_obtained / score_total) * 100) : 0;
+
+                combinedSubmissions.push({
+                    title: assignment.title,
+                    subtitle: (assignment.Module && assignment.Module.name) || (assignment.Topic && assignment.Topic.name) || null,
+                    type: 'assignment',
+                    submission_date: sub.submitted_at ? this._formatDate(sub.submitted_at) : this._formatDate(sub.created_at),
+                    raw_date: sub.submitted_at || sub.created_at,
+                    score_obtained,
+                    score_total,
+                    score_percent
+                });
+            });
+        }
+
+        // Fetch Quizzes if type is 'all' or 'quiz'
+        if (type === 'all' || type === 'quiz') {
+            const quizSubmissions = await QuizSubmission.findAll({
+                where: { enrollment_id: enrollment.id },
+                include: [
+                    {
+                        model: Quiz,
+                        include: [
+                            { model: Module, as: 'module', attributes: ['name'] },
+                            { model: Topic, as: 'topic', attributes: ['name'] }
+                        ]
+                    }
+                ]
+            });
+
+            quizSubmissions.forEach(sub => {
+                const quiz = sub.Quiz;
+                if (!quiz) return;
+
+                const score_obtained = parseFloat(sub.score || 0);
+                const score_total = parseFloat(quiz.total_marks || 100);
+                const score_percent = score_total > 0 ? Math.round((score_obtained / score_total) * 100) : 0;
+
+                combinedSubmissions.push({
+                    title: quiz.name,
+                    subtitle: (quiz.module && quiz.module.name) || (quiz.topic && quiz.topic.name) || null,
+                    type: 'quiz',
+                    submission_date: sub.submitted_at ? this._formatDate(sub.submitted_at) : this._formatDate(sub.created_at),
+                    raw_date: sub.submitted_at || sub.created_at,
+                    score_obtained,
+                    score_total,
+                    score_percent
+                });
+            });
+        }
+
+        // Search Filter
+        if (search) {
+            const searchLower = search.toLowerCase();
+            combinedSubmissions = combinedSubmissions.filter(sub => 
+                sub.title.toLowerCase().includes(searchLower)
+            );
+        }
+
+        // Sort by date descending
+        combinedSubmissions.sort((a, b) => new Date(b.raw_date) - new Date(a.raw_date));
+
+        // Pagination
+        const total = combinedSubmissions.length;
+        const offset = (page - 1) * limit;
+        const paginatedSubmissions = combinedSubmissions.slice(offset, offset + limit);
+
+        // Remove raw_date before returning
+        const finalSubmissions = paginatedSubmissions.map(({ raw_date, ...rest }) => rest);
+
+        return {
+            submissions: finalSubmissions,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total: total,
+                totalPages: Math.ceil(total / limit)
+            }
+        };
+    }
+
+    _formatDate(date) {
+        const d = new Date(date);
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        return `${months[d.getMonth()]} ${d.getDate().toString().padStart(2, '0')}, ${d.getFullYear()}`;
     }
 }
 

@@ -280,8 +280,6 @@ class DashboardService {
                 batch_name: e.Batch ? e.Batch.name : 'Unknown',
                 avg_quiz_score: avgQuizScore,
                 attendance_percent: attendancePercent,
-                sessions_attended: sessionsAttended,
-                total_sessions: totalSessions,
                 status: status
             };
         });

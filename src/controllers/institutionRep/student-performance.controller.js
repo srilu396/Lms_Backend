@@ -29,26 +29,27 @@ class StudentPerformanceController {
     }
 
     /**
-     * GET /api/v1/institution-rep/student-performance/metrics
+     * GET /api/v1/institution-rep/student-performance/top-students
      */
-    async getMetrics(req, res) {
+    async getTopStudents(req, res) {
         try {
             const institutionId = req.user.institution_id;
-            const params = {
-                page: req.query.page,
-                limit: req.query.limit,
-                search: req.query.search,
-                batch_id: req.query.batch_id
-            };
 
-            const data = await studentPerformanceService.getMetrics(institutionId, params);
+            if (!institutionId) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Forbidden: Institution ID could not be resolved from token.'
+                });
+            }
+
+            const data = await studentPerformanceService.getTopStudents(institutionId);
 
             return res.status(200).json({
                 success: true,
                 data
             });
         } catch (error) {
-            console.error('getMetrics controller error:', error);
+            console.error('getTopStudents controller error:', error);
             
             const statusCode = error.statusCode || 500;
             const message = error.message || 'Internal Server Error';

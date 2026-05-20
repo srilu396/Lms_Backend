@@ -9,6 +9,12 @@ const institutionRepAuth = require('../../middlewares/institutionRepAuth');
  * @access  Private (Institution Representative)
  */
 router.get('/summary', institutionRepAuth, studentPerformanceController.getSummary);
-+router.get('/metrics', institutionRepAuth, studentPerformanceController.getMetrics);
+
+/**
+ * @route   GET /api/v1/institution-rep/student-performance/top-students
+ * @desc    Get top 10 students by average quiz score
+ * @access  Private (Institution Representative)
+ */
+router.get('/top-students', institutionRepAuth, studentPerformanceController.getTopStudents);
 
 module.exports = router;

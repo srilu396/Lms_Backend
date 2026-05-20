@@ -71,6 +71,78 @@ class BatchListExport {
         await workbook.xlsx.write(res);
         res.end();
     }
+
+    /**
+     * Generate PDF and stream it to response
+     */
+    async generatePDF(data, res) {
+        const PDFDocument = require('pdfkit-table');
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'attachment; filename="batch_report.pdf"');
+
+        // Create a document
+        const doc = new PDFDocument({ margin: 30, size: 'A4' });
+
+        // Pipe its output to the response
+        doc.pipe(res);
+
+        // Header
+        const institutionName = data.length > 0 ? data[0].institution_name : 'Institution';
+        doc.fontSize(20).text('Institution Batch Progress Report', { align: 'center' });
+        doc.moveDown(0.5);
+        doc.fontSize(12).text(`Institution: ${institutionName}`, { align: 'center' });
+        doc.text(`Date Generated: ${new Date().toLocaleDateString()}`, { align: 'center' });
+        doc.moveDown(2);
+
+        // Summary Section
+        const totalBatches = data.length;
+        const avgProgress = totalBatches > 0 
+            ? Math.round(data.reduce((sum, b) => sum + (b.progress_percentage || 0), 0) / totalBatches)
+            : 0;
+
+        doc.fontSize(14).text('Summary', { underline: true });
+        doc.moveDown(0.5);
+        doc.fontSize(11).text(`Total Batches: ${totalBatches}`);
+        doc.text(`Average Progress: ${avgProgress}%`);
+        doc.moveDown(2);
+
+        // Table Data
+        const table = {
+            title: "Batch Details",
+            headers: [
+                { label: "Batch Code", property: 'batch_code', width: 80, headerColor: '#4F46E5', headerOpacity: 1, color: '#ffffff' },
+                { label: "Batch Name", property: 'batch_name', width: 100, headerColor: '#4F46E5', headerOpacity: 1, color: '#ffffff' },
+                { label: "Course", property: 'course', width: 100, headerColor: '#4F46E5', headerOpacity: 1, color: '#ffffff' },
+                { label: "Tutor", property: 'tutor', width: 80, headerColor: '#4F46E5', headerOpacity: 1, color: '#ffffff' },
+                { label: "Students", property: 'students', width: 50, headerColor: '#4F46E5', headerOpacity: 1, color: '#ffffff' },
+                { label: "Progress", property: 'progress', width: 50, headerColor: '#4F46E5', headerOpacity: 1, color: '#ffffff' },
+                { label: "Status", property: 'status', width: 60, headerColor: '#4F46E5', headerOpacity: 1, color: '#ffffff' },
+            ],
+            datas: data.map(batch => ({
+                batch_code: batch.batch_id || batch.batch_code || 'N/A', 
+                batch_name: batch.batch_name || 'N/A',
+                course: `${batch.course_name || batch.course || 'N/A'}\n(${batch.department || 'N/A'})`,
+                tutor: batch.tutor || batch.assigned_tutor?.name || 'N/A',
+                students: String(batch.total_students || 0),
+                progress: `${batch.progress_percentage || 0}%`,
+                status: batch.status || batch.progress_status || 'N/A'
+            }))
+        };
+
+        await doc.table(table, {
+            prepareHeader: () => doc.font("Helvetica-Bold").fontSize(10),
+            prepareRow: (row, indexColumn, indexRow, rectRow, rectCell) => {
+                doc.font("Helvetica").fontSize(9);
+                if (indexColumn === 0) {
+                    doc.addBackground(rectRow, (indexRow % 2 ? '#f9fafb' : '#ffffff'));
+                }
+            }
+        });
+
+        // Finalize the PDF and end the stream
+        doc.end();
+    }
 }
 
 module.exports = new BatchListExport();

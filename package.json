@@ -28,6 +28,8 @@
     "joi": "^18.0.2",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.1",
+    "pdfkit": "^0.18.0",
+    "pdfkit-table": "^0.2.11",
     "pg": "^8.20.0",
     "pg-hstore": "^2.3.4",
     "sequelize": "^6.37.8",

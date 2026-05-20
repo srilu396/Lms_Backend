@@ -78,6 +78,7 @@ class InstitutionRepBatchService {
                 department: batch.department || 'Design', // Default to Design if null as per example
                 start_date: batch.start_date,
                 status: batch.status,
+                total_students: batch.Enrollments ? batch.Enrollments.length : 0,
                 progress_percentage: stats.progress_percentage,
                 progress_status: stats.progress_status
             });

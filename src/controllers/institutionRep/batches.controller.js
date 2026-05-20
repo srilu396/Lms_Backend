@@ -37,6 +37,8 @@ class InstitutionRepBatchesController {
 
             if (formatType === 'excel') {
                 return await batchExport.generateExcel(data.batches, res);
+            } else if (formatType === 'pdf') {
+                return await batchExport.generatePDF(data.batches, res);
             } else {
                 return await batchExport.generateCSV(data.batches, res);
             }

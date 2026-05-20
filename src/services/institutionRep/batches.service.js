@@ -132,13 +132,13 @@ class InstitutionRepBatchService {
             const enrollmentId = enrollment.id;
 
             const lessons = await LessonProgress.count({ 
-                where: { student_id: studentId, enrollment_id: enrollmentId, is_completed: true } 
+                where: { enrollment_id: enrollmentId, is_completed: true } 
             });
             const assignments = await AssignmentSubmission.count({ 
-                where: { student_id: studentId, enrollment_id: enrollmentId, status: { [Op.in]: ['submitted', 'graded'] } } 
+                where: { enrollment_id: enrollmentId, status: { [Op.in]: ['submitted', 'graded'] } } 
             });
             const quizzes = await QuizSubmission.count({ 
-                where: { student_id: studentId, enrollment_id: enrollmentId, status: { [Op.in]: ['completed', 'reviewed'] } } 
+                where: { enrollment_id: enrollmentId, status: { [Op.in]: ['completed', 'reviewed'] } } 
             });
 
             return lessons + assignments + quizzes;

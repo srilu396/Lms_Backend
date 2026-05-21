@@ -39,7 +39,7 @@ class InstitutionRepBatchService {
         if (search) {
             whereBatch[Op.or] = [
                 { name: { [Op.iLike]: `%${search}%` } },
-                { '$tutor.full_name$': { [Op.iLike]: `%${search}%` } }
+                { '$tutors.full_name$': { [Op.iLike]: `%${search}%` } }
             ];
         }
 
@@ -54,7 +54,7 @@ class InstitutionRepBatchService {
                     model: Institution,
                     attributes: ['id', 'name']
                 },
-                { model: User, as: 'tutor', attributes: ['id', 'full_name'] }
+                { model: User, as: 'tutors', attributes: ['id', 'full_name'] }
             ],
             limit,
             offset,
@@ -73,7 +73,7 @@ class InstitutionRepBatchService {
                 batch_id: `#BATCH-${batch.id}`,
                 batch_name: batch.name,
                 institution_name: batch.Institution?.name || 'N/A',
-                tutor: batch.tutor?.full_name || 'Unassigned',
+                tutor: (batch.tutors && batch.tutors.length > 0) ? batch.tutors.map(t => t.full_name).join(', ') : 'Unassigned',
                 course: batch.Course?.name || 'N/A',
                 department: batch.department || 'Design', // Default to Design if null as per example
                 start_date: batch.start_date,

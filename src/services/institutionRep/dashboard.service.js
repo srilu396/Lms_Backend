@@ -96,7 +96,7 @@ class DashboardService {
                     model: QuizSubmission, 
                     include: [{ model: Quiz, attributes: ['total_marks'] }] 
                 },
-                { model: StudentAttendance }
+                { model: StudentAttendance, as: 'attendances' }
             ]
         });
 
@@ -134,7 +134,7 @@ class DashboardService {
             let attendancePct = 0;
             const totalBatchSessions = batchSessionMap[e.batch_id] || 0;
             if (totalBatchSessions > 0) {
-                const presentCount = e.StudentAttendances.filter(a => a.status === 'present' || a.status === 'late').length;
+                const presentCount = e.attendances ? e.attendances.filter(a => a.status === 'present' || a.status === 'late').length : 0;
                 attendancePct = (presentCount / totalBatchSessions) * 100;
             } else {
                 // If no sessions, they are not failing attendance
@@ -219,7 +219,8 @@ class DashboardService {
                     include: [{ model: Quiz, attributes: ['total_marks'] }]
                 },
                 {
-                    model: StudentAttendance
+                    model: StudentAttendance,
+                    as: 'attendances'
                 }
             ]
         });
@@ -258,7 +259,7 @@ class DashboardService {
             let attendancePercent = 0;
 
             if (totalSessions > 0) {
-                sessionsAttended = e.StudentAttendances.filter(a => a.status === 'present' || a.status === 'late').length;
+                sessionsAttended = e.attendances ? e.attendances.filter(a => a.status === 'present' || a.status === 'late').length : 0;
                 attendancePercent = Math.round((sessionsAttended / totalSessions) * 100);
             } else {
                 attendancePercent = 100;

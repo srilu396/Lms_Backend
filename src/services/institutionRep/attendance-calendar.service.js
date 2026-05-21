@@ -31,7 +31,8 @@ class AttendanceCalendarService {
 
         // 2. Verify student exists and belongs to batch
         const student = await Student.findOne({
-            where: { id: studentId }
+            where: { id: studentId },
+            attributes: ['id', 'first_name', 'last_name', 'created_at']
         });
 
         if (!student) {

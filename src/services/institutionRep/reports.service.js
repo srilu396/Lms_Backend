@@ -83,7 +83,8 @@ const generateReportPdf = async (institutionId, reportType) => {
                 include: [
                     { 
                         model: Student, 
-                        as: 'student'
+                        as: 'student',
+                        attributes: ['id', 'first_name', 'last_name', 'email', 'status', 'created_at']
                     }
                 ]
             }
@@ -223,7 +224,8 @@ const generateReportPdf = async (institutionId, reportType) => {
             where: { student_id: studentIds, submitted_at: { [Op.lte]: today } }
         });
         const assignmentSubmissions = await AssignmentSubmission.findAll({
-            where: { student_id: studentIds, submitted_at: { [Op.lte]: today } }
+            where: { student_id: studentIds, submitted_at: { [Op.lte]: today } },
+            attributes: ['id', 'student_id', 'enrollment_id', 'status', 'submitted_at']
         });
 
         const totalQuizzes = quizzes.length;

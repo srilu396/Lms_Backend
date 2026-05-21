@@ -27,7 +27,7 @@ class BatchDetailsService {
                 },
                 { 
                     model: User, 
-                    as: 'tutor', 
+                    as: 'tutors', 
                     attributes: ['id', 'full_name'] 
                 }
             ]
@@ -56,7 +56,7 @@ class BatchDetailsService {
                 batch_id: `#BATCH-${batch.id}`,
                 batch_name: batch.name,
                 course_name: batch.Course?.name || 'N/A',
-                tutor: batch.tutor?.full_name || 'Unassigned',
+                tutor: (batch.tutors && batch.tutors.length > 0) ? batch.tutors.map(t => t.full_name).join(', ') : 'Unassigned',
                 total_active_students: 0,
                 batch_avg_score: 0,
                 assignment_completion_percent: 0,
@@ -147,7 +147,7 @@ class BatchDetailsService {
             batch_id: `#BATCH-${batch.id}`,
             batch_name: batch.name,
             course_name: batch.Course?.name || 'N/A',
-            tutor: batch.tutor?.full_name || 'Unassigned',
+            tutor: (batch.tutors && batch.tutors.length > 0) ? batch.tutors.map(t => t.full_name).join(', ') : 'Unassigned',
             total_active_students: totalActiveStudents,
             batch_avg_score: batchAvgScore,
             assignment_completion_percent: assignmentCompletionPercent,

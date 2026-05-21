@@ -52,6 +52,7 @@ class BatchStudentsService {
                 {
                     model: Student,
                     as: 'student',
+                    attributes: ['id', 'first_name', 'last_name', 'email', 'status', 'created_at'],
                     where: search ? {
                         [Op.or]: [
                             { first_name: { [Op.like]: `%${search}%` } },
@@ -157,7 +158,11 @@ class BatchStudentsService {
         // 2. Verify student is enrolled in this batch
         const enrollment = await Enrollment.findOne({
             where: { batch_id: batchId, student_id: studentId },
-            include: [{ model: Student, as: 'student' }]
+            include: [{ 
+                model: Student, 
+                as: 'student',
+                attributes: ['id', 'first_name', 'last_name', 'email', 'status', 'created_at']
+            }]
         });
 
         if (!enrollment) {
@@ -311,6 +316,7 @@ class BatchStudentsService {
         if (type === 'all' || type === 'assignment') {
             const assignmentSubmissions = await AssignmentSubmission.findAll({
                 where: { enrollment_id: enrollment.id },
+                attributes: ['id', 'grade', 'submitted_at', 'created_at', 'enrollment_id', 'assignment_id', 'status'],
                 include: [
                     {
                         model: Assignment,

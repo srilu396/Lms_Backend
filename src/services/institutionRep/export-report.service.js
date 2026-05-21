@@ -9,7 +9,7 @@ class ExportReportService {
             where: { id: batchId, institution_id: institutionId },
             include: [
                 { model: Course },
-                { model: User, as: 'tutor' }
+                { model: User, as: 'tutors' }
             ]
         });
 
@@ -25,7 +25,11 @@ class ExportReportService {
 
         const enrollments = await Enrollment.findAll({
             where: { batch_id: batchId },
-            include: [{ model: Student, as: 'student' }]
+            include: [{ 
+                model: Student, 
+                as: 'student',
+                attributes: ['id', 'first_name', 'last_name', 'email', 'status', 'created_at'] 
+            }]
         });
 
         const studentsData = await Promise.all(enrollments.map(async (enrollment) => {
@@ -100,7 +104,7 @@ class ExportReportService {
         doc.fontSize(12).font('Helvetica-Bold').text('Batch Details:');
         doc.font('Helvetica').text(`Batch Name: ${batch.name}`);
         doc.text(`Course Name: ${batch.Course ? batch.Course.title : 'N/A'}`);
-        doc.text(`Tutor Name: ${batch.tutor ? batch.tutor.first_name + ' ' + batch.tutor.last_name : 'N/A'}`);
+        doc.text(`Tutor Name: ${(batch.tutors && batch.tutors.length > 0) ? batch.tutors.map(t => t.first_name + ' ' + t.last_name).join(', ') : 'N/A'}`);
         doc.text(`Total Active Students: ${totalActiveStudents}`).moveDown();
         
         doc.fontSize(12).font('Helvetica-Bold').text('Batch Overview Metrics:');

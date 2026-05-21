@@ -10,7 +10,6 @@ class TutorController {
                 data: tutor
             });
         } catch (error) {
-            console.error('Error creating tutor:', error);
             
             if (error.name === 'SequelizeUniqueConstraintError') {
                 return res.status(400).json({
@@ -42,7 +41,6 @@ class TutorController {
                 pagination: result.pagination
             });
         } catch (error) {
-            console.error('Error getting tutors:', error);
             res.status(500).json({
                 success: false,
                 message: 'Server error retrieving tutors'
@@ -59,7 +57,6 @@ class TutorController {
                 data: tutor
             });
         } catch (error) {
-            console.error('Error fetching tutor by id:', error);
             res.status(error.statusCode || 500).json({
                 success: false,
                 message: error.message || 'Server error fetching tutor'
@@ -76,7 +73,6 @@ class TutorController {
                 data: tutor
             });
         } catch (error) {
-            console.error('Error updating tutor:', error);
 
             if (error.name === 'SequelizeUniqueConstraintError') {
                 return res.status(400).json({
@@ -101,7 +97,6 @@ class TutorController {
                 data: null
             });
         } catch (error) {
-            console.error('Error deleting tutor:', error);
             res.status(error.statusCode || 500).json({
                 success: false,
                 message: error.message || 'Server error deleting tutor'
@@ -118,7 +113,6 @@ class TutorController {
                 data: count
             });
         } catch (error) {
-            console.error('Error fetching total tutor count:', error);
             res.status(500).json({
                 success: false,
                 message: 'Server error retrieving count'
@@ -135,7 +129,6 @@ class TutorController {
                 data: count
             });
         } catch (error) {
-            console.error('Error fetching active tutor count:', error);
             res.status(500).json({
                 success: false,
                 message: 'Server error retrieving active count'
@@ -152,7 +145,6 @@ class TutorController {
                 data: result
             });
         } catch (error) {
-            console.error('Error fetching newly added tutors count:', error);
             res.status(500).json({
                 success: false,
                 message: 'Server error retrieving count'

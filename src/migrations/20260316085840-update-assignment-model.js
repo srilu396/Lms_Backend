@@ -44,7 +44,6 @@ module.exports = {
       try {
         await queryInterface.sequelize.query("ALTER TYPE enum_assignments_status ADD VALUE IF NOT EXISTS 'inactive'");
       } catch (e) {
-        console.warn("Could not add 'inactive' to enum_assignments_status. It might already exist.", e.message);
       }
     } catch (err) {
       if (!transaction.finished) await transaction.rollback();
@@ -70,7 +69,6 @@ module.exports = {
       try {
         await queryInterface.sequelize.query('DROP TYPE IF EXISTS "enum_assignments_submission_type"');
       } catch (e) {
-        console.warn("Could not drop submission_type enum", e.message);
       }
     } catch (err) {
       if (!transaction.finished) await transaction.rollback();

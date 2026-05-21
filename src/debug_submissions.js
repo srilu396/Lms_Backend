@@ -3,7 +3,6 @@ const models = require('./models/index');
 
 async function debugSubmissions() {
     try {
-        console.log("--- DEBUGGING QUIZ SUBMISSIONS ---\n");
 
         const submission = await models.QuizSubmission.findOne({
             include: [
@@ -14,15 +13,10 @@ async function debugSubmissions() {
         });
 
         if (submission) {
-            console.log("✅ Found a submission:");
-            console.log(JSON.stringify(submission, null, 2));
         } else {
-            console.log("❌ No submissions found in database.");
         }
 
     } catch (error) {
-        console.error("❌ Error during debug:");
-        console.error(error);
     } finally {
         await models.sequelize.close();
     }

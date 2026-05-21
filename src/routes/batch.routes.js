@@ -32,6 +32,12 @@ router.post('/', upload.single('file'), (req, res, next) => {
     next();
 }, validate(createBatchSchema), batchController.createBatch);
 
+// Bulk upload batches
+router.post('/bulk-upload', upload.single('file'), (req, res, next) => {
+    // Basic validation could be added here if needed, but the controller handles it
+    next();
+}, batchController.bulkCreateBatches);
+
 // Get list of batches with pagination and search
 router.get('/', batchController.getBatches);
 

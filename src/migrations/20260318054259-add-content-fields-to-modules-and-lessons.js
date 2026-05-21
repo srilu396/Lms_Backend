@@ -40,7 +40,6 @@ module.exports = {
       await queryInterface.sequelize.query("ALTER TYPE \"enum_lessons_type\" ADD VALUE IF NOT EXISTS 'mixed'");
     } catch (e) {
       // Ignore if not postgres or other error
-      console.log('Enum update skipped/failed:', e.message);
     }
   },
 

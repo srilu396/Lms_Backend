@@ -32,7 +32,6 @@ class UserController {
                 pagination: result.pagination
             });
         } catch (error) {
-            console.error('Error getting users:', error);
             res.status(500).json({
                 success: false,
                 message: 'Server error retrieving users'
@@ -50,7 +49,6 @@ class UserController {
                 data: user
             });
         } catch (error) {
-            console.error('Error fetching user by id:', error);
             res.status(error.statusCode || 500).json({
                 success: false,
                 message: error.message || 'Server error fetching user'
@@ -68,7 +66,6 @@ class UserController {
                 data: { count }
             });
         } catch (error) {
-            console.error('Error getting total admins:', error);
             res.status(500).json({
                 success: false,
                 message: 'Server error retrieving total admins'
@@ -86,7 +83,6 @@ class UserController {
                 data: { count }
             });
         } catch (error) {
-            console.error('Error getting total representatives:', error);
             res.status(500).json({
                 success: false,
                 message: 'Server error retrieving total representatives'
@@ -104,7 +100,6 @@ class UserController {
                 data: { count }
             });
         } catch (error) {
-            console.error('Error getting total institutions:', error);
             res.status(500).json({
                 success: false,
                 message: 'Server error retrieving total institutions'
@@ -122,7 +117,6 @@ class UserController {
                 data: user
             });
         } catch (error) {
-            console.error('Error updating user:', error);
             res.status(error.statusCode || 500).json({
                 success: false,
                 message: error.message || 'Server error updating user'
@@ -140,7 +134,6 @@ class UserController {
                 data: null
             });
         } catch (error) {
-            console.error('Error deleting user:', error);
             res.status(error.statusCode || 500).json({
                 success: false,
                 message: error.message || 'Server error deleting user'

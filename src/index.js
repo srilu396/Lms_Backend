@@ -78,6 +78,15 @@ app.use('/api/v1/domains', require('./routes/domain.routes'));
 app.use('/api/v1/quizzes', require('./routes/quiz.routes'));
 app.use('/api/v1/tutors', require('./routes/tutor.routes'));
 app.use('/api/v1/batches', require('./routes/batch.routes'));
+app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/batches.routes'));
+app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/batch-details.routes'));
+app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/batch-students.routes'));
+app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/export-report.routes'));
+app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/attendance-calendar.routes'));
+app.use('/api/v1/institution-rep/reports', require('./routes/institutionRep/reports.routes'));
+app.use('/api/v1/institution-rep/dashboard', require('./routes/institutionRep/dashboard.routes'));
+app.use('/api/v1/institution-rep/profile', require('./routes/institutionRep/profile.routes'));
+app.use('/api/v1/institution-rep/student-performance', require('./routes/institutionRep/student-performance.routes'));
 app.use('/api/v1/contact-requests', require('./routes/contact.routes'));
 app.use('/api/v1/enrollments', require('./routes/enrollment.routes'));
 app.use('/api/v1/progress', require('./routes/progress.routes'));
@@ -98,7 +107,6 @@ const startServer = async () => {
     try {
         await connectDB();
         const server = app.listen(PORT, () => {
-            console.log(`Server is running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
         });
 
         // Graceful shutdown handler
@@ -121,7 +129,6 @@ const startServer = async () => {
         process.on('SIGTERM', () => shutdown('SIGTERM'));
 
     } catch (error) {
-        console.error('Failed to start the server due to database connection issue');
     }
 };
 

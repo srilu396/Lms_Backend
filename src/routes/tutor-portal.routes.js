@@ -25,6 +25,46 @@ const attachTutorId = async (req, res, next) => {
 
 router.use(attachTutorId);
 
+const fs = require('fs');
+const multer = require('multer');
+const path = require('path');
+
+// Ensure upload directory exists
+const uploadDir = 'uploads/profiles';
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+        cb(null, 'profile-' + uniqueSuffix + path.extname(file.originalname));
+    }
+});
+
+const upload = multer({
+    storage: storage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only image files are allowed!'), false);
+        }
+    }
+});
+
+// GET /tutor-portal/profile
+// Returns the logged-in tutor's profile
+router.get('/profile', tutorPortalController.getProfile);
+
+// PUT /tutor-portal/profile
+// Updates the logged-in tutor's profile (including image)
+router.put('/profile', upload.single('profile_image'), tutorPortalController.updateProfile);
+
 // GET /tutor-portal/stats
 // Overview cards: Total Batches, Total Students, Pending Evaluations, Today's Sessions
 router.get('/stats', tutorPortalController.getStats);
@@ -104,6 +144,22 @@ router.get('/batch/:batchId/assignment-stats', tutorPortalController.getBatchAss
 // GET /tutor-portal/batch/:batchId/assignments
 // Student assignment list in a specific batch (table data)
 router.get('/batch/:batchId/assignments', tutorPortalController.getBatchStudentAssignments);
+
+// GET /tutor-portal/assignment/:assignmentId/submission/:studentId
+// Full review data for a specific student assignment submission (resolved via active enrollment)
+router.get('/assignment/:assignmentId/submission/:studentId', tutorPortalController.getAssignmentReview);
+
+// GET /tutor-portal/batch/:batchId/assignment/:assignmentId/submission/:studentId
+// Batch-specific student assignment submission review
+router.get('/batch/:batchId/assignment/:assignmentId/submission/:studentId', tutorPortalController.getAssignmentReview);
+
+// POST /tutor-portal/assignment/:assignmentId/submission/:studentId/evaluate
+// Grade or draft evaluation for a specific student assignment submission
+router.post('/assignment/:assignmentId/submission/:studentId/evaluate', tutorPortalController.evaluateAssignmentSubmission);
+
+// POST /tutor-portal/batch/:batchId/assignment/:assignmentId/submission/:studentId/evaluate
+// Batch-specific grade or draft evaluation for a student assignment submission
+router.post('/batch/:batchId/assignment/:assignmentId/submission/:studentId/evaluate', tutorPortalController.evaluateAssignmentSubmission);
 
 module.exports = router;
 

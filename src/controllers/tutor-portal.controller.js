@@ -2,6 +2,44 @@ const tutorPortalService = require('../services/tutor-portal.service');
 
 class TutorPortalController {
 
+    // GET /tutor-portal/profile
+    async getProfile(req, res, next) {
+        try {
+            const profile = await tutorPortalService.getProfile(req.tutorId);
+            res.status(200).json({
+                success: true,
+                message: 'Tutor profile retrieved successfully',
+                data: profile
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // PUT /tutor-portal/profile
+    async updateProfile(req, res, next) {
+        try {
+            const updateData = { ...req.body };
+            
+            // If there's a file uploaded, add its URL/path to updateData
+            if (req.file) {
+                updateData.profile_image = `/uploads/profiles/${req.file.filename}`;
+            }
+
+            // We pass both req.tutorId (internal tutor table id) and req.user.id (users table id) 
+            // so we can update both tables as done in student portal.
+            const updatedProfile = await tutorPortalService.updateProfile(req.tutorId, req.user.id, updateData);
+            
+            res.status(200).json({
+                success: true,
+                message: 'Profile updated successfully',
+                data: updatedProfile
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
     // GET /tutor-portal/stats
     // Returns the 4 overview card values for the tutor dashboard
     async getStats(req, res, next) {
@@ -196,13 +234,15 @@ class TutorPortalController {
     }
 
     // GET /tutor-portal/quiz/:quizId/submission/:studentId
+    // GET /tutor-portal/batch/:batchId/quiz/:quizId/submission/:studentId
     async getQuizReview(req, res, next) {
         try {
-            const { quizId, studentId } = req.params;
+            const { quizId, studentId, batchId } = req.params;
             const reviewData = await tutorPortalService.getQuizSubmissionReview(
                 req.tutorId,
                 quizId,
-                studentId
+                studentId,
+                batchId
             );
 
             res.status(200).json({
@@ -479,6 +519,49 @@ class TutorPortalController {
                 message: 'Batch student assignments retrieved successfully',
                 data: data.data,
                 pagination: data.pagination
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // GET /tutor-portal/assignment/:assignmentId/submission/:studentId
+    // GET /tutor-portal/batch/:batchId/assignment/:assignmentId/submission/:studentId
+    async getAssignmentReview(req, res, next) {
+        try {
+            const { assignmentId, studentId, batchId } = req.params;
+            const data = await tutorPortalService.getAssignmentSubmissionReview(
+                req.tutorId,
+                assignmentId,
+                studentId,
+                batchId
+            );
+            res.status(200).json({
+                success: true,
+                message: 'Assignment submission review data retrieved successfully',
+                data
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // POST /tutor-portal/assignment/:assignmentId/submission/:studentId/evaluate
+    // POST /tutor-portal/batch/:batchId/assignment/:assignmentId/submission/:studentId/evaluate
+    async evaluateAssignmentSubmission(req, res, next) {
+        try {
+            const { assignmentId, studentId, batchId } = req.params;
+            const data = await tutorPortalService.evaluateAssignmentSubmission(
+                req.tutorId,
+                assignmentId,
+                studentId,
+                batchId,
+                req.body
+            );
+            res.status(200).json({
+                success: true,
+                message: req.body.is_draft ? 'Draft evaluation saved successfully' : 'Assignment evaluated successfully',
+                data
             });
         } catch (error) {
             next(error);

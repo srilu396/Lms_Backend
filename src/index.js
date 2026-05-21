@@ -5,8 +5,9 @@ const cookieParser = require('cookie-parser');
 const path = require('path');
 const helmet = require('helmet');
 const compression = require('compression');
+const rateLimit = require('express-rate-limit');
 
-const { connectDB } = require('./db/connect');
+const { connectDB, sequelize } = require('./db/connect');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -23,6 +24,15 @@ app.use(cors({
 
 // Compress responses
 app.use(compression());
+
+// Rate Limiting
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    limit: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+});
+app.use(limiter);
 
 // Middleware setup
 app.use(express.json()); // Used to parse JSON bodies
@@ -87,9 +97,29 @@ app.use(errorHandler);
 const startServer = async () => {
     try {
         await connectDB();
-        app.listen(PORT, () => {
+        const server = app.listen(PORT, () => {
             console.log(`Server is running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
         });
+
+        // Graceful shutdown handler
+        const shutdown = async (signal) => {
+            console.log(`\n${signal} received. Shutting down gracefully...`);
+            server.close(async () => {
+                console.log('HTTP server closed.');
+                try {
+                    await sequelize.close();
+                    console.log('Database connection closed.');
+                    process.exit(0);
+                } catch (err) {
+                    console.error('Error closing database connection:', err);
+                    process.exit(1);
+                }
+            });
+        };
+
+        process.on('SIGINT', () => shutdown('SIGINT'));
+        process.on('SIGTERM', () => shutdown('SIGTERM'));
+
     } catch (error) {
         console.error('Failed to start the server due to database connection issue');
     }

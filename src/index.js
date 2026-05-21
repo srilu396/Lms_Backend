@@ -75,6 +75,7 @@ app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/expo
 app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/attendance-calendar.routes'));
 app.use('/api/v1/institution-rep/reports', require('./routes/institutionRep/reports.routes'));
 app.use('/api/v1/institution-rep/dashboard', require('./routes/institutionRep/dashboard.routes'));
+app.use('/api/v1/institution-rep/profile', require('./routes/institutionRep/profile.routes'));
 app.use('/api/v1/institution-rep/student-performance', require('./routes/institutionRep/student-performance.routes'));
 app.use('/api/v1/contact-requests', require('./routes/contact.routes'));
 app.use('/api/v1/enrollments', require('./routes/enrollment.routes'));

@@ -4,7 +4,6 @@ const { Op } = require('sequelize');
 
 async function debugBatchQuizzes(batchId) {
     try {
-        console.log(`--- DEBUGGING BATCH QUIZZES FOR BATCH ${batchId} ---\n`);
 
         const submissions = await models.QuizSubmission.findAll({
             include: [
@@ -14,14 +13,10 @@ async function debugBatchQuizzes(batchId) {
             ]
         });
 
-        console.log(`Found ${submissions.length} submissions.`);
         if (submissions.length > 0) {
-            console.log(JSON.stringify(submissions[0], null, 2));
         }
 
     } catch (error) {
-        console.error("❌ Error during debug:");
-        console.error(error);
     } finally {
         await models.sequelize.close();
     }

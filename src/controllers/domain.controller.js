@@ -10,7 +10,6 @@ class DomainController {
                 data: domain
             });
         } catch (error) {
-            console.error('Error creating domain:', error);
             res.status(error.statusCode || 500).json({
                 success: false,
                 message: error.message || 'Server error creating domain'
@@ -28,7 +27,6 @@ class DomainController {
                 pagination: result.pagination
             });
         } catch (error) {
-            console.error('Error getting domains:', error);
             res.status(500).json({
                 success: false,
                 message: 'Server error retrieving domains'
@@ -110,7 +108,6 @@ class DomainController {
                 data: stats
             });
         } catch (error) {
-            console.error('Error getting domain stats:', error);
             res.status(500).json({
                 success: false,
                 message: 'Server error retrieving domain statistics'

@@ -1,23 +1,16 @@
 const PDFDocument = require('pdfkit-table');
 const { Batch, Course, User, Enrollment, Student, AttendanceSession, BatchAssignment, StudentAttendance, QuizSubmission, AssignmentSubmission, sequelize } = require('../../models');
 const { Op } = require('sequelize');
+const { verifyBatchOwnership } = require('../../utils/institutionRep.helper');
 
 class ExportReportService {
     async generateBatchReportPdf(batchId, institutionId, res) {
-        // 1. Fetch Batch Data
-        const batch = await Batch.findOne({
-            where: { id: batchId, institution_id: institutionId },
+        const batch = await verifyBatchOwnership(batchId, institutionId, {
             include: [
                 { model: Course },
                 { model: User, as: 'tutors' }
             ]
         });
-
-        if (!batch) {
-            const error = new Error('Batch not found or access denied');
-            error.statusCode = 404;
-            throw error;
-        }
 
         // 2. Fetch Students Data
         const totalWorkingDays = await AttendanceSession.count({ where: { batch_id: batchId } });

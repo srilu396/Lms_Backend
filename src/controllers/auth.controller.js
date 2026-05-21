@@ -129,7 +129,6 @@ class AuthController {
             }
             res.status(200).json({ message: 'Logged out successfully' });
         } catch (error) {
-            console.error('Logout error:', error);
             // Even on error, try to clear the cookie
             res.clearCookie('refreshToken');
             res.status(500).json({ success: false, message: 'Server error during logout' });
@@ -166,7 +165,6 @@ class AuthController {
             // For now, we console log it and optionally return it so you can test in Postman!
             const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
             const resetLink = `${frontendUrl}/reset-password?token=${token}`;
-            console.log(`Password reset link for ${email}: ${resetLink}`);
 
             res.status(200).json({ 
                 success: true, 

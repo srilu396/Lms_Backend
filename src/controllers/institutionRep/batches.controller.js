@@ -5,7 +5,7 @@ class InstitutionRepBatchesController {
     /**
      * GET /api/v1/institution-rep/batches
      */
-    async getBatches(req, res) {
+    async getBatches(req, res, next) {
         try {
             const institutionId = req.user.institution_id;
             const data = await batchesService.getBatches(req.query, institutionId);
@@ -15,18 +15,14 @@ class InstitutionRepBatchesController {
                 data
             });
         } catch (error) {
-            console.error('getBatches controller error:', error);
-            return res.status(error.statusCode || 500).json({
-                success: false,
-                message: error.message || 'Internal Server Error'
-            });
+            next(error);
         }
     }
 
     /**
      * GET /api/v1/institution-rep/batches/download
      */
-    async downloadBatches(req, res) {
+    async downloadBatches(req, res, next) {
         try {
             const institutionId = req.user.institution_id;
             const formatType = req.query.format || 'csv';
@@ -43,12 +39,8 @@ class InstitutionRepBatchesController {
                 return await batchExport.generateCSV(data.batches, res);
             }
         } catch (error) {
-            console.error('downloadBatches controller error:', error);
             if (!res.headersSent) {
-                return res.status(error.statusCode || 500).json({
-                    success: false,
-                    message: error.message || 'Internal Server Error'
-                });
+                next(error);
             }
         }
     }

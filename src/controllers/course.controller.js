@@ -10,7 +10,6 @@ class CourseController {
                 data: course
             });
         } catch (error) {
-            console.error('Error creating course:', error);
             res.status(error.statusCode || 500).json({
                 success: false,
                 message: error.message || 'Server error creating course'
@@ -28,7 +27,6 @@ class CourseController {
                 pagination: result.pagination
             });
         } catch (error) {
-            console.error('Error getting courses:', error);
             res.status(500).json({
                 success: false,
                 message: 'Server error retrieving courses'
@@ -45,7 +43,6 @@ class CourseController {
                 data: stats
             });
         } catch (error) {
-            console.error('Error getting course stats:', error);
             res.status(500).json({
                 success: false,
                 message: 'Server error retrieving course statistics'

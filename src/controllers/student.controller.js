@@ -10,7 +10,6 @@ class StudentController {
                 data: student
             });
         } catch (error) {
-            console.error('Error creating student:', error);
             
             if (error.name === 'SequelizeUniqueConstraintError') {
                 return res.status(400).json({
@@ -42,7 +41,6 @@ class StudentController {
                 pagination: result.pagination
             });
         } catch (error) {
-            console.error('Error getting students:', error);
             res.status(500).json({
                 success: false,
                 message: 'Server error retrieving students'
@@ -59,7 +57,6 @@ class StudentController {
                 data: student
             });
         } catch (error) {
-            console.error('Error fetching student by id:', error);
             res.status(error.statusCode || 500).json({
                 success: false,
                 message: error.message || 'Server error fetching student'
@@ -76,7 +73,6 @@ class StudentController {
                 data: student
             });
         } catch (error) {
-            console.error('Error updating student:', error);
 
             if (error.name === 'SequelizeUniqueConstraintError') {
                 return res.status(400).json({
@@ -101,7 +97,6 @@ class StudentController {
                 data: null
             });
         } catch (error) {
-            console.error('Error deleting student:', error);
             res.status(error.statusCode || 500).json({
                 success: false,
                 message: error.message || 'Server error deleting student'
@@ -173,7 +168,6 @@ class StudentController {
                 data: result
             });
         } catch (error) {
-            console.error('Error in bulk upload:', error);
             res.status(500).json({
                 success: false,
                 message: error.message || 'Server error during bulk upload'

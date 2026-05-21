@@ -16,7 +16,6 @@ class DashboardController {
                 data: stats
             });
         } catch (error) {
-            console.error('Error fetching dashboard stats:', error);
             next(error);
         }
     }
@@ -41,7 +40,6 @@ class DashboardController {
                 data: result
             });
         } catch (error) {
-            console.error('Error fetching monitoring list:', error);
             if (error.message === 'Unauthorized batch access') {
                 return res.status(403).json({ success: false, message: error.message });
             }

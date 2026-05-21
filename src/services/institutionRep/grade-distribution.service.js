@@ -5,6 +5,7 @@ const {
     sequelize 
 } = require('../../models');
 const { Op } = require('sequelize');
+const { verifyBatchOwnership } = require('../../utils/institutionRep.helper');
 
 /**
  * Service for calculating Grade Distribution for a specific batch
@@ -16,19 +17,7 @@ class GradeDistributionService {
      * @param {number|string} institutionId 
      */
     async getGradeDistribution(batchId, institutionId) {
-        // 1. Verify existence and institution ownership
-        const batch = await Batch.findOne({
-            where: { 
-                id: batchId, 
-                institution_id: institutionId 
-            }
-        });
-
-        if (!batch) {
-            const error = new Error('Batch not found or access denied for this institution');
-            error.statusCode = 403;
-            throw error;
-        }
+        const batch = await verifyBatchOwnership(batchId, institutionId);
 
         // 2. Fetch all enrollments for this batch
         const enrollments = await Enrollment.findAll({

@@ -49,7 +49,6 @@ const institutionRepAuth = async (req, res, next) => {
         req.user = user;
         next();
     } catch (error) {
-        console.error('Institution Rep Auth error:', error);
         if (error.name === 'TokenExpiredError') {
             return res.status(401).json({ success: false, message: 'Token expired' });
         }

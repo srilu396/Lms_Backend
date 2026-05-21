@@ -3,6 +3,8 @@ const router = express.Router();
 const institutionRepProfileController = require('../../controllers/institutionRep/profile.controller');
 const authMiddleware = require('../../middlewares/auth.middleware');
 const roleMiddleware = require('../../middlewares/role.middleware');
+const validate = require('../../middlewares/validate');
+const { updateProfileSchema } = require('../../utils/validations/institutionRep.validation');
 
 // Protect all routes with JWT and institution_representative role
 router.use(authMiddleware);
@@ -12,6 +14,6 @@ router.use(roleMiddleware('institution_representative'));
 router.get('/', institutionRepProfileController.getProfile);
 
 // PUT /api/v1/institution-rep/profile
-router.put('/', institutionRepProfileController.updateProfile);
+router.put('/', validate(updateProfileSchema), institutionRepProfileController.updateProfile);
 
 module.exports = router;

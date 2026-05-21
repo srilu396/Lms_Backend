@@ -12,7 +12,6 @@ module.exports = {
         );
       } catch (error) {
         // If the type already has 'true_false' or for other databases, continue
-        console.log('Enum already contains true_false or not using PostgreSQL');
       }
     });
   },

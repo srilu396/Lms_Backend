@@ -4,7 +4,6 @@ const bcrypt = require('bcryptjs');
 
 async function seedQuizData() {
     try {
-        console.log("--- STARTING QUIZ DATA SEEDING ---\n");
 
         const tutorEmail = 'manideeptutor@gmail.com';
         const tutorPassword = 'P@55word';
@@ -21,7 +20,6 @@ async function seedQuizData() {
                 is_active: true
             }
         });
-        console.log(`${userCreated ? '✅ Created' : 'ℹ️ Found'} User: ${user.email}`);
 
         // 2. Create/Find Tutor Profile
         const [tutor, tutorCreated] = await models.Tutor.findOrCreate({
@@ -32,7 +30,6 @@ async function seedQuizData() {
                 status: 'active'
             }
         });
-        console.log(`${tutorCreated ? '✅ Created' : 'ℹ️ Found'} Tutor Profile: ${tutor.email}`);
 
         // 3. Create Course
         const [course] = await models.Course.findOrCreate({
@@ -42,7 +39,6 @@ async function seedQuizData() {
                 status: 'active'
             }
         });
-        console.log(`✅ Course ensured: ${course.name}`);
 
         // 4. Create Modules, Topics, and Quizzes
         const [module1] = await models.Module.findOrCreate({
@@ -65,7 +61,6 @@ async function seedQuizData() {
                 is_published: true
             }
         });
-        console.log(`✅ Quizzes ensured for course`);
 
         // 5. Create Batches and assign Tutor
         const batchNames = ['Sept-Morning-Batch', 'Oct-Evening-Batch'];
@@ -83,7 +78,6 @@ async function seedQuizData() {
                 where: { batch_id: batch.id, tutor_id: tutor.id },
                 defaults: { is_primary: true }
             });
-            console.log(`✅ Batch ensured and assigned: ${batch.name}`);
 
             // 6. Create Students and Enrollments
             for (let i = 1; i <= 3; i++) {
@@ -132,14 +126,10 @@ async function seedQuizData() {
                     }
                 });
             }
-            console.log(`   - Enrolled 3 students and created submissions for ${bName}`);
         }
 
-        console.log("\n✅ SEEDING COMPLETED SUCCESSFULLY!");
 
     } catch (error) {
-        console.error("\n❌ Error during seeding:");
-        console.error(error);
     } finally {
         await models.sequelize.close();
     }

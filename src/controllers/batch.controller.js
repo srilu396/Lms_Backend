@@ -17,7 +17,6 @@ class BatchController {
                 try {
                     await batchService.bulkUploadStudentsToBatch(newBatch.id, data.file_path);
                 } catch (bulkError) {
-                    console.error('Error in bulk upload during batch creation:', bulkError);
                 }
             }
 
@@ -27,7 +26,6 @@ class BatchController {
                 data: newBatch
             });
         } catch (error) {
-            console.error('Error creating batch:', error);
             res.status(500).json({
                 success: false,
                 message: error.message || 'Internal server error'

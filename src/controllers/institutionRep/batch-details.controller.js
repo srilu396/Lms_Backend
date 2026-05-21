@@ -4,7 +4,7 @@ class BatchDetailsController {
     /**
      * GET /api/v1/institution-rep/batches/:batchId/overview
      */
-    async getBatchOverview(req, res) {
+    async getBatchOverview(req, res, next) {
         try {
             const { batchId } = req.params;
             const institutionId = req.user.institution_id;
@@ -16,15 +16,7 @@ class BatchDetailsController {
                 data
             });
         } catch (error) {
-            console.error('getBatchOverview controller error:', error);
-            
-            const statusCode = error.statusCode || 500;
-            const message = error.message || 'Internal Server Error';
-
-            return res.status(statusCode).json({
-                success: false,
-                message
-            });
+            next(error);
         }
     }
 }

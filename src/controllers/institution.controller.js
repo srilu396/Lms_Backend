@@ -39,7 +39,6 @@ class InstitutionController {
                 data: result.data
             });
         } catch (error) {
-            console.error('Error searching institutions:', error);
             res.status(500).json({
                 success: false,
                 message: 'Server error parsing search query'

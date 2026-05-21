@@ -11,6 +11,7 @@ const {
     sequelize
 } = require('../../models');
 const { Op } = require('sequelize');
+const { verifyBatchOwnership } = require('../../utils/institutionRep.helper');
 
 class BatchDetailsService {
     /**
@@ -18,8 +19,7 @@ class BatchDetailsService {
      */
     async getBatchOverview(batchId, institutionId) {
         // 1. Fetch Batch with Course and Primary Tutor
-        const batch = await Batch.findOne({
-            where: { id: batchId, institution_id: institutionId },
+        const batch = await verifyBatchOwnership(batchId, institutionId, {
             include: [
                 { 
                     model: Course,
@@ -32,12 +32,6 @@ class BatchDetailsService {
                 }
             ]
         });
-
-        if (!batch) {
-            const error = new Error('Batch not found or access denied');
-            error.statusCode = 403;
-            throw error;
-        }
 
         // 2. Total active students
         const totalActiveStudents = await Enrollment.count({

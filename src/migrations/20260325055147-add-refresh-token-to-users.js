@@ -12,7 +12,6 @@ module.exports = {
             // Ignore error if it already exists or if using a different dialect
             await queryInterface.sequelize.query('ALTER TYPE "enum_users_role" ADD VALUE \'user\';');
         } catch (error) {
-            console.log("Adding enum value failed, it might already exist or DB is not Postgres:", error.message);
         }
     },
 

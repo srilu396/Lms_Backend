@@ -15,6 +15,7 @@ const {
     sequelize
 } = require('../../models');
 const { Op } = require('sequelize');
+const { verifyBatchOwnership } = require('../../utils/institutionRep.helper');
 
 class BatchStudentsService {
     /**
@@ -25,15 +26,7 @@ class BatchStudentsService {
         const offset = (page - 1) * limit;
 
         // 1. Verify batch belongs to institution
-        const batch = await Batch.findOne({
-            where: { id: batchId, institution_id: institutionId }
-        });
-
-        if (!batch) {
-            const error = new Error('Batch not found or access denied');
-            error.statusCode = 403;
-            throw error;
-        }
+        const batch = await verifyBatchOwnership(batchId, institutionId);
 
         // 2. Constants for metrics
         const totalWorkingDays = await AttendanceSession.count({
@@ -145,15 +138,7 @@ class BatchStudentsService {
      */
     async getStudentStats(batchId, studentId, institutionId) {
         // 1. Verify batch belongs to institution
-        const batch = await Batch.findOne({
-            where: { id: batchId, institution_id: institutionId }
-        });
-
-        if (!batch) {
-            const error = new Error('Batch not found or access denied');
-            error.statusCode = 403;
-            throw error;
-        }
+        const batch = await verifyBatchOwnership(batchId, institutionId);
 
         // 2. Verify student is enrolled in this batch
         const enrollment = await Enrollment.findOne({
@@ -289,15 +274,7 @@ class BatchStudentsService {
         const { page = 1, limit = 10, search = '', type = 'all' } = queryParams;
 
         // 1. Verify batch belongs to institution
-        const batch = await Batch.findOne({
-            where: { id: batchId, institution_id: institutionId }
-        });
-
-        if (!batch) {
-            const error = new Error('Batch not found or access denied');
-            error.statusCode = 403;
-            throw error;
-        }
+        const batch = await verifyBatchOwnership(batchId, institutionId);
 
         // 2. Verify student is enrolled in this batch
         const enrollment = await Enrollment.findOne({

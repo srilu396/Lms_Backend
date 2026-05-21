@@ -62,7 +62,6 @@ class BatchService {
         try {
             return await this.getBatchById(batch.id);
         } catch (fetchError) {
-            console.error('Batch created but could not fetch full details:', fetchError);
             return batch;
         }
     }

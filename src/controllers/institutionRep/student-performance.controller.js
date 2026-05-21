@@ -4,7 +4,7 @@ class StudentPerformanceController {
     /**
      * GET /api/v1/institution-rep/student-performance/summary
      */
-    async getSummary(req, res) {
+    async getSummary(req, res, next) {
         try {
             const institutionId = req.user.institution_id;
             const term = req.query.term === 'past' ? 'past' : 'current';
@@ -16,22 +16,14 @@ class StudentPerformanceController {
                 data
             });
         } catch (error) {
-            console.error('getSummary controller error:', error);
-            
-            const statusCode = error.statusCode || 500;
-            const message = error.message || 'Internal Server Error';
-
-            return res.status(statusCode).json({
-                success: false,
-                message
-            });
+            next(error);
         }
     }
 
     /**
      * GET /api/v1/institution-rep/student-performance/top-students
      */
-    async getTopStudents(req, res) {
+    async getTopStudents(req, res, next) {
         try {
             const institutionId = req.user.institution_id;
 
@@ -49,15 +41,7 @@ class StudentPerformanceController {
                 data
             });
         } catch (error) {
-            console.error('getTopStudents controller error:', error);
-            
-            const statusCode = error.statusCode || 500;
-            const message = error.message || 'Internal Server Error';
-
-            return res.status(statusCode).json({
-                success: false,
-                message
-            });
+            next(error);
         }
     }
 }

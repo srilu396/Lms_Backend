@@ -4,7 +4,7 @@ class BatchStudentsController {
     /**
      * GET /api/v1/institution-rep/batches/:batchId/students
      */
-    async getBatchStudents(req, res) {
+    async getBatchStudents(req, res, next) {
         try {
             const { batchId } = req.params;
             const institutionId = req.user.institution_id;
@@ -22,22 +22,14 @@ class BatchStudentsController {
                 data
             });
         } catch (error) {
-            console.error('getBatchStudents controller error:', error);
-            
-            const statusCode = error.statusCode || 500;
-            const message = error.message || 'Internal Server Error';
-
-            return res.status(statusCode).json({
-                success: false,
-                message
-            });
+            next(error);
         }
     }
 
     /**
      * GET /api/v1/institution-rep/batches/:batchId/students/:studentId/stats
      */
-    async getStudentStats(req, res) {
+    async getStudentStats(req, res, next) {
         try {
             const { batchId, studentId } = req.params;
             const institutionId = req.user.institution_id;
@@ -49,22 +41,14 @@ class BatchStudentsController {
                 data
             });
         } catch (error) {
-            console.error('getStudentStats controller error:', error);
-            
-            const statusCode = error.statusCode || 500;
-            const message = error.message || 'Internal Server Error';
-
-            return res.status(statusCode).json({
-                success: false,
-                message
-            });
+            next(error);
         }
     }
 
     /**
      * GET /api/v1/institution-rep/batches/:batchId/students/:studentId/academic-performance
      */
-    async getAcademicPerformance(req, res) {
+    async getAcademicPerformance(req, res, next) {
         try {
             const { batchId, studentId } = req.params;
             const institutionId = req.user.institution_id;
@@ -82,15 +66,7 @@ class BatchStudentsController {
                 data
             });
         } catch (error) {
-            console.error('getAcademicPerformance controller error:', error);
-            
-            const statusCode = error.statusCode || 500;
-            const message = error.message || 'Internal Server Error';
-
-            return res.status(statusCode).json({
-                success: false,
-                message
-            });
+            next(error);
         }
     }
 }

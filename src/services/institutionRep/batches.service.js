@@ -209,7 +209,6 @@ class InstitutionRepBatchService {
             
             return total;
         } catch (error) {
-            console.error('Error in getTotalItemsInCourse:', error);
             return 0;
         }
     }

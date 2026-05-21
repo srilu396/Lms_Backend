@@ -8,7 +8,7 @@ class GradeDistributionController {
      * GET /api/v1/institution-rep/batches/:batchId/grade-distribution
      * Protected by JWT and verified for institution access.
      */
-    async getGradeDistribution(req, res) {
+    async getGradeDistribution(req, res, next) {
         try {
             const { batchId } = req.params;
             // Assumes req.user is populated by institutionRepAuth middleware
@@ -23,13 +23,7 @@ class GradeDistributionController {
                 }
             });
         } catch (error) {
-            console.error('GradeDistributionController.getGradeDistribution error:', error);
-            
-            const statusCode = error.statusCode || 500;
-            return res.status(statusCode).json({
-                success: false,
-                message: error.message || 'Internal Server Error'
-            });
+            next(error);
         }
     }
 }

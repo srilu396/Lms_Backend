@@ -22,7 +22,6 @@ class ExportReportController {
             await exportReportService.generateBatchReportPdf(batchId, institutionId, res);
 
         } catch (error) {
-            console.error('Error in exportReport controller:', error);
             if (error.statusCode === 404 || error.statusCode === 403) {
                 return res.status(error.statusCode).json({
                     success: false,

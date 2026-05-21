@@ -6,7 +6,6 @@ module.exports = {
     try {
       await queryInterface.sequelize.query("ALTER TYPE \"enum_courses_status\" ADD VALUE IF NOT EXISTS 'draft'");
     } catch (e) {
-      console.log('Skipping enum update if already exists or fails:', e.message);
     }
   },
 

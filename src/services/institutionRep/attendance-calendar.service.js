@@ -8,6 +8,7 @@ const {
     sequelize
 } = require('../../models');
 const { Op } = require('sequelize');
+const { verifyBatchOwnership } = require('../../utils/institutionRep.helper');
 
 class AttendanceCalendarService {
     /**
@@ -18,16 +19,7 @@ class AttendanceCalendarService {
      * @param {string} monthStr YYYY-MM
      */
     async getAttendanceCalendar(batchId, studentId, institutionId, monthStr) {
-        // 1. Verify batch belongs to institution
-        const batch = await Batch.findOne({
-            where: { id: batchId, institution_id: institutionId }
-        });
-
-        if (!batch) {
-            const error = new Error('Batch not found or access denied');
-            error.statusCode = 403;
-            throw error;
-        }
+        const batch = await verifyBatchOwnership(batchId, institutionId);
 
         // 2. Verify student exists and belongs to batch
         const student = await Student.findOne({

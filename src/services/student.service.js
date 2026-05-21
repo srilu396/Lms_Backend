@@ -46,7 +46,6 @@ class StudentService {
             
             const resetLink = `https://your-frontend-domain.com/setup-password?token=${token}`;
             // Log for local dev / simulated email dispatch. NEVER return in API.
-            console.log(`[SECURE EMAIL DISPATCH MOCK] -> Student setup link for ${student.email}: ${resetLink}`);
         }
         
         const result = await Student.findByPk(student.id, {
@@ -290,7 +289,6 @@ class StudentService {
                                 fs.unlinkSync(filePath);
                             }
                         } catch (err) {
-                            console.error('Error deleting temp file:', err);
                         }
 
                         resolve({

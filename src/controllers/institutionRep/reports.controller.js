@@ -1,6 +1,6 @@
 const reportsService = require('../../services/institutionRep/reports.service');
 
-const getRecentReports = async (req, res) => {
+const getRecentReports = async (req, res, next) => {
     try {
         const institutionId = req.user.institution_id;
         const { search } = req.query;
@@ -14,15 +14,11 @@ const getRecentReports = async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Error fetching recent reports:', error);
-        return res.status(500).json({
-            success: false,
-            message: 'Internal server error'
-        });
+        next(error);
     }
 };
 
-const downloadReport = async (req, res) => {
+const downloadReport = async (req, res, next) => {
     try {
         const institutionId = req.user.institution_id;
         const { reportType } = req.params;
@@ -43,12 +39,8 @@ const downloadReport = async (req, res) => {
         doc.pipe(res);
         doc.end();
     } catch (error) {
-        console.error('Error downloading report:', error);
         if (!res.headersSent) {
-            return res.status(500).json({
-                success: false,
-                message: 'Internal server error'
-            });
+            next(error);
         }
     }
 };

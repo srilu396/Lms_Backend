@@ -46,56 +46,16 @@ class InstitutionRepProfileService {
     }
 
     async updateProfile(userId, data) {
-        const errors = {};
-
-        // Validation rules
-        if (data.full_name !== undefined) {
-            if (typeof data.full_name !== 'string' || data.full_name.trim().length < 2 || data.full_name.trim().length > 100) {
-                errors.full_name = 'Must be a string between 2 and 100 characters';
-            }
-        }
-
         if (data.username !== undefined) {
-            if (typeof data.username !== 'string' || data.username.trim().length === 0) {
-                errors.username = 'Must be a non-empty string';
-            } else {
-                const existingUser = await User.findOne({
-                    where: {
-                        username: data.username,
-                        id: { [models.Sequelize.Op.ne]: userId }
-                    }
-                });
-                if (existingUser) {
-                    throw { statusCode: 409, message: 'Username already taken' };
+            const existingUser = await User.findOne({
+                where: {
+                    username: data.username,
+                    id: { [models.Sequelize.Op.ne]: userId }
                 }
+            });
+            if (existingUser) {
+                throw { statusCode: 409, message: 'Username already taken' };
             }
-        }
-
-        if (data.phone_number !== undefined) {
-            const phoneRegex = /^\+?[0-9]{10,15}$/;
-            if (data.phone_number !== null && !phoneRegex.test(data.phone_number)) {
-                errors.phone_number = 'Invalid phone number format';
-            }
-        }
-
-        if (data.avatar_url !== undefined) {
-            try {
-                new URL(data.avatar_url);
-            } catch (err) {
-                if (data.avatar_url !== null) {
-                    errors.avatar_url = 'Must be a valid URL string';
-                }
-            }
-        }
-
-        if (data.designation !== undefined) {
-            if (typeof data.designation !== 'string' || data.designation.trim().length === 0 || data.designation.trim().length > 100) {
-                errors.designation = 'Must be a non-empty string, maximum 100 characters';
-            }
-        }
-
-        if (Object.keys(errors).length > 0) {
-            throw { statusCode: 400, message: 'Validation failed', errors };
         }
 
         const updateData = {};

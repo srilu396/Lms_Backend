@@ -11,4 +11,7 @@ router.use(roleMiddleware('institution_representative'));
 // GET /api/v1/institution-rep/profile
 router.get('/', institutionRepProfileController.getProfile);
 
+// PUT /api/v1/institution-rep/profile
+router.put('/', institutionRepProfileController.updateProfile);
+
 module.exports = router;

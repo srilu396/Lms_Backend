@@ -23,6 +23,18 @@ module.exports = (sequelize, DataTypes) => {
             type: DataTypes.STRING,
             allowNull: false
         },
+        phone_number: {
+            type: DataTypes.STRING,
+            allowNull: true
+        },
+        avatar_url: {
+            type: DataTypes.STRING,
+            allowNull: true
+        },
+        designation: {
+            type: DataTypes.STRING,
+            allowNull: true
+        },
         role: {
             type: DataTypes.ENUM('admin', 'tutor', 'student', 'institution_representative', 'user'),
             allowNull: false

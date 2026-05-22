@@ -178,12 +178,12 @@ class StudentPortalService {
                                 {
                                     model: Lesson,
                                     as: 'lessons',
-                                    attributes: ['id', 'name', 'order_num', 'content_type', 'duration']
+                                    attributes: ['id', 'name', 'order_num', 'type', 'duration_minutes', 'content_text', 'video_url', 'url']
                                 },
                                 {
                                     model: Quiz,
                                     as: 'quizzes',
-                                    attributes: ['id', 'title'],
+                                    attributes: ['id', 'name'],
                                     required: false
                                 }
                             ]
@@ -257,7 +257,7 @@ class StudentPortalService {
             include: [
                 {
                     model: Quiz,
-                    attributes: ['id', 'title', 'pass_mark', 'total_marks']
+                    attributes: ['id', 'name', 'passing_score', 'total_marks']
                 }
             ],
             limit: parsedLimit,
@@ -287,7 +287,7 @@ class StudentPortalService {
             include: [
                 {
                     model: models.Assignment, // Using models from models/index if available or requiring directly
-                    attributes: ['id', 'title', 'total_marks']
+                    attributes: ['id', 'title', 'max_score']
                 }
             ],
             limit: parsedLimit,
@@ -313,7 +313,7 @@ class StudentPortalService {
             include: [
                 {
                     model: Quiz,
-                    attributes: ['id', 'title', 'total_marks', 'pass_mark']
+                    attributes: ['id', 'name', 'total_marks', 'passing_score']
                 },
                 {
                     model: models.QuizAnswer,

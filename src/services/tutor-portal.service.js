@@ -228,12 +228,12 @@ class TutorPortalService {
                                 {
                                     model: Lesson,
                                     as: 'lessons',
-                                    attributes: ['id', 'name', 'order_num', 'content_type', 'duration']
+                                    attributes: ['id', 'name', 'order_num', 'type', 'duration_minutes', 'content_text', 'video_url', 'url']
                                 },
                                 {
                                     model: Quiz,
                                     as: 'quizzes',
-                                    attributes: ['id', 'title'],
+                                    attributes: ['id', 'name'],
                                     required: false
                                 }
                             ],

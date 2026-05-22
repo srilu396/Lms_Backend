@@ -9,7 +9,6 @@ class QuizController {
                 data: stats
             });
         } catch (error) {
-            console.error('Error getting quiz stats:', error);
             res.status(500).json({
                 success: false,
                 message: error.message || 'Server error retrieving quiz statistics'
@@ -33,7 +32,6 @@ class QuizController {
                 pagination: result.pagination
             });
         } catch (error) {
-            console.error('Error getting quizzes:', error);
             res.status(500).json({
                 success: false,
                 message: error.message || 'Server error retrieving quizzes'
@@ -56,7 +54,6 @@ class QuizController {
                 data: quiz
             });
         } catch (error) {
-            console.error('Error getting quiz:', error);
             res.status(500).json({
                 success: false,
                 message: error.message || 'Server error retrieving quiz'
@@ -73,7 +70,6 @@ class QuizController {
                 data: quiz
             });
         } catch (error) {
-            console.error('Error creating quiz:', error);
             res.status(error.statusCode || 500).json({
                 success: false,
                 message: error.message || 'Server error creating quiz'
@@ -90,7 +86,6 @@ class QuizController {
                 data: quiz
             });
         } catch (error) {
-            console.error('Error updating quiz:', error);
             res.status(error.statusCode || 500).json({
                 success: false,
                 message: error.message || 'Server error updating quiz'
@@ -106,7 +101,6 @@ class QuizController {
                 message: 'Quiz deleted successfully'
             });
         } catch (error) {
-            console.error('Error deleting quiz:', error);
             res.status(error.statusCode || 500).json({
                 success: false,
                 message: error.message || 'Server error deleting quiz'

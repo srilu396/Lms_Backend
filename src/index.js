@@ -2,11 +2,20 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const path = require('path');
+const helmet = require('helmet');
+const compression = require('compression');
 const rateLimit = require('express-rate-limit');
-const { connectDB } = require('./db/connect');
+const { connectDB, sequelize } = require('./db/connect');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+// Security Headers
+app.use(helmet());
+
+// Compress responses
+app.use(compression());
 
 // Middleware setup
 const corsOptions = require('./config/corsOptions');
@@ -30,6 +39,11 @@ app.use(limiter);
 app.use(express.json({ limit: '10mb' })); // Used to parse JSON bodies, with limit
 app.use(express.urlencoded({ extended: true, limit: '10mb' })); // Parse URL-encoded bodies
 app.use(cookieParser());
+
+
+// Static folder for file uploads
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
 
 // Default status route
 app.get('/', (req, res) => {
@@ -66,8 +80,25 @@ app.use('/api/v1/domains', require('./routes/domain.routes'));
 app.use('/api/v1/quizzes', require('./routes/quiz.routes'));
 app.use('/api/v1/tutors', require('./routes/tutor.routes'));
 app.use('/api/v1/batches', require('./routes/batch.routes'));
+app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/batches.routes'));
+app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/batch-details.routes'));
+app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/batch-students.routes'));
+app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/export-report.routes'));
+app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/attendance-calendar.routes'));
+app.use('/api/v1/institution-rep/reports', require('./routes/institutionRep/reports.routes'));
+app.use('/api/v1/institution-rep/dashboard', require('./routes/institutionRep/dashboard.routes'));
+app.use('/api/v1/institution-rep/profile', require('./routes/institutionRep/profile.routes'));
+app.use('/api/v1/institution-rep/student-performance', require('./routes/institutionRep/student-performance.routes'));
 app.use('/api/v1/contact-requests', require('./routes/contact.routes'));
 app.use('/api/v1/enrollments', require('./routes/enrollment.routes'));
+app.use('/api/v1/progress', require('./routes/progress.routes'));
+app.use('/api/v1/attendance', require('./routes/attendance.routes'));
+
+// Tutor Portal Routes
+app.use('/api/v1/tutor-portal', require('./routes/tutor-portal.routes'));
+
+// Student Portal Routes
+app.use('/api/v1/student-portal', require('./routes/student-portal.routes'));
 
 // Global Error Handler
 const errorHandler = require('./middlewares/error.middleware');
@@ -77,11 +108,29 @@ app.use(errorHandler);
 const startServer = async () => {
     try {
         await connectDB();
-        app.listen(PORT, () => {
-            console.log(`Server is running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+        const server = app.listen(PORT, () => {
         });
+
+        // Graceful shutdown handler
+        const shutdown = async (signal) => {
+            console.log(`\n${signal} received. Shutting down gracefully...`);
+            server.close(async () => {
+                console.log('HTTP server closed.');
+                try {
+                    await sequelize.close();
+                    console.log('Database connection closed.');
+                    process.exit(0);
+                } catch (err) {
+                    console.error('Error closing database connection:', err);
+                    process.exit(1);
+                }
+            });
+        };
+
+        process.on('SIGINT', () => shutdown('SIGINT'));
+        process.on('SIGTERM', () => shutdown('SIGTERM'));
+
     } catch (error) {
-        console.error('Failed to start the server due to database connection issue');
     }
 };
 

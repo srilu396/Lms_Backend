@@ -23,6 +23,18 @@ module.exports = (sequelize, DataTypes) => {
             type: DataTypes.STRING,
             allowNull: false
         },
+        phone_number: {
+            type: DataTypes.STRING,
+            allowNull: true
+        },
+        avatar_url: {
+            type: DataTypes.STRING,
+            allowNull: true
+        },
+        designation: {
+            type: DataTypes.STRING,
+            allowNull: true
+        },
         role: {
             type: DataTypes.ENUM('admin', 'tutor', 'student', 'institution_representative', 'user'),
             allowNull: false
@@ -61,6 +73,14 @@ module.exports = (sequelize, DataTypes) => {
         last_login_at: {
             type: DataTypes.DATE,
             allowNull: true
+        },
+        institution_id: {
+            type: DataTypes.BIGINT,
+            allowNull: true,
+            references: {
+                model: 'institutions',
+                key: 'id'
+            }
         }
     }, {
         tableName: 'users',
@@ -72,12 +92,14 @@ module.exports = (sequelize, DataTypes) => {
     });
 
     User.associate = (models) => {
+        User.belongsTo(models.Institution, { foreignKey: 'institution_id' });
         User.hasMany(models.PasswordResetToken, { foreignKey: 'user_id' });
         User.hasMany(models.UserSession, { foreignKey: 'user_id' });
         User.hasOne(models.TutorProfile, { foreignKey: 'tutor_id' });
         User.hasMany(models.TutorInstitutionAssignment, { foreignKey: 'tutor_id' });
         User.hasMany(models.CourseTutor, { foreignKey: 'tutor_id' });
-        User.hasMany(models.BatchTutor, { foreignKey: 'tutor_id' });
+        // User is no longer directly associated with BatchTutor.
+        // BatchTutor now belongs to the Tutor entity.
         User.hasMany(models.Enrollment, { foreignKey: 'student_id' });
         User.hasMany(models.QuizSubmission, { foreignKey: 'student_id' });
         User.hasMany(models.AssignmentSubmission, { foreignKey: 'student_id' });

@@ -31,6 +31,10 @@ module.exports = (sequelize, DataTypes) => {
             }
         },
         file_url: DataTypes.STRING,
+        submission_data: {
+            type: DataTypes.JSON,
+            allowNull: true
+        },
         grade: {
             type: DataTypes.DECIMAL(5, 2),
             allowNull: true

@@ -17,7 +17,6 @@ class BatchController {
                 try {
                     await batchService.bulkUploadStudentsToBatch(newBatch.id, data.file_path);
                 } catch (bulkError) {
-                    console.error('Error in bulk upload during batch creation:', bulkError);
                 }
             }
 
@@ -27,7 +26,6 @@ class BatchController {
                 data: newBatch
             });
         } catch (error) {
-            console.error('Error creating batch:', error);
             res.status(500).json({
                 success: false,
                 message: error.message || 'Internal server error'
@@ -244,6 +242,30 @@ class BatchController {
             res.status(200).json({
                 success: true,
                 data: stats
+            });
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Internal server error'
+            });
+        }
+    }
+
+    /**
+     * POST /batches/bulk-upload
+     */
+    async bulkCreateBatches(req, res) {
+        try {
+            if (!req.file) return res.status(400).json({ success: false, message: 'Please upload a valid CSV file' });
+            
+            // institution_id might come from req.body if provided by admin
+            const defaultInstitutionId = req.body.institution_id || null;
+            
+            const result = await batchService.bulkCreateBatchesFromCSV(req.file.path, defaultInstitutionId);
+            res.status(201).json({
+                success: true,
+                message: 'Batches created successfully',
+                data: result
             });
         } catch (error) {
             res.status(500).json({

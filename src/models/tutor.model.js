@@ -70,7 +70,8 @@ module.exports = (sequelize, DataTypes) => {
     });
 
     Tutor.associate = function(models) {
-        // Prepare for future associations
+        Tutor.hasMany(models.BatchTutor, { foreignKey: 'tutor_id', as: 'batchTutors' });
+        Tutor.belongsToMany(models.Batch, { through: models.BatchTutor, foreignKey: 'tutor_id', otherKey: 'batch_id', as: 'batches' });
     };
 
     return Tutor;

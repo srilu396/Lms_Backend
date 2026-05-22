@@ -49,7 +49,6 @@ class TutorService {
             
             const resetLink = `https://your-frontend-domain.com/setup-password?token=${token}`;
             // Log for local dev / simulated email dispatch. NEVER return in API.
-            console.log(`[SECURE EMAIL DISPATCH MOCK] -> Tutor setup link for ${tutor.email}: ${resetLink}`);
         }
 
         return this.formatTutorOutput(tutor);

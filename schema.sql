@@ -535,7 +535,7 @@ CREATE TABLE student_attendance (
     marked_at     TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_sa_student
-        FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
     CONSTRAINT fk_sa_session
         FOREIGN KEY (session_id) REFERENCES attendance_sessions(id) ON DELETE CASCADE,
     CONSTRAINT fk_sa_enrollment

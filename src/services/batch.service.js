@@ -1,4 +1,4 @@
-const { Batch, Course, Institution, Enrollment, BatchTutor, BatchAssignment, Assignment, BatchPerformance, User, Student, sequelize } = require('../models');
+const { Batch, Course, Institution, Enrollment, BatchTutor, BatchAssignment, Assignment, BatchPerformance, User, Student, Tutor, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const fs = require('fs');
 const csvParser = require('csv-parser');
@@ -8,17 +8,46 @@ class BatchService {
      * Create a new batch
      */
     async createBatch(data) {
-        const { enroll_students, ...batchData } = data;
+        const { enroll_students, tutor_id, tutors, ...batchData } = data;
         const transaction = await sequelize.transaction();
         let batch;
 
         try {
             batch = await Batch.create(batchData, { transaction });
+            const batchId = batch.id;
 
+            // 1. Handle Tutors (BatchTutor Association)
+            const tutorAssignments = [];
+            if (tutor_id) {
+                tutorAssignments.push({
+                    batch_id: batchId,
+                    tutor_id: tutor_id,
+                    is_primary: true
+                });
+            }
+
+            if (tutors && Array.isArray(tutors)) {
+                tutors.forEach(tId => {
+                    // Avoid duplicating if tutor_id is also in tutors array
+                    if (tId !== tutor_id) {
+                        tutorAssignments.push({
+                            batch_id: batchId,
+                            tutor_id: tId,
+                            is_primary: false
+                        });
+                    }
+                });
+            }
+
+            if (tutorAssignments.length > 0) {
+                await BatchTutor.bulkCreate(tutorAssignments, { transaction });
+            }
+
+            // 2. Handle Students
             if (enroll_students && Array.isArray(enroll_students) && enroll_students.length > 0) {
                 const enrollments = enroll_students.map(studentId => ({
                     student_id: studentId,
-                    batch_id: batch.id,
+                    batch_id: batchId,
                     status: 'active'
                 }));
                 await Enrollment.bulkCreate(enrollments, { transaction, ignoreDuplicates: true });
@@ -33,7 +62,6 @@ class BatchService {
         try {
             return await this.getBatchById(batch.id);
         } catch (fetchError) {
-            console.error('Batch created but could not fetch full details:', fetchError);
             return batch;
         }
     }
@@ -67,9 +95,8 @@ class BatchService {
             whereClause.course_id = course_id;
         }
 
-        if (tutor_id) {
-            whereClause.tutor_id = tutor_id;
-        }
+        // tutor_id is not a column on batches — tutors are linked via batch_tutors junction table
+        // Filtering by tutor_id is handled at a higher level if needed
 
         if (search) {
             whereClause.name = { [Op.iLike]: `%${search}%` };
@@ -80,24 +107,35 @@ class BatchService {
             include: [
                 { model: Course, attributes: ['id', 'name'] },
                 { model: Institution, attributes: ['id', 'name'] },
-                { model: User, as: 'tutor', attributes: ['id', 'full_name'] }
+                {
+                    model: BatchTutor,
+                    as: 'batchTutors',
+                    include: [{ model: Tutor, attributes: ['id', 'full_name'] }],
+                    required: false
+                }
             ],
             limit,
             offset,
-            order: [['created_at', 'DESC']]
+            order: [['created_at', 'DESC']],
+            distinct: true
         });
 
         const formattedBatches = batches.map(batch => {
             const batchJson = batch.toJSON();
+            // Get primary tutor name from batchTutors junction
+            const primaryTutor = batchJson.batchTutors?.find(bt => bt.is_primary)?.Tutor
+                || batchJson.batchTutors?.[0]?.Tutor
+                || null;
             return {
                 id: batchJson.id,
                 batch_id: `#BATCH-${batchJson.id}`,
                 batch_name: batchJson.name,
                 institution_name: batchJson.Institution?.name || 'N/A',
-                tutor: batchJson.tutor?.full_name || 'Not Assigned',
+                tutor: primaryTutor?.full_name || 'Not Assigned',
                 course: batchJson.Course?.name || 'N/A',
                 start_date: batchJson.start_date,
-                status: batchJson.status
+                status: batchJson.status,
+                department: batchJson.department || 'N/A'
             };
         });
 
@@ -116,17 +154,19 @@ class BatchService {
         return await Batch.findByPk(id, {
             include: [
                 { model: Course, attributes: ['id', 'name'] },
-                { model: Institution, attributes: ['id', 'name'] },
-                { model: User, as: 'tutor', attributes: ['id', 'full_name'] },
-                { 
-                    model: BatchTutor, 
-                    include: [{ model: User, attributes: ['id', 'full_name', 'email'] }]
+                { model: Institution, attributes: ['id', 'name'], required: false },
+                {
+                    model: BatchTutor,
+                    as: 'batchTutors',
+                    include: [{ model: Tutor, attributes: ['id', 'full_name', 'email'] }],
+                    required: false
                 },
-                { 
-                    model: Enrollment, 
-                    include: [{ model: Student, as: 'student', attributes: ['id', 'first_name', 'last_name', 'email'] }] 
+                {
+                    model: Enrollment,
+                    include: [{ model: Student, as: 'student', attributes: ['id', 'first_name', 'last_name', 'email'] }],
+                    required: false
                 },
-                { model: BatchPerformance }
+                { model: BatchPerformance, required: false }
             ]
         });
     }
@@ -135,7 +175,7 @@ class BatchService {
      * Update a batch
      */
     async updateBatch(id, data) {
-        const { enroll_students, ...batchData } = data;
+        const { enroll_students, tutor_id, tutors, ...batchData } = data;
         const batch = await Batch.findByPk(id);
         if (!batch) {
             throw new Error('Batch not found');
@@ -145,6 +185,38 @@ class BatchService {
         try {
             await batch.update(batchData, { transaction });
 
+            // 1. Sync Tutors if provided
+            if (tutor_id !== undefined || tutors !== undefined) {
+                // Delete existing assignments for a clean sync
+                await BatchTutor.destroy({ where: { batch_id: id }, transaction });
+
+                const tutorAssignments = [];
+                if (tutor_id) {
+                    tutorAssignments.push({
+                        batch_id: id,
+                        tutor_id: tutor_id,
+                        is_primary: true
+                    });
+                }
+
+                if (tutors && Array.isArray(tutors)) {
+                    tutors.forEach(tId => {
+                        if (tId !== tutor_id) {
+                            tutorAssignments.push({
+                                batch_id: id,
+                                tutor_id: tId,
+                                is_primary: false
+                            });
+                        }
+                    });
+                }
+
+                if (tutorAssignments.length > 0) {
+                    await BatchTutor.bulkCreate(tutorAssignments, { transaction });
+                }
+            }
+
+            // 2. Handle Students
             if (enroll_students !== undefined && Array.isArray(enroll_students)) {
                 if (enroll_students.length > 0) {
                     const enrollments = enroll_students.map(studentId => ({
@@ -229,21 +301,23 @@ class BatchService {
         if (search) {
             whereStudent[Op.or] = [
                 { first_name: { [Op.iLike]: `%${search}%` } },
-                { last_name: { [Op.iLike]: `%${search}%` } }
+                { last_name: { [Op.iLike]: `%${search}%` } },
+                { email: { [Op.iLike]: `%${search}%` } }
             ];
         }
 
         const { rows: enrollments, count } = await Enrollment.findAndCountAll({
             where: whereEnrollment,
-            include: [{ 
-                model: Student, 
+            include: [{
+                model: Student,
                 as: 'student',
                 where: Object.keys(whereStudent).length ? whereStudent : undefined,
-                attributes: ['id', 'first_name', 'last_name', 'email'] 
+                attributes: ['id', 'first_name', 'last_name', 'email']
             }],
             limit,
             offset,
-            order: [[{ model: Student, as: 'student' }, 'first_name', 'ASC']]
+            order: [[{ model: Student, as: 'student' }, 'first_name', 'ASC']],
+            distinct: true
         });
 
         return {
@@ -326,6 +400,53 @@ class BatchService {
             activeBatches,
             averageStudentsPerBatch: parseFloat(average)
         };
+    }
+
+    /**
+     * Bulk Create Batches from CSV
+     * Expected CSV format: name,course_id,department,start_date,end_date,institution_id
+     */
+    async bulkCreateBatchesFromCSV(filePath, defaultInstitutionId) {
+        return new Promise((resolve, reject) => {
+            const batchesToCreate = [];
+
+            fs.createReadStream(filePath)
+                .pipe(csvParser())
+                .on('data', (row) => {
+                    if (row.name) {
+                        batchesToCreate.push({
+                            name: row.name,
+                            course_id: row.course_id ? parseInt(row.course_id) : null,
+                            department: row.department || null,
+                            start_date: row.start_date || null,
+                            end_date: row.end_date || null,
+                            institution_id: row.institution_id ? parseInt(row.institution_id) : defaultInstitutionId,
+                            status: 'active'
+                        });
+                    }
+                })
+                .on('end', async () => {
+                    try {
+                        if (batchesToCreate.length === 0) return reject(new Error('No valid batch data found in CSV'));
+
+                        const createdBatches = await Batch.bulkCreate(batchesToCreate);
+                        
+                        try { fs.unlinkSync(filePath); } catch (e) {}
+                        
+                        resolve({
+                            processed_rows: batchesToCreate.length,
+                            created_count: createdBatches.length
+                        });
+                    } catch (error) {
+                        try { fs.unlinkSync(filePath); } catch (e) {}
+                        reject(error);
+                    }
+                })
+                .on('error', (error) => {
+                    try { fs.unlinkSync(filePath); } catch (e) {}
+                    reject(error);
+                });
+        });
     }
 }
 

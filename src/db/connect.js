@@ -18,9 +18,7 @@ const sequelize = new Sequelize(process.env.DATABASE_URL, {
 const connectDB = async () => {
     try {
         await sequelize.authenticate();
-        console.log('Successfully connected to PostgreSQL database via Sequelize');
     } catch (err) {
-        console.error('Error connecting to PostgreSQL database:', err.message);
         process.exit(1); // Exit process with failure
     }
 };

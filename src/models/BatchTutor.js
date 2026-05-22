@@ -15,10 +15,10 @@ module.exports = (sequelize, DataTypes) => {
             }
         },
         tutor_id: {
-            type: DataTypes.BIGINT,
+            type: DataTypes.INTEGER,
             allowNull: false,
             references: {
-                model: 'users',
+                model: 'tutors',
                 key: 'id'
             }
         },
@@ -37,7 +37,7 @@ module.exports = (sequelize, DataTypes) => {
 
     BatchTutor.associate = (models) => {
         BatchTutor.belongsTo(models.Batch, { foreignKey: 'batch_id' });
-        BatchTutor.belongsTo(models.User, { foreignKey: 'tutor_id' });
+        BatchTutor.belongsTo(models.Tutor, { foreignKey: 'tutor_id' });
     };
 
     return BatchTutor;

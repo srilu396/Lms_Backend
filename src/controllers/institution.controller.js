@@ -66,7 +66,7 @@ class InstitutionController {
                     errors: error.errors
                 });
             }
-            res.status(500).json({
+            res.status(error.statusCode || 500).json({
                 success: false,
                 message: error.message || 'Internal server error'
             });
@@ -93,8 +93,7 @@ class InstitutionController {
                 success: true,
                 message: message,
                 data: institutions.data,
-                meta: institutions.meta,
-                stats: institutions.stats
+                meta: institutions.meta
             });
         } catch (error) {
             res.status(500).json({

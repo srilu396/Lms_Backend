@@ -33,6 +33,17 @@ class InstitutionService {
     async createInstitution(data) {
         const { contacts, ...institutionData } = data;
 
+        if (institutionData.email) {
+            const existingInstitution = await Institution.findOne({
+                where: { email: institutionData.email }
+            });
+            if (existingInstitution) {
+                const error = new Error('Institution already exists with this email address.');
+                error.statusCode = 409;
+                throw error;
+            }
+        }
+
         const transaction = await sequelize.transaction();
 
         try {
@@ -115,10 +126,6 @@ class InstitutionService {
             order: [['created_at', 'DESC']]
         });
 
-        // Compute aggregate stats across all institutions
-        const totalInstitutions = await Institution.count();
-        const activeInstitutionsCount = await Institution.count({ where: { is_active: true } });
-
         return {
             data: institutions,
             meta: {
@@ -126,12 +133,6 @@ class InstitutionService {
                 page: Number(page),
                 limit: Number(limit),
                 totalPages: Math.ceil(count / limit)
-            },
-            stats: {
-                totalInstitutions,
-                activeInstitutions: activeInstitutionsCount, // Notice here is a typo, we should fix this before throwing
-                avgCoursesPerInstitution: 0, // Mocked for now as per UI placeholder
-                pendingRegistrations: 0 // Mocked for now as per UI placeholder
             }
         };
     }

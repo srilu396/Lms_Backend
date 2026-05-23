@@ -26,10 +26,10 @@ const upload = multer({
 });
 
 // Statistics endpoints (place these BEFORE /:id to avoid route collision)
-router.get('/count', studentController.getTotalCount);
-router.get('/active-count', studentController.getActiveCount);
-router.get('/average-per-course', studentController.getAveragePerCourse);
+router.get('/stats', studentController.getStudentStats);
 
+// Bulk upload template download
+router.get('/bulk-upload/template', studentController.downloadBulkUploadTemplate);
 // Bulk upload
 router.post('/bulk-upload', upload.single('file'), studentController.bulkUpload);
 

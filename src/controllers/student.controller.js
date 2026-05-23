@@ -104,50 +104,36 @@ class StudentController {
         }
     }
 
-    async getTotalCount(req, res) {
+    async getStudentStats(req, res) {
         try {
-            const count = await studentService.getTotalCount();
+            const stats = await studentService.getStudentStats();
             res.status(200).json({
                 success: true,
-                message: 'Total students count retrieved',
-                data: count
+                message: 'Student statistics retrieved successfully',
+                data: stats
             });
         } catch (error) {
             res.status(500).json({
                 success: false,
-                message: 'Server error retrieving count'
+                message: 'Server error retrieving statistics'
             });
         }
     }
 
-    async getActiveCount(req, res) {
+    async downloadBulkUploadTemplate(req, res) {
         try {
-            const count = await studentService.getActiveCount();
-            res.status(200).json({
-                success: true,
-                message: 'Active students count retrieved',
-                data: count
-            });
-        } catch (error) {
-            res.status(500).json({
-                success: false,
-                message: 'Server error retrieving active count'
-            });
-        }
-    }
+            const csvHeaders = 'first_name,last_name,email,mobile_number,password\n';
+            const csvSampleData = 'Anilsai,Nunna,saitrinath01c@gmail.com,6300915551,P@55word\nJane,Smith,jane.smith@example.com,9876543210,Password123!\n';
+            
+            const csvContent = csvHeaders + csvSampleData;
 
-    async getAveragePerCourse(req, res) {
-        try {
-            const averages = await studentService.getAveragePerCourse();
-            res.status(200).json({
-                success: true,
-                message: 'Average students per course retrieved',
-                data: averages
-            });
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', 'attachment; filename="student_upload_template.csv"');
+            res.status(200).send(csvContent);
         } catch (error) {
             res.status(500).json({
                 success: false,
-                message: 'Server error processing average per course'
+                message: 'Server error generating CSV template'
             });
         }
     }
@@ -168,7 +154,7 @@ class StudentController {
                 data: result
             });
         } catch (error) {
-            res.status(500).json({
+            res.status(error.statusCode || 500).json({
                 success: false,
                 message: error.message || 'Server error during bulk upload'
             });

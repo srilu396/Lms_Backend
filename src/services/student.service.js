@@ -1,11 +1,19 @@
 const fs = require('fs');
 const csvParser = require('csv-parser');
-const { Student, sequelize, Sequelize } = require('../models');
+const { Student, User, sequelize, Sequelize } = require('../models');
 const { Op } = Sequelize;
 const models = require('../models');
 
 class StudentService {
     async createStudent(data) {
+        // Validation: Unique Email constraint logic before DB insertion
+        const existingStudent = await Student.findOne({ where: { email: data.email } });
+        if (existingStudent) {
+            const error = new Error('Student already exists with this email address.');
+            error.statusCode = 409;
+            throw error;
+        }
+
         let passwordProvided = true;
         
         if (!data.password) {
@@ -179,19 +187,13 @@ class StudentService {
         return true;
     }
 
-    async getTotalCount() {
-        const count = await Student.count();
-        return { total_students: count };
-    }
+    async getStudentStats() {
+        const total_students = await Student.count();
 
-    async getActiveCount() {
-        const count = await Student.count({
+        const active_students = await Student.count({
             where: { status: 'active' }
         });
-        return { active_students: count };
-    }
 
-    async getAveragePerCourse() {
         const studentsGrouped = await Student.findAll({
             attributes: [
                 'course_id',
@@ -201,20 +203,23 @@ class StudentService {
             raw: true
         });
 
-        if (studentsGrouped.length === 0) {
-            return { average_students_per_course: 0 };
+        let average_students_per_course = 0;
+        if (studentsGrouped.length > 0) {
+            let totalStudents = 0;
+            let totalCourses = studentsGrouped.length;
+
+            studentsGrouped.forEach(group => {
+                totalStudents += parseInt(group.student_count, 10);
+            });
+
+            average_students_per_course = Math.round(totalStudents / totalCourses);
         }
 
-        let totalStudents = 0;
-        let totalCourses = studentsGrouped.length;
-
-        studentsGrouped.forEach(group => {
-            totalStudents += parseInt(group.student_count, 10);
-        });
-
-        const average = Math.round(totalStudents / totalCourses);
-
-        return { average_students_per_course: average };
+        return {
+            total_students,
+            active_students,
+            average_students_per_course
+        };
     }
 
     async bulkUploadStudents(filePath) {
@@ -239,10 +244,28 @@ class StudentService {
                 .on('end', async () => {
                     try {
                         if (students.length === 0) {
-                            return reject(new Error('No valid student data found in CSV'));
+                            const err = new Error('No valid student data found in CSV');
+                            err.statusCode = 400;
+                            return reject(err);
                         }
 
-                        // 1. Validate course_ids
+                        // 1. Check for duplicate emails within the CSV itself
+                        const emailSet = new Set();
+                        const internalDuplicates = [];
+                        for (const s of students) {
+                            if (emailSet.has(s.email)) {
+                                internalDuplicates.push(s.email);
+                            }
+                            emailSet.add(s.email);
+                        }
+
+                        if (internalDuplicates.length > 0) {
+                            const err = new Error('CSV contains duplicate emails: ' + internalDuplicates.join(', '));
+                            err.statusCode = 400;
+                            return reject(err);
+                        }
+
+                        // 2. Validate course_ids
                         const courseIds = [...new Set(students.filter(s => s.course_id !== null).map(s => s.course_id))];
                         let validCourseIds = new Set();
                         if (courseIds.length > 0) {
@@ -253,51 +276,79 @@ class StudentService {
                             validCourseIds = new Set(validCourses.map(c => c.id));
                         }
 
-                        // 2. Handle duplicate emails and invalid course_ids safely
+                        for (const s of students) {
+                            if (s.course_id !== null && !validCourseIds.has(s.course_id)) {
+                                const err = new Error(`Invalid course ID provided for student ${s.email}`);
+                                err.statusCode = 400;
+                                return reject(err);
+                            }
+                        }
+
+                        // 3. Check for existing emails in the DB to strictly enforce uniqueness
                         const emails = students.map(s => s.email);
                         const existingStudents = await Student.findAll({
                             where: { email: { [Op.in]: emails } },
                             attributes: ['email']
                         });
 
-                        const existingEmails = new Set(existingStudents.map(s => s.email));
-                        const finalStudentsToInsert = [];
-                        const seenEmailsInCsv = new Set();
-                        let invalidCourseCount = 0;
+                        const existingUsers = await User.findAll({
+                            where: { email: { [Op.in]: emails } },
+                            attributes: ['email']
+                        });
 
-                        for (const student of students) {
-                            // Skip if course_id is provided but invalid
-                            if (student.course_id !== null && !validCourseIds.has(student.course_id)) {
-                                invalidCourseCount++;
-                                continue;
-                            }
+                        const dbDuplicates = new Set([
+                            ...existingStudents.map(s => s.email),
+                            ...existingUsers.map(u => u.email)
+                        ]);
 
-                            if (!existingEmails.has(student.email) && !seenEmailsInCsv.has(student.email)) {
-                                finalStudentsToInsert.push(student);
-                                seenEmailsInCsv.add(student.email);
-                            }
+                        if (dbDuplicates.size > 0) {
+                            const err = new Error('The following academic email addresses already exist in the system: ' + Array.from(dbDuplicates).join(', '));
+                            err.statusCode = 409;
+                            return reject(err);
                         }
 
-                        if (finalStudentsToInsert.length > 0) {
-                            // individualHooks: true allows password hashing beforeCreate on bulkCreate
-                            await Student.bulkCreate(finalStudentsToInsert, { individualHooks: true });
-                        }
+                        // 4. Create Students and Users centrally using a Transaction
+                        const transaction = await sequelize.transaction();
+                        try {
+                            const createdStudents = await Student.bulkCreate(students, { 
+                                individualHooks: true, 
+                                transaction 
+                            });
 
-                        // Remove temp file
+                            const usersToCreate = createdStudents.map(student => ({
+                                full_name: student.first_name + ' ' + (student.last_name || ''),
+                                email: student.email,
+                                username: student.email.split('@')[0] + Math.floor(Math.random() * 10000),
+                                password_hash: student.password, // Handled / hashed by Student hooks 
+                                role: 'student',
+                                is_active: true
+                            }));
+
+                            await User.bulkCreate(usersToCreate, { transaction });
+
+                            await transaction.commit();
+
+                            try {
+                                if (fs.existsSync(filePath)) {
+                                    fs.unlinkSync(filePath);
+                                }
+                            } catch (err) {}
+
+                            resolve({
+                                success: true, // requested exact response format mapped below
+                                processed: students.length,
+                                inserted: students.length
+                            });
+                        } catch (txError) {
+                            await transaction.rollback();
+                            throw txError;
+                        }
+                    } catch (error) {
                         try {
                             if (fs.existsSync(filePath)) {
                                 fs.unlinkSync(filePath);
                             }
-                        } catch (err) {
-                        }
-
-                        resolve({
-                            processed: students.length,
-                            inserted: finalStudentsToInsert.length,
-                            duplicates_ignored: students.length - finalStudentsToInsert.length - invalidCourseCount,
-                            invalid_courses_ignored: invalidCourseCount
-                        });
-                    } catch (error) {
+                        } catch (err) {}
                         reject(error);
                     }
                 })

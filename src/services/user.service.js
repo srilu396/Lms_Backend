@@ -92,7 +92,7 @@ class UserService {
             where,
             limit: parsedLimit,
             offset: offset,
-            attributes: { exclude: ['password_hash', 'refresh_token'] },
+            attributes: ['id', 'full_name', 'username', 'email', 'role', 'created_at', 'is_active', 'avatar_url'],
             order: [['created_at', 'DESC']]
         });
 
@@ -109,7 +109,7 @@ class UserService {
 
     async getUserById(id) {
         const user = await User.findByPk(id, {
-            attributes: { exclude: ['password_hash', 'refresh_token'] }
+            attributes: ['id', 'full_name', 'username', 'email', 'role', 'created_at', 'is_active', 'avatar_url']
         });
         if (!user) {
             const error = new Error('User not found');
@@ -119,16 +119,18 @@ class UserService {
         return user;
     }
 
-    async getTotalAdmins() {
-        return await User.count({ where: { role: 'admin' } });
-    }
-
-    async getTotalRepresentatives() {
-        return await User.count({ where: { role: 'institution_representative' } });
-    }
-
-    async getTotalInstitutions() {
-        return await Institution.count();
+    async getUserStats() {
+        const [total_admins, total_representatives, total_institutions] = await Promise.all([
+            User.count({ where: { role: 'admin' } }),
+            User.count({ where: { role: 'institution_representative' } }),
+            Institution.count()
+        ]);
+        
+        return {
+            total_admins,
+            total_representatives,
+            total_institutions
+        };
     }
 
     async updateUser(id, updateData) {

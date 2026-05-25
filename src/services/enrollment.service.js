@@ -26,7 +26,27 @@ class EnrollmentService {
             throw error;
         }
 
-        return await Enrollment.create(data);
+        const enrollment = await Enrollment.create(data);
+
+        // --- NOTIFICATION TRIGGER 6 (Student Enrollment) ---
+        try {
+            if (student.user_id) {
+                const { createNotification } = require('../notifications/notification.service');
+                const courseName = batch.course_id ? (await Course.findByPk(batch.course_id))?.name || 'your course' : 'your course';
+                await createNotification({
+                    userId: student.user_id,
+                    role: 'student',
+                    type: 'BATCH_ALLOCATED_STUDENT',
+                    title: 'You Have Been Enrolled in a Batch',
+                    message: `You have been enrolled in "${batch.name}". Your course "${courseName}" starts on ${batch.start_date || 'soon'}. Welcome!`,
+                    referenceId: batch.id,
+                    referenceType: 'batch'
+                });
+            }
+        } catch (err) {}
+        // --- END NOTIFICATION TRIGGER ---
+
+        return enrollment;
     }
 
     async getAllEnrollments(filters = {}) {

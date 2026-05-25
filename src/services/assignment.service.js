@@ -55,6 +55,42 @@ class AssignmentService {
             }
 
             await transaction.commit();
+
+            // --- NOTIFICATION TRIGGER 9 (New Assignment Added) ---
+            try {
+                if (course_id) {
+                    const { sequelize, Batch, Enrollment, Student } = require('../models');
+                    const { createNotificationsForMany } = require('../notifications/notification.service');
+                    
+                    // Find all active batches for this course
+                    const batches = await Batch.findAll({ where: { course_id, status: 'active' }, attributes: ['id', 'name'] });
+                    
+                    for (const batch of batches) {
+                        const enrollments = await Enrollment.findAll({
+                            where: { batch_id: batch.id, status: 'active' },
+                            include: [{ model: Student, as: 'student', attributes: ['user_id'] }]
+                        });
+                        
+                        const userIds = enrollments.map(e => e.student?.user_id).filter(id => id);
+                        
+                        if (userIds.length > 0) {
+                            // Find due date? BatchAssignment not created here, so no due date yet.
+                            // The prompt says "{due_date exists ? \"Due: {due_date}\" : \"No deadline set.\"}"
+                            await createNotificationsForMany({
+                                userIds,
+                                role: 'student',
+                                type: 'ASSIGNMENT_ADDED',
+                                title: 'New Assignment Posted',
+                                message: `A new assignment "${title}" has been posted in your batch "${batch.name}". No deadline set.`,
+                                referenceId: assignment.id,
+                                referenceType: 'assignment'
+                            });
+                        }
+                    }
+                }
+            } catch (err) {}
+            // --- END TRIGGER 9 ---
+
             return await this.getAssignmentById(assignment.id);
         } catch (error) {
             await transaction.rollback();

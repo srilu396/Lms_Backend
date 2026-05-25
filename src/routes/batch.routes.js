@@ -5,6 +5,15 @@ const os = require('os');
 const batchController = require('../controllers/batch.controller');
 const validate = require('../middlewares/validate');
 const { createBatchSchema, updateBatchSchema } = require('../utils/validations/batch.validation');
+const authMiddleware = require('../middlewares/auth.middleware');
+const roleMiddleware = require('../middlewares/role.middleware');
+
+// Apply authentication middleware to all batch routes
+router.use(authMiddleware);
+
+// Only admins and institution representatives can manage batches, but tutors might view them.
+// Let's add basic standard routing role checks or leave role checking up to individual controller endpoints if needed.
+// However applying authentication at least enforces valid standard tokens.
 
 // Setup multer for CSV upload
 const upload = multer({
@@ -56,9 +65,17 @@ router.delete('/:id', batchController.deleteBatch);
 // Associate a tutor with a batch
 router.post('/:id/tutors', batchController.assignTutor);
 
+// Download batches bulk upload template
+router.get('/bulk-upload/template', batchController.downloadBatchTemplate);
+
+// Download batch students csv template
+router.get('/:id/students/bulk-upload/template', batchController.downloadBatchStudentTemplate);
+
 // Student management inside Batch
 router.get('/:id/students', batchController.getBatchStudents);
 router.post('/:id/students/bulk-upload', upload.single('file'), batchController.bulkUploadStudentsToBatch);
+router.get('/:id/students/export-pdf', batchController.exportBatchStudentsPDF);
+router.get('/:id/stats', batchController.getBatchStudentStats);
 
 // Get batch assignments
 router.get('/:id/assignments', batchController.getBatchAssignments);

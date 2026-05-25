@@ -120,9 +120,9 @@ class BatchService {
             distinct: true
         });
 
+// get all batches mappings 
         const formattedBatches = batches.map(batch => {
             const batchJson = batch.toJSON();
-            // Get primary tutor name from batchTutors junction
             const primaryTutor = batchJson.batchTutors?.find(bt => bt.is_primary)?.Tutor
                 || batchJson.batchTutors?.[0]?.Tutor
                 || null;
@@ -135,7 +135,8 @@ class BatchService {
                 course: batchJson.Course?.name || 'N/A',
                 start_date: batchJson.start_date,
                 status: batchJson.status,
-                department: batchJson.department || 'N/A'
+                department: batchJson.department || 'N/A',
+                completion_percentage: 0 // Mocked for now, depending on student course progression structure
             };
         });
 
@@ -151,7 +152,7 @@ class BatchService {
      * Get a single batch by ID
      */
     async getBatchById(id) {
-        return await Batch.findByPk(id, {
+        const batch = await Batch.findByPk(id, {
             include: [
                 { model: Course, attributes: ['id', 'name'] },
                 { model: Institution, attributes: ['id', 'name'], required: false },
@@ -169,6 +170,13 @@ class BatchService {
                 { model: BatchPerformance, required: false }
             ]
         });
+
+        if (!batch) return null;
+
+        const batchJson = batch.toJSON();
+        batchJson.completion_percentage = 0; // Mocked - dependent on student course topic progression structures 
+
+        return batchJson;
     }
 
     /**
@@ -297,9 +305,9 @@ class BatchService {
             whereEnrollment.status = status;
         }
 
-        const whereStudent = {};
+        const studentWhere = {};
         if (search) {
-            whereStudent[Op.or] = [
+            studentWhere[Op.or] = [
                 { first_name: { [Op.iLike]: `%${search}%` } },
                 { last_name: { [Op.iLike]: `%${search}%` } },
                 { email: { [Op.iLike]: `%${search}%` } }
@@ -311,7 +319,8 @@ class BatchService {
             include: [{
                 model: Student,
                 as: 'student',
-                where: Object.keys(whereStudent).length ? whereStudent : undefined,
+                where: Object.keys(studentWhere).length > 0 ? studentWhere : undefined,
+                required: Object.keys(studentWhere).length > 0, // This inner join forces search query to work reliably 
                 attributes: ['id', 'first_name', 'last_name', 'email']
             }],
             limit,
@@ -326,7 +335,8 @@ class BatchService {
                 full_name: `${e.student?.first_name || ''} ${e.student?.last_name || ''}`.trim(),
                 email: e.student?.email,
                 enrollment_date: e.enrollment_date,
-                status: e.status
+                status: e.status,
+                completion_percentage: 0 // Will replace dynamically if Progress is active
             })),
             total: count,
             page: parseInt(page),
@@ -399,6 +409,23 @@ class BatchService {
             totalBatches,
             activeBatches,
             averageStudentsPerBatch: parseFloat(average)
+        };
+    }
+
+    /**
+     * Get isolated stats for a specific batch based on student structure
+     */
+    async getSpecificBatchStats(batchId) {
+        const totalStudents = await Enrollment.count({ where: { batch_id: batchId } });
+        
+        // Simulating completion numbers: Usually driven via Progress completion counts relative to course mapping structures
+        // Placeholders implemented anticipating exact progress tracking logic
+        const completedCourseCount = 0; 
+        
+        return {
+            total_students: totalStudents,
+            completed_course_count: completedCourseCount,
+            not_completed_course_count: totalStudents - completedCourseCount
         };
     }
 

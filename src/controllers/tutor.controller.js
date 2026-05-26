@@ -104,50 +104,17 @@ class TutorController {
         }
     }
 
-    async getTotalCount(req, res) {
+    async getTutorStats(req, res) {
         try {
-            const count = await tutorService.getTotalCount();
+            const stats = await tutorService.getTutorStats();
             res.status(200).json({
                 success: true,
-                message: 'Total tutors count retrieved',
-                data: count
+                data: stats
             });
         } catch (error) {
             res.status(500).json({
                 success: false,
-                message: 'Server error retrieving count'
-            });
-        }
-    }
-
-    async getActiveCount(req, res) {
-        try {
-            const count = await tutorService.getActiveCount();
-            res.status(200).json({
-                success: true,
-                message: 'Active tutors count retrieved',
-                data: count
-            });
-        } catch (error) {
-            res.status(500).json({
-                success: false,
-                message: 'Server error retrieving active count'
-            });
-        }
-    }
-
-    async getNewlyAddedThisMonth(req, res) {
-        try {
-            const result = await tutorService.getNewlyAddedThisMonth();
-            res.status(200).json({
-                success: true,
-                message: 'Newly added tutors this month retrieved',
-                data: result
-            });
-        } catch (error) {
-            res.status(500).json({
-                success: false,
-                message: 'Server error retrieving count'
+                message: 'Server error retrieving tutor stats'
             });
         }
     }

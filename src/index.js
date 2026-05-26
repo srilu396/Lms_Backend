@@ -11,8 +11,13 @@ const { connectDB, sequelize } = require('./db/connect');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Trust proxy for rate limiting behind reverse proxies (Render, Heroku, etc.)
+app.set('trust proxy', 1);
+
 // Security Headers
-app.use(helmet());
+app.use(helmet({
+    crossOriginResourcePolicy: false, // allow cross-origin image loading
+}));
 
 // Compress responses
 app.use(compression());

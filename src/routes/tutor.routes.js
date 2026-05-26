@@ -13,9 +13,7 @@ router.post('/', tutorController.createTutor);
 router.get('/', tutorController.getTutors);
 
 // Statistics / Summary Endpoints
-router.get('/count/total', tutorController.getTotalCount);
-router.get('/count/active', tutorController.getActiveCount);
-router.get('/count/newly-added', tutorController.getNewlyAddedThisMonth);
+router.get('/stats', tutorController.getTutorStats);
 
 // ID-based endpoints
 router.get('/:id', tutorController.getTutorById);

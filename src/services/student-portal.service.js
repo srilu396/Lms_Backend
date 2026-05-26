@@ -50,7 +50,21 @@ class StudentPortalService {
             ]
         });
 
-        return profile;
+        // Fetch allocated (enrolled) batches
+        const enrollments = await Enrollment.findAll({
+            where: { student_id: student.id, status: 'active' },
+            include: [
+                {
+                    model: Batch,
+                    attributes: ['id', 'name', 'start_date', 'end_date']
+                }
+            ]
+        });
+
+        const profileData = profile.toJSON();
+        profileData.allocated_batches = enrollments.map(e => e.Batch).filter(Boolean);
+
+        return profileData;
     }
 
     // ─── 2. Stats (Dashboard Overview Cards) ────────────────────────────────────

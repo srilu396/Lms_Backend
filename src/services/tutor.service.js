@@ -56,9 +56,15 @@ class TutorService {
 
     async getTutors(query) {
         const { search, status, domains, page = 1, limit = 10, rowsPerPage } = query;
-        const actualLimit = rowsPerPage || limit;
-        const parsedLimit = Math.min(parseInt(actualLimit, 10) || 10, 50);
-        const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
+        
+        // Proper numeric parsing for pagination
+        let parsedLimit = parseInt(rowsPerPage || limit, 10);
+        if (isNaN(parsedLimit) || parsedLimit <= 0) parsedLimit = 10;
+        parsedLimit = Math.min(parsedLimit, 50);
+
+        let parsedPage = parseInt(page, 10);
+        if (isNaN(parsedPage) || parsedPage <= 0) parsedPage = 1;
+        
         const offset = (parsedPage - 1) * parsedLimit;
 
         const where = {};
@@ -69,16 +75,20 @@ class TutorService {
 
         if (domains) {
             // domains could come as a comma-separated string
-            const domainArray = domains.split(',').map(d => d.trim());
-            // Filter tutors that have any of the specified domains using LIKE operator
-            // This works by checking if the JSON contains the domain string
-            where[Op.and] = domainArray.map(domain =>
-                sequelize.where(
-                    sequelize.col('domains'),
-                    Op.like,
-                    `%${domain}%`
-                )
-            );
+            const domainArray = domains.split(',').map(d => d.trim()).filter(Boolean);
+            if (domainArray.length > 0) {
+                // To filter JSON arrays accurately cross-db, cast to text and use LIKE/Op.like
+                const isPostgres = sequelize.getDialect() === 'postgres';
+                const jsonFieldCast = isPostgres ? 'cast("domains" as text)' : 'domains';
+                
+                where[Op.and] = domainArray.map(domain =>
+                    sequelize.where(
+                        sequelize.literal(jsonFieldCast),
+                        Op.like,
+                        `%${domain}%`
+                    )
+                );
+            }
         }
 
         if (search) {
@@ -91,12 +101,19 @@ class TutorService {
 
         const { count, rows } = await Tutor.findAndCountAll({
             where,
+            include: [{
+                model: sequelize.models.Batch,
+                as: 'batches',
+                attributes: ['id', 'name'],
+                through: { attributes: [] }
+            }],
             limit: parsedLimit,
             offset: offset,
-            order: [['created_at', 'DESC']]
+            order: [['created_at', 'DESC']],
+            distinct: true
         });
 
-        const formattedRows = rows.map(tutor => this.formatTutorOutput(tutor));
+        const formattedRows = rows.map(tutor => this.formatTutorOutput(tutor, true));
 
         return {
             data: formattedRows,
@@ -163,44 +180,50 @@ class TutorService {
         return true;
     }
 
-    async getTotalCount() {
-        const count = await Tutor.count();
-        return { total_tutors: count };
-    }
-
-    async getActiveCount() {
-        const count = await Tutor.count({
-            where: { status: 'active' }
-        });
-        return { active_tutors: count };
-    }
-
-    async getNewlyAddedThisMonth() {
+    async getTutorStats() {
         // get first day of current month
         const date = new Date();
         const firstDayOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
 
-        const count = await Tutor.count({
-            where: {
-                created_at: {
-                    [Op.gte]: firstDayOfMonth
+        const [totalTutors, activeTutors, newlyAddedTutors] = await Promise.all([
+            Tutor.count(),
+            Tutor.count({ where: { status: 'active' } }),
+            Tutor.count({
+                where: {
+                    created_at: {
+                        [Op.gte]: firstDayOfMonth
+                    }
                 }
-            }
-        });
-        return { newly_added_this_month: count };
+            })
+        ]);
+
+        return {
+            totalTutors,
+            activeTutors,
+            newlyAddedTutors
+        };
     }
 
-    formatTutorOutput(tutor) {
-        return {
+    formatTutorOutput(tutor, includeBatches = false) {
+        const output = {
             tutor_id: tutor.id,
             tutor_name: tutor.full_name,
             email: tutor.email,
             phone: tutor.mobile_number,
-            domains: tutor.domains,
-            tags: tutor.tags,
+            domains: tutor.domains || [],
+            tags: tutor.tags || [],
             status: tutor.status,
             profile_image: tutor.profile_image
         };
+
+        if (includeBatches && tutor.batches) {
+            output.assignedBatches = tutor.batches.map(batch => ({
+                _id: batch.id,
+                batchName: batch.name
+            }));
+        }
+
+        return output;
     }
 }
 

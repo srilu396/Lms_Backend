@@ -682,14 +682,24 @@ class TutorPortalService {
     // ─── 0. Profile ─────────────────────────────────────────────────────────────
     async getProfile(tutorId) {
         const tutor = await Tutor.findByPk(tutorId, {
-            attributes: { exclude: ['password'] }
+            attributes: { exclude: ['password'] },
+            include: [{
+                model: Batch,
+                as: 'batches',
+                attributes: ['id', 'name', 'start_date', 'end_date'],
+                through: { attributes: [] }
+            }]
         });
         
         if (!tutor) {
             throw { statusCode: 404, message: 'Tutor profile not found' };
         }
         
-        return tutor;
+        const profileData = tutor.toJSON();
+        profileData.allocated_batches = profileData.batches || [];
+        delete profileData.batches;
+        
+        return profileData;
     }
 
     async updateProfile(tutorId, userId, updateData) {

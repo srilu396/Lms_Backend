@@ -10,9 +10,22 @@ class InstitutionRepBatchesController {
             const institutionId = req.user.institution_id;
             const data = await batchesService.getBatches(req.query, institutionId);
             
+            // Map batches to include only the requested fields + id (vital for detail routes)
+            const cleanBatches = data.batches.map(batch => ({
+                id: batch.id,
+                batch_name: batch.batch_name,
+                course: batch.course,
+                tutor: batch.tutor,
+                total_students: batch.total_students,
+                progress_percentage: batch.progress_percentage
+            }));
+
             return res.status(200).json({
                 success: true,
-                data
+                data: {
+                    ...data,
+                    batches: cleanBatches
+                }
             });
         } catch (error) {
             next(error);

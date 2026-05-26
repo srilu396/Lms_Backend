@@ -63,25 +63,126 @@ class InstitutionRepBatchService {
             subQuery: false
         });
 
+        const courseIds = [...new Set(batches.map(b => b.course_id))];
+        const batchIds = batches.map(b => b.id);
+
         const formattedBatches = [];
 
-        for (const batch of batches) {
-            const stats = await this.calculateBatchProgress(batch);
-            
-            formattedBatches.push({
-                id: batch.id,
-                batch_id: `#BATCH-${batch.id}`,
-                batch_name: batch.name,
-                institution_name: batch.Institution?.name || 'N/A',
-                tutor: (batch.tutors && batch.tutors.length > 0) ? batch.tutors.map(t => t.full_name).join(', ') : 'Unassigned',
-                course: batch.Course?.name || 'N/A',
-                department: batch.department || 'Design', // Default to Design if null as per example
-                start_date: batch.start_date,
-                status: batch.status,
-                total_students: batch.Enrollments ? batch.Enrollments.length : 0,
-                progress_percentage: stats.progress_percentage,
-                progress_status: stats.progress_status
+        if (batchIds.length > 0) {
+            const [enrollments, courseItemsMap] = await Promise.all([
+                Enrollment.findAll({
+                    where: { batch_id: { [Op.in]: batchIds } },
+                    attributes: ['id', 'student_id', 'batch_id'],
+                    raw: true
+                }),
+                this.getBatchTotalItemsInCourses(courseIds)
+            ]);
+
+            const enrollmentsByBatch = {};
+            enrollments.forEach(e => {
+                if (!enrollmentsByBatch[e.batch_id]) {
+                    enrollmentsByBatch[e.batch_id] = [];
+                }
+                enrollmentsByBatch[e.batch_id].push(e);
             });
+
+            const enrollmentIds = enrollments.map(e => e.id);
+            
+            let completionsMap = {};
+            if (enrollmentIds.length > 0) {
+                const [lessonsCounts, assignmentsCounts, quizzesCounts] = await Promise.all([
+                    LessonProgress.findAll({
+                        attributes: ['enrollment_id', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
+                        where: { enrollment_id: { [Op.in]: enrollmentIds }, is_completed: true },
+                        group: ['enrollment_id'],
+                        raw: true
+                    }),
+                    AssignmentSubmission.findAll({
+                        attributes: ['enrollment_id', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
+                        where: { enrollment_id: { [Op.in]: enrollmentIds }, status: { [Op.in]: ['submitted', 'graded'] } },
+                        group: ['enrollment_id'],
+                        raw: true
+                    }),
+                    QuizSubmission.findAll({
+                        attributes: ['enrollment_id', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
+                        where: { enrollment_id: { [Op.in]: enrollmentIds }, status: { [Op.in]: ['completed', 'reviewed'] } },
+                        group: ['enrollment_id'],
+                        raw: true
+                    })
+                ]);
+
+                lessonsCounts.forEach(c => {
+                    completionsMap[c.enrollment_id] = (completionsMap[c.enrollment_id] || 0) + (parseInt(c.count) || 0);
+                });
+                assignmentsCounts.forEach(c => {
+                    completionsMap[c.enrollment_id] = (completionsMap[c.enrollment_id] || 0) + (parseInt(c.count) || 0);
+                });
+                quizzesCounts.forEach(c => {
+                    completionsMap[c.enrollment_id] = (completionsMap[c.enrollment_id] || 0) + (parseInt(c.count) || 0);
+                });
+            }
+
+            for (const batch of batches) {
+                const batchEnrollments = enrollmentsByBatch[batch.id] || [];
+                const studentIds = batchEnrollments.map(e => e.student_id);
+                
+                let progressPercentage = 0;
+                let progressStatus = 'upcoming';
+
+                if (studentIds.length > 0) {
+                    const totalItemsInCourse = courseItemsMap[batch.course_id] || 0;
+                    if (totalItemsInCourse > 0) {
+                        let totalCompletions = 0;
+                        batchEnrollments.forEach(e => {
+                            totalCompletions += completionsMap[e.id] || 0;
+                        });
+
+                        const maxPossibleCompletions = totalItemsInCourse * studentIds.length;
+                        progressPercentage = Math.round((totalCompletions / maxPossibleCompletions) * 100);
+
+                        if (progressPercentage === 100) {
+                            progressStatus = 'completed';
+                        } else {
+                            const today = new Date();
+                            const start = new Date(batch.start_date);
+                            const end = new Date(batch.end_date);
+                            
+                            if (today < start) {
+                                progressStatus = 'upcoming';
+                            } else if (today > end) {
+                                progressStatus = 'at_risk';
+                            } else {
+                                const totalDuration = end - start;
+                                const elapsed = today - start;
+                                const expectedProgress = (elapsed / totalDuration) * 100;
+
+                                if (progressPercentage < expectedProgress - 10 || progressPercentage < 60) {
+                                    progressStatus = 'at_risk';
+                                } else {
+                                    progressStatus = 'on_track';
+                                }
+                            }
+                        }
+                    } else {
+                        progressStatus = 'on_track';
+                    }
+                }
+
+                formattedBatches.push({
+                    id: batch.id,
+                    batch_id: `#BATCH-${batch.id}`,
+                    batch_name: batch.name,
+                    institution_name: batch.Institution?.name || 'N/A',
+                    tutor: (batch.tutors && batch.tutors.length > 0) ? batch.tutors.map(t => t.full_name).join(', ') : 'Unassigned',
+                    course: batch.Course?.name || 'N/A',
+                    department: batch.department || 'Design',
+                    start_date: batch.start_date,
+                    status: batch.status,
+                    total_students: studentIds.length,
+                    progress_percentage: progressPercentage,
+                    progress_status: progressStatus
+                });
+            }
         }
 
         // Fetch unique departments for this institution
@@ -97,6 +198,61 @@ class InstitutionRepBatchService {
                 totalPages: Math.ceil(count / limit)
             }
         };
+    }
+
+    async getBatchTotalItemsInCourses(courseIds) {
+        if (!courseIds.length) return {};
+        
+        try {
+            const [lessonsResults, quizzesResults, assignmentsCounts] = await Promise.all([
+                sequelize.query(`
+                    SELECT m.course_id, COUNT(DISTINCT l.id) as count 
+                    FROM lessons l
+                    JOIN topics t ON l.topic_id = t.id
+                    JOIN modules m ON t.module_id = m.id
+                    WHERE m.course_id IN (:courseIds)
+                    GROUP BY m.course_id
+                `, { replacements: { courseIds }, type: sequelize.QueryTypes.SELECT }),
+                
+                sequelize.query(`
+                    SELECT m.course_id, COUNT(DISTINCT q.id) as count 
+                    FROM quizzes q
+                    JOIN topics t ON q.topic_id = t.id
+                    JOIN modules m ON t.module_id = m.id
+                    WHERE m.course_id IN (:courseIds)
+                    GROUP BY m.course_id
+                `, { replacements: { courseIds }, type: sequelize.QueryTypes.SELECT }),
+                
+                Assignment.findAll({
+                    attributes: ['course_id', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
+                    where: { course_id: { [Op.in]: courseIds } },
+                    group: ['course_id'],
+                    raw: true
+                })
+            ]);
+
+            const courseItemsMap = {};
+            
+            courseIds.forEach(cid => {
+                courseItemsMap[cid] = 0;
+            });
+
+            lessonsResults.forEach(r => {
+                courseItemsMap[r.course_id] = (courseItemsMap[r.course_id] || 0) + parseInt(r.count || 0, 10);
+            });
+
+            quizzesResults.forEach(r => {
+                courseItemsMap[r.course_id] = (courseItemsMap[r.course_id] || 0) + parseInt(r.count || 0, 10);
+            });
+
+            assignmentsCounts.forEach(r => {
+                courseItemsMap[r.course_id] = (courseItemsMap[r.course_id] || 0) + parseInt(r.count || 0, 10);
+            });
+
+            return courseItemsMap;
+        } catch (error) {
+            return {};
+        }
     }
 
     /**

@@ -18,65 +18,117 @@ class DashboardService {
      * @param {number} institutionId 
      */
     async getStats(institutionId) {
-        // Step 1: Batches
-        const activeCount = await Batch.count({ 
-            where: { 
-                institution_id: institutionId, 
-                status: 'active' 
-            } 
-        });
-        
-        const pendingGraduation = await Batch.count({ 
-            where: { 
-                institution_id: institutionId, 
-                status: 'completed' // Interpreted as 'pending_graduation' or equivalent
-            } 
-        });
-
-        // Step 2: Avg Quiz Score & Trend
         const now = new Date();
         const firstDayThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         const firstDayLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        
-        // Next month start for boundary
         const firstDayNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
-        const avgQuizScoreOverall = await this._getAverageQuizScore(institutionId);
-        const avgQuizScoreCurrentMonth = await this._getAverageQuizScore(institutionId, firstDayThisMonth, firstDayNextMonth);
-        const avgQuizScorePrevMonth = await this._getAverageQuizScore(institutionId, firstDayLastMonth, firstDayThisMonth);
+        const [
+            activeCount,
+            pendingGraduation,
+            avgQuizScoreOverall,
+            avgQuizScoreCurrentMonth,
+            avgQuizScorePrevMonth,
+            batches
+        ] = await Promise.all([
+            Batch.count({ where: { institution_id: institutionId, status: 'active' } }),
+            Batch.count({ where: { institution_id: institutionId, status: 'completed' } }),
+            this._getAverageQuizScore(institutionId),
+            this._getAverageQuizScore(institutionId, firstDayThisMonth, firstDayNextMonth),
+            this._getAverageQuizScore(institutionId, firstDayLastMonth, firstDayThisMonth),
+            Batch.findAll({
+                where: { institution_id: institutionId },
+                attributes: ['id'],
+                raw: true
+            })
+        ]);
 
         const diff = avgQuizScoreCurrentMonth - avgQuizScorePrevMonth;
         const trendValue = diff.toFixed(1);
         const trendDirection = diff > 0 ? 'up' : (diff < 0 ? 'down' : 'stable');
         const trendFormatted = (diff > 0 ? '+' : '') + trendValue;
 
-        // Step 3: Completion Rate
-        // Get all batches to calculate expected assignments (student count * assignment count)
-        const batches = await Batch.findAll({
-            where: { institution_id: institutionId },
-            include: [
-                { model: Enrollment, attributes: ['id'] },
-                { model: BatchAssignment, attributes: ['id'] }
-            ]
-        });
+        const batchIds = batches.map(b => b.id);
+
+        if (batchIds.length === 0) {
+            return {
+                avg_quiz_score: {
+                    value: avgQuizScoreOverall,
+                    trend: trendFormatted,
+                    trend_direction: trendDirection
+                },
+                completion_rate: {
+                    value: 0,
+                    label: 'Needs Attention'
+                },
+                total_batches: {
+                    active_count: activeCount,
+                    pending_graduation: pendingGraduation
+                },
+                at_risk_students: {
+                    count: 0,
+                    today_change: 0,
+                    urgency_label: 'Under control'
+                }
+            };
+        }
+
+        const [
+            enrollmentCounts,
+            assignmentCounts,
+            totalSubmitted,
+            enrollments,
+            batchSessions
+        ] = await Promise.all([
+            Enrollment.findAll({
+                attributes: ['batch_id', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
+                where: { batch_id: { [Op.in]: batchIds } },
+                group: ['batch_id'],
+                raw: true
+            }),
+            BatchAssignment.findAll({
+                attributes: ['batch_id', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
+                where: { batch_id: { [Op.in]: batchIds } },
+                group: ['batch_id'],
+                raw: true
+            }),
+            AssignmentSubmission.count({
+                include: [{
+                    model: Enrollment,
+                    required: true,
+                    where: { batch_id: { [Op.in]: batchIds } }
+                }],
+                where: { 
+                    status: { [Op.in]: ['submitted', 'graded'] } 
+                }
+            }),
+            Enrollment.findAll({
+                where: { batch_id: { [Op.in]: batchIds } },
+                attributes: ['id', 'batch_id'],
+                raw: true
+            }),
+            AttendanceSession.findAll({
+                where: { batch_id: { [Op.in]: batchIds } },
+                attributes: ['batch_id', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
+                group: ['batch_id'],
+                raw: true
+            })
+        ]);
 
         let totalAssigned = 0;
-        const batchIds = [];
-        batches.forEach(b => {
-            batchIds.push(b.id);
-            totalAssigned += (b.Enrollments.length * b.BatchAssignments.length);
+        const enrollmentMap = {};
+        enrollmentCounts.forEach(ec => {
+            enrollmentMap[ec.batch_id] = parseInt(ec.count, 10) || 0;
+        });
+        const assignmentMap = {};
+        assignmentCounts.forEach(ac => {
+            assignmentMap[ac.batch_id] = parseInt(ac.count, 10) || 0;
         });
 
-        // Get actual submissions
-        const totalSubmitted = await AssignmentSubmission.count({
-            include: [{
-                model: Enrollment,
-                required: true,
-                where: { batch_id: { [Op.in]: batchIds } }
-            }],
-            where: { 
-                status: { [Op.in]: ['submitted', 'graded'] } 
-            }
+        batchIds.forEach(id => {
+            const eCount = enrollmentMap[id] || 0;
+            const aCount = assignmentMap[id] || 0;
+            totalAssigned += (eCount * aCount);
         });
 
         const completionRate = totalAssigned > 0 
@@ -87,57 +139,99 @@ class DashboardService {
         if (completionRate >= 90) completionLabel = 'Stable';
         else if (completionRate >= 70) completionLabel = 'Good';
 
-        // Step 4: At Risk Students
-        // Fetch enrollments with their submissions and attendance for calculation
-        const enrollments = await Enrollment.findAll({
-            where: { batch_id: { [Op.in]: batchIds } },
-            include: [
-                { 
-                    model: QuizSubmission, 
-                    include: [{ model: Quiz, attributes: ['total_marks'] }] 
+        if (enrollments.length === 0) {
+            return {
+                avg_quiz_score: {
+                    value: avgQuizScoreOverall,
+                    trend: trendFormatted,
+                    trend_direction: trendDirection
                 },
-                { model: StudentAttendance, as: 'attendances' }
-            ]
-        });
+                completion_rate: {
+                    value: completionRate,
+                    label: completionLabel
+                },
+                total_batches: {
+                    active_count: activeCount,
+                    pending_graduation: pendingGraduation
+                },
+                at_risk_students: {
+                    count: 0,
+                    today_change: 0,
+                    urgency_label: 'Under control'
+                }
+            };
+        }
 
-        // Get total sessions per batch for attendance calculation
-        const batchSessions = await AttendanceSession.findAll({
-            where: { batch_id: { [Op.in]: batchIds } },
-            attributes: ['batch_id', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
-            group: ['batch_id'],
-            raw: true
-        });
-        
+        const enrollmentIds = enrollments.map(e => e.id);
+        const [
+            quizSubmissions,
+            studentAttendances
+        ] = await Promise.all([
+            QuizSubmission.findAll({
+                attributes: ['enrollment_id', 'score'],
+                include: [{
+                    model: Quiz,
+                    attributes: ['total_marks'],
+                    required: true
+                }],
+                where: { enrollment_id: { [Op.in]: enrollmentIds } },
+                raw: true,
+                nest: true
+            }),
+            StudentAttendance.findAll({
+                attributes: ['enrollment_id', 'status'],
+                where: { enrollment_id: { [Op.in]: enrollmentIds } },
+                raw: true
+            })
+        ]);
+
         const batchSessionMap = {};
         batchSessions.forEach(s => {
-            batchSessionMap[s.batch_id] = parseInt(s.count);
+            batchSessionMap[s.batch_id] = parseInt(s.count) || 0;
+        });
+
+        const quizSubmissionsMap = {};
+        quizSubmissions.forEach(sub => {
+            if (!quizSubmissionsMap[sub.enrollment_id]) {
+                quizSubmissionsMap[sub.enrollment_id] = [];
+            }
+            quizSubmissionsMap[sub.enrollment_id].push({
+                score: sub.score,
+                total_marks: sub.Quiz ? sub.Quiz.total_marks : 100
+            });
+        });
+
+        const attendancesMap = {};
+        studentAttendances.forEach(att => {
+            if (!attendancesMap[att.enrollment_id]) {
+                attendancesMap[att.enrollment_id] = [];
+            }
+            attendancesMap[att.enrollment_id].push(att);
         });
 
         let atRiskCount = 0;
         enrollments.forEach(e => {
-            // Student Avg Quiz Score for at-risk check
             let studentAvgScore = 0;
-            if (e.QuizSubmissions && e.QuizSubmissions.length > 0) {
+            const subs = quizSubmissionsMap[e.id] || [];
+            if (subs.length > 0) {
                 let totalPct = 0;
-                e.QuizSubmissions.forEach(sub => {
+                subs.forEach(sub => {
                     const score = parseFloat(sub.score) || 0;
-                    const maxMarks = (sub.Quiz && sub.Quiz.total_marks) ? parseFloat(sub.Quiz.total_marks) : 100;
+                    const maxMarks = (sub.total_marks) ? parseFloat(sub.total_marks) : 100;
                     totalPct += (score / maxMarks) * 100;
                 });
-                studentAvgScore = totalPct / e.QuizSubmissions.length;
+                studentAvgScore = totalPct / subs.length;
             } else {
-                // If no quizzes taken, we assume 0 for score-based risk check
                 studentAvgScore = 0;
             }
 
-            // Student Attendance Percent
             let attendancePct = 0;
             const totalBatchSessions = batchSessionMap[e.batch_id] || 0;
             if (totalBatchSessions > 0) {
-                const presentCount = e.attendances ? e.attendances.filter(a => a.status === 'present' || a.status === 'late').length : 0;
+                const studentAtts = attendancesMap[e.id] || [];
+                const presentCount = studentAtts.filter(a => a.status === 'present' || a.status === 'late').length;
                 attendancePct = (presentCount / totalBatchSessions) * 100;
             } else {
-                // If no sessions, they are not failing attendance
                 attendancePct = 100; 
             }
 
@@ -166,7 +260,7 @@ class DashboardService {
             },
             at_risk_students: {
                 count: atRiskCount,
-                today_change: 0, // Cannot reliably determine historical change without snapshotting
+                today_change: 0,
                 urgency_label: urgencyLabel
             }
         };
@@ -176,7 +270,6 @@ class DashboardService {
      * Get monitoring list (at-risk and warning students)
      */
     async getMonitoringList(institutionId, { page, limit, search, batch_id }) {
-        // Step 1: Get all batches for this institution
         const allBatches = await Batch.findAll({
             where: { institution_id: institutionId },
             attributes: ['id', 'name']
@@ -201,9 +294,9 @@ class DashboardService {
             };
         }
 
-        // Step 2 & 3: Get all students and calculate metrics
         const enrollments = await Enrollment.findAll({
             where: { batch_id: { [Op.in]: targetBatchIds } },
+            attributes: ['id', 'student_id', 'batch_id'],
             include: [
                 {
                     model: Student,
@@ -213,59 +306,99 @@ class DashboardService {
                 {
                     model: Batch,
                     attributes: ['id', 'name']
-                },
-                {
-                    model: QuizSubmission,
-                    include: [{ model: Quiz, attributes: ['total_marks'] }]
-                },
-                {
-                    model: StudentAttendance,
-                    as: 'attendances'
                 }
-            ]
+            ],
+            raw: true,
+            nest: true
         });
 
-        // Get total sessions per batch for attendance calculation
-        const batchSessions = await AttendanceSession.findAll({
-            where: { batch_id: { [Op.in]: targetBatchIds } },
-            attributes: ['batch_id', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
-            group: ['batch_id'],
-            raw: true
-        });
-        
+        if (enrollments.length === 0) {
+            return {
+                students: [],
+                batch_filters: batchFilters,
+                pagination: { page, limit, total: 0, totalPages: 0 }
+            };
+        }
+
+        const enrollmentIds = enrollments.map(e => e.id);
+        const [
+            batchSessions,
+            quizSubmissions,
+            studentAttendances
+        ] = await Promise.all([
+            AttendanceSession.findAll({
+                where: { batch_id: { [Op.in]: targetBatchIds } },
+                attributes: ['batch_id', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
+                group: ['batch_id'],
+                raw: true
+            }),
+            QuizSubmission.findAll({
+                attributes: ['enrollment_id', 'score'],
+                include: [{
+                    model: Quiz,
+                    attributes: ['total_marks'],
+                    required: true
+                }],
+                where: { enrollment_id: { [Op.in]: enrollmentIds } },
+                raw: true,
+                nest: true
+            }),
+            StudentAttendance.findAll({
+                attributes: ['enrollment_id', 'status'],
+                where: { enrollment_id: { [Op.in]: enrollmentIds } },
+                raw: true
+            })
+        ]);
+
         const batchSessionMap = {};
         batchSessions.forEach(s => {
-            batchSessionMap[s.batch_id] = parseInt(s.count);
+            batchSessionMap[s.batch_id] = parseInt(s.count) || 0;
+        });
+
+        const quizSubmissionsMap = {};
+        quizSubmissions.forEach(sub => {
+            if (!quizSubmissionsMap[sub.enrollment_id]) {
+                quizSubmissionsMap[sub.enrollment_id] = [];
+            }
+            quizSubmissionsMap[sub.enrollment_id].push({
+                score: sub.score,
+                total_marks: sub.Quiz ? sub.Quiz.total_marks : 100
+            });
+        });
+
+        const attendancesMap = {};
+        studentAttendances.forEach(att => {
+            if (!attendancesMap[att.enrollment_id]) {
+                attendancesMap[att.enrollment_id] = [];
+            }
+            attendancesMap[att.enrollment_id].push(att);
         });
 
         let students = enrollments.map(e => {
-            // Avg Quiz Score
             let avgQuizScore = 0;
-            if (e.QuizSubmissions && e.QuizSubmissions.length > 0) {
+            const subs = quizSubmissionsMap[e.id] || [];
+            if (subs.length > 0) {
                 let totalPct = 0;
-                let count = 0;
-                e.QuizSubmissions.forEach(sub => {
+                subs.forEach(sub => {
                     const score = parseFloat(sub.score) || 0;
-                    const maxMarks = (sub.Quiz && sub.Quiz.total_marks) ? parseFloat(sub.Quiz.total_marks) : 100;
+                    const maxMarks = (sub.total_marks) ? parseFloat(sub.total_marks) : 100;
                     totalPct += (score / maxMarks) * 100;
-                    count++;
                 });
-                avgQuizScore = count > 0 ? parseFloat((totalPct / count).toFixed(1)) : 0.0;
+                avgQuizScore = parseFloat((totalPct / subs.length).toFixed(1));
             }
 
-            // Attendance
             let sessionsAttended = 0;
             let totalSessions = batchSessionMap[e.batch_id] || 0;
             let attendancePercent = 0;
 
             if (totalSessions > 0) {
-                sessionsAttended = e.attendances ? e.attendances.filter(a => a.status === 'present' || a.status === 'late').length : 0;
+                const studentAtts = attendancesMap[e.id] || [];
+                sessionsAttended = studentAtts.filter(a => a.status === 'present' || a.status === 'late').length;
                 attendancePercent = Math.round((sessionsAttended / totalSessions) * 100);
             } else {
                 attendancePercent = 100;
             }
 
-            // Status logic
             let status = 'on_track';
             if (avgQuizScore < 50 || attendancePercent < 65) {
                 status = 'critical';
@@ -285,16 +418,13 @@ class DashboardService {
             };
         });
 
-        // Step 4: Filter - include ONLY critical or warning
         students = students.filter(s => s.status === 'critical' || s.status === 'warning');
 
-        // Step 6: Apply search filter
         if (search) {
             const lowerSearch = search.toLowerCase();
             students = students.filter(s => s.student_name.toLowerCase().includes(lowerSearch));
         }
 
-        // Step 5: Sort - critical first, then warning. Within groups, lowest avg_quiz_score first.
         students.sort((a, b) => {
             if (a.status === b.status) {
                 return a.avg_quiz_score - b.avg_quiz_score;
@@ -302,7 +432,6 @@ class DashboardService {
             return a.status === 'critical' ? -1 : 1;
         });
 
-        // Step 6: Apply pagination
         const total = students.length;
         const totalPages = Math.ceil(total / limit);
         const paginatedStudents = students.slice((page - 1) * limit, page * limit);
@@ -330,6 +459,7 @@ class DashboardService {
 
         const submissions = await QuizSubmission.findAll({
             where,
+            attributes: ['score'],
             include: [
                 {
                     model: Quiz,
@@ -339,15 +469,17 @@ class DashboardService {
                 {
                     model: Enrollment,
                     required: true,
-                    attributes: ['id'],
+                    attributes: [],
                     include: [{
                         model: Batch,
                         required: true,
                         where: { institution_id: institutionId },
-                        attributes: ['id']
+                        attributes: []
                     }]
                 }
-            ]
+            ],
+            raw: true,
+            nest: true
         });
 
         if (submissions.length === 0) return 0;

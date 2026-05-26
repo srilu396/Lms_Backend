@@ -1024,6 +1024,94 @@ class StudentPortalService {
         // Update submission with score
         await submission.update({ score });
 
+        // --- NOTIFICATION TRIGGERS 2 & 3 (Top / Least Performer) ---
+        try {
+            const batchId = enrollment.Batch ? enrollment.Batch.id : enrollment.batch_id;
+            const institutionId = enrollment.Batch ? enrollment.Batch.institution_id : null;
+            
+            if (institutionId) {
+                const { sequelize } = require('../models');
+                const { createNotification } = require('../notifications/notification.service');
+                const { User } = require('../models');
+                
+                const [scoresData] = await sequelize.query(`
+                    SELECT 
+                        qs.id, 
+                        qs.score, 
+                        (SELECT COALESCE(SUM(marks), COUNT(*)) FROM quiz_questions WHERE quiz_id = qs.quiz_id) as total_score
+                    FROM quiz_submissions qs
+                    WHERE qs.enrollment_id = :enrollmentId AND qs.status = 'completed'
+                `, { replacements: { enrollmentId: enrollment.id } });
+                
+                let newSumPct = 0;
+                let prevSumPct = 0;
+                let countNew = scoresData.length;
+                let countPrev = 0;
+                
+                for (const row of scoresData) {
+                    const pct = row.total_score > 0 ? (row.score / row.total_score) * 100 : 0;
+                    newSumPct += pct;
+                    if (row.id !== submission.id) {
+                        prevSumPct += pct;
+                        countPrev++;
+                    }
+                }
+                
+                const newAvg = countNew > 0 ? newSumPct / countNew : 0;
+                const prevAvg = countPrev > 0 ? prevSumPct / countPrev : 0;
+
+                const instRep = await User.findOne({ where: { role: 'institution_representative', institution_id: institutionId } });
+                
+                if (instRep) {
+                    const studentName = `${student.first_name} ${student.last_name}`;
+                    const batchName = enrollment.Batch.name;
+
+                    const checkDuplicate = async (type) => {
+                        const [dupes] = await sequelize.query(`
+                            SELECT count(*) as count 
+                            FROM notifications 
+                            WHERE user_id = :userId AND type = :type AND reference_id = :refId 
+                            AND created_at > NOW() - INTERVAL '24 HOURS'
+                        `, { 
+                            replacements: { userId: instRep.id, type, refId: student.id } 
+                        });
+                        return parseInt(dupes[0].count) > 0;
+                    };
+
+                    if (prevAvg < 90 && newAvg >= 90) {
+                        const hasDupe = await checkDuplicate('TOP_PERFORMER');
+                        if (!hasDupe) {
+                            await createNotification({
+                                userId: instRep.id,
+                                role: 'institution_representative',
+                                type: 'TOP_PERFORMER',
+                                title: 'Top Performer Alert',
+                                message: `"${studentName}" from batch "${batchName}" has achieved a quiz average of ${newAvg.toFixed(2)}%.`,
+                                referenceId: student.id,
+                                referenceType: 'student'
+                            });
+                        }
+                    }
+
+                    if (prevAvg >= 60 && newAvg < 60) {
+                        const hasDupe = await checkDuplicate('LEAST_PERFORMER');
+                        if (!hasDupe) {
+                            await createNotification({
+                                userId: instRep.id,
+                                role: 'institution_representative',
+                                type: 'LEAST_PERFORMER',
+                                title: 'Low Performance Alert',
+                                message: `"${studentName}" from batch "${batchName}" has dropped to a quiz average of ${newAvg.toFixed(2)}%. Immediate attention required.`,
+                                referenceId: student.id,
+                                referenceType: 'student'
+                            });
+                        }
+                    }
+                }
+            }
+        } catch (err) {}
+        // --- END NOTIFICATION TRIGGERS ---
+
         return {
             submissionId: String(submission.id),
             quizId: String(quizId),
@@ -1275,6 +1363,23 @@ class StudentPortalService {
                 submitted_at: isDraft ? null : (data.submittedAt || new Date())
             });
         }
+
+        // --- NOTIFICATION TRIGGER 8 (Assignment Submitted) ---
+        try {
+            if (status === 'submitted') {
+                const { createNotification } = require('../notifications/notification.service');
+                await createNotification({
+                    userId: userId,
+                    role: 'student',
+                    type: 'ASSIGNMENT_SUBMITTED',
+                    title: 'Assignment Submitted Successfully',
+                    message: `Your assignment "${assignment.title}" has been submitted successfully. You will be notified once it is reviewed.`,
+                    referenceId: assignment.id,
+                    referenceType: 'assignment'
+                });
+            }
+        } catch (err) {}
+        // --- END NOTIFICATION TRIGGER ---
 
         return {
             submissionId: String(submission.id),

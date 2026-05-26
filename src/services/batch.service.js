@@ -54,6 +54,68 @@ class BatchService {
             }
 
             await transaction.commit();
+            
+            // --- NOTIFICATION TRIGGERS ---
+            try {
+                const { createNotification, createNotificationsForMany } = require('../notifications/notification.service');
+                
+                // Trigger 1: Institution Rep
+                if (batch.institution_id) {
+                    const instRep = await User.findOne({ where: { role: 'institution_representative', institution_id: batch.institution_id } });
+                    if (instRep) {
+                        await createNotification({
+                            userId: instRep.id,
+                            role: 'institution_representative',
+                            type: 'BATCH_CREATED',
+                            title: 'New Batch Added',
+                            message: `A new batch "${batch.name}" has been created for your institution.`,
+                            referenceId: batch.id,
+                            referenceType: 'batch'
+                        });
+                    }
+                }
+
+                // Trigger 5: Tutor Batch Allocated
+                if (tutorAssignments && tutorAssignments.length > 0) {
+                    const tutorIds = tutorAssignments.map(ta => ta.tutor_id);
+                    const tutorsData = await Tutor.findAll({ where: { id: { [Op.in]: tutorIds } }, attributes: ['user_id'] });
+                    const userIds = tutorsData.map(t => t.user_id).filter(id => id);
+                    if (userIds.length > 0) {
+                        await createNotificationsForMany({
+                            userIds,
+                            role: 'tutor',
+                            type: 'BATCH_ALLOCATED_TUTOR',
+                            title: 'New Batch Assigned to You',
+                            message: `You have been assigned to teach "${batch.name}" starting ${batch.start_date || 'soon'}. Please review the course content.`,
+                            referenceId: batch.id,
+                            referenceType: 'batch'
+                        });
+                    }
+                }
+
+                // Trigger 6: Student Enrollment
+                if (enroll_students && enroll_students.length > 0) {
+                    const studentsData = await Student.findAll({ where: { id: { [Op.in]: enroll_students } }, attributes: ['user_id'] });
+                    const userIds = studentsData.map(s => s.user_id).filter(id => id);
+                    if (userIds.length > 0) {
+                        const course = batch.course_id ? await Course.findByPk(batch.course_id) : null;
+                        const courseName = course ? course.name : 'your course';
+                        await createNotificationsForMany({
+                            userIds,
+                            role: 'student',
+                            type: 'BATCH_ALLOCATED_STUDENT',
+                            title: 'You Have Been Enrolled in a Batch',
+                            message: `You have been enrolled in "${batch.name}". Your course "${courseName}" starts on ${batch.start_date || 'soon'}. Welcome!`,
+                            referenceId: batch.id,
+                            referenceType: 'batch'
+                        });
+                    }
+                }
+            } catch (err) {
+                // Silent catch
+            }
+            // --- END NOTIFICATION TRIGGERS ---
+
         } catch (error) {
             if (transaction) await transaction.rollback();
             throw error;
@@ -368,6 +430,32 @@ class BatchService {
 
                         await Enrollment.bulkCreate(enrollments, { ignoreDuplicates: true });
                         
+                        // --- NOTIFICATION TRIGGER 6 (Student Bulk Upload) ---
+                        try {
+                            if (validIds.length > 0) {
+                                const { createNotificationsForMany } = require('../notifications/notification.service');
+                                const studentsData = await Student.findAll({ where: { id: { [Op.in]: validIds } }, attributes: ['user_id'] });
+                                const userIds = studentsData.map(s => s.user_id).filter(id => id);
+                                if (userIds.length > 0) {
+                                    const batchRecord = await Batch.findByPk(batchId);
+                                    if (batchRecord) {
+                                        const course = batchRecord.course_id ? await Course.findByPk(batchRecord.course_id) : null;
+                                        const courseName = course ? course.name : 'your course';
+                                        await createNotificationsForMany({
+                                            userIds,
+                                            role: 'student',
+                                            type: 'BATCH_ALLOCATED_STUDENT',
+                                            title: 'You Have Been Enrolled in a Batch',
+                                            message: `You have been enrolled in "${batchRecord.name}". Your course "${courseName}" starts on ${batchRecord.start_date || 'soon'}. Welcome!`,
+                                            referenceId: batchRecord.id,
+                                            referenceType: 'batch'
+                                        });
+                                    }
+                                }
+                            }
+                        } catch (err) {}
+                        // --- END TRIGGER ---
+
                         try { fs.unlinkSync(filePath); } catch (e) {}
                         
                         resolve({

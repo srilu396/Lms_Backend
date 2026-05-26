@@ -6,7 +6,10 @@ const {
     QuizSubmission, AssignmentSubmission, Module, Topic, Lesson, LessonProgress, Quiz, Assignment 
 } = require('../../models');const getRecentReports = async (institutionId, search) => {
     // Fetch the institution to get its name
-    const institution = await Institution.findByPk(institutionId);
+    const institution = await Institution.findByPk(institutionId, {
+        attributes: ['name'],
+        raw: true
+    });
     if (!institution) {
         throw new Error('Institution not found');
     }
@@ -28,28 +31,24 @@ const {
             report_type: 'attendance',
             title: `${institutionName} Attendance Summary`,
             category: 'ATTENDANCE',
-            description: 'Daily and monthly attendance trends by batch',
             date_generated: formattedDateGenerated
         },
         {
             report_type: 'performance',
             title: `${institutionName} Academic Performance Audit`,
             category: 'PERFORMANCE',
-            description: 'Detailed quiz scores and overall GPA distributions',
             date_generated: formattedDateGenerated
         },
         {
             report_type: 'progress',
             title: `${institutionName} Batch Progress Overview`,
             category: 'PROGRESS',
-            description: 'Track curriculum coverage and completion milestones',
             date_generated: formattedDateGenerated
         },
         {
             report_type: 'at_risk',
             title: `${institutionName} At-Risk Student Analysis`,
             category: 'CRITICAL',
-            description: 'Identify students failing to meet minimum criteria',
             date_generated: formattedDateGenerated
         }
     ];

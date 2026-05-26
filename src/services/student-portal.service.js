@@ -50,19 +50,35 @@ class StudentPortalService {
             ]
         });
 
-        // Fetch allocated (enrolled) batches
+        // Fetch allocated (enrolled) courses via active batches
         const enrollments = await Enrollment.findAll({
             where: { student_id: student.id, status: 'active' },
             include: [
                 {
                     model: Batch,
-                    attributes: ['id', 'name', 'start_date', 'end_date']
+                    attributes: ['id', 'course_id'],
+                    include: [
+                        {
+                            model: Course,
+                            attributes: ['id', 'name', 'description']
+                        }
+                    ]
                 }
             ]
         });
 
         const profileData = profile.toJSON();
-        profileData.allocated_batches = enrollments.map(e => e.Batch).filter(Boolean);
+        
+        // Extract unique courses from active enrollments
+        const courses = enrollments
+            .map(e => e.Batch && e.Batch.Course)
+            .filter(Boolean);
+            
+        // Deduplicate courses by id just in case
+        const uniqueCoursesMap = new Map();
+        courses.forEach(c => uniqueCoursesMap.set(c.id, c));
+        
+        profileData.allocated_courses = Array.from(uniqueCoursesMap.values());
 
         return profileData;
     }

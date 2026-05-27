@@ -74,9 +74,13 @@ class StudentPortalService {
             .map(e => e.Batch && e.Batch.Course)
             .filter(Boolean);
             
-        // Deduplicate courses by id just in case
+        // Deduplicate courses by id
         const uniqueCoursesMap = new Map();
-        courses.forEach(c => uniqueCoursesMap.set(c.id, c));
+        courses.forEach(c => {
+            if (c && c.id) {
+                uniqueCoursesMap.set(c.id, c);
+            }
+        });
         
         profileData.allocated_courses = Array.from(uniqueCoursesMap.values());
 

@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 
 class UserService {
     async createUser(data) {
-        const { full_name, email, password, role, institution_id } = data;
+        const { full_name, email, password, role, institution_id, is_active } = data;
         let institutionIdToAssign = null;
 
         // Validate institution requirements
@@ -39,7 +39,8 @@ class UserService {
                 email,
                 username,
                 password_hash,
-                role: role
+                role: role,
+                is_active: is_active !== undefined ? is_active : true
             }, { transaction: t });
 
             // If an institution ID was resolved, link user to institution

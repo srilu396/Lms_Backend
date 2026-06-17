@@ -27,6 +27,36 @@ class InstitutionService {
             data: rows
         };
     }
+
+    /**
+     * Get active institutions for dropdown lookup
+     */
+    async getInstitutionLookup(query) {
+        const { search, limit = 10 } = query;
+        const parsedLimit = Math.min(parseInt(limit, 10) || 10, 50);
+
+        const where = {
+            is_active: true
+        };
+
+        if (search) {
+            const safeSearch = search.trim().slice(0, 50);
+            where.name = {
+                [Op.iLike]: `%${safeSearch}%` // For Postgres
+            };
+        }
+
+        const rows = await Institution.findAll({
+            where,
+            limit: parsedLimit,
+            attributes: ['id', 'name'],
+            order: [['name', 'ASC']]
+        });
+
+        return {
+            data: rows
+        };
+    }
     /**
      * Create a new institution and its contacts
      */

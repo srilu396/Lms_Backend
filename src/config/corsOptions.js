@@ -1,5 +1,5 @@
 const allowedOrigins = [
-  'https://platform-course-9o87.vercel.app', // Production frontend
+  'https://platform-course.vercel.app', // Production frontend
   'http://localhost:3000',                   // Dev frontend (React/Next)
   'http://localhost:5173',                   // Dev frontend (Vite)
 ];

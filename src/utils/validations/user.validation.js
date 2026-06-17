@@ -15,7 +15,9 @@ const createUserSchema = Joi.object({
     role: Joi.string().valid('admin', 'institution_representative').required().messages({
         'any.only': 'Invalid role specified, only admin and institution_representative are allowed'
     }),
-    institution_name: Joi.string().optional()
+    institution_name: Joi.string().optional(),
+    institution_id: Joi.alternatives().try(Joi.number(), Joi.string()).optional(),
+    is_active: Joi.boolean().optional()
 });
 
 const updateUserSchema = Joi.object({
@@ -23,7 +25,9 @@ const updateUserSchema = Joi.object({
     email: Joi.string().email().optional(),
     password: Joi.string().min(6).optional(),
     role: Joi.string().valid('admin', 'institution_representative').optional(),
-    institution_name: Joi.string().optional()
+    institution_name: Joi.string().optional(),
+    institution_id: Joi.alternatives().try(Joi.number(), Joi.string()).optional(),
+    is_active: Joi.boolean().optional()
 });
 
 module.exports = {

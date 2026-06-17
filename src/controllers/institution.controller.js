@@ -45,6 +45,24 @@ class InstitutionController {
             });
         }
     }
+
+    // GET /institutions/lookup
+    async getInstitutionLookup(req, res) {
+        try {
+            const result = await institutionService.getInstitutionLookup(req.query);
+            
+            res.status(200).json({
+                success: true,
+                message: 'Institutions retrieved successfully',
+                data: result.data
+            });
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: 'Server error retrieving institutions lookup'
+            });
+        }
+    }
     async createInstitution(req, res) {
         try {
             // Validate request body

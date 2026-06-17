@@ -12,6 +12,9 @@ const adminAndRep = roleMiddleware('admin', 'institution_representative');
 // Search endpoint for institutions
 router.get('/search', institutionController.searchInstitutions);
 
+// Lookup endpoint for active institutions (dropdowns)
+router.get('/lookup', institutionController.getInstitutionLookup);
+
 // Create a new institution
 router.post('/', adminOnly, institutionController.createInstitution);
 

@@ -61,7 +61,11 @@ class InstitutionService {
      * Create a new institution and its contacts
      */
     async createInstitution(data) {
-        const { contacts, ...institutionData } = data;
+        const { contacts, status, ...institutionData } = data;
+
+        if (status !== undefined) {
+            institutionData.is_active = (status === 'active' || status === true || status === 'true');
+        }
 
         if (institutionData.email) {
             const existingInstitution = await Institution.findOne({
@@ -207,7 +211,11 @@ class InstitutionService {
      * Update an institution and its contacts
      */
     async updateInstitution(id, data) {
-        const { contacts, ...institutionData } = data;
+        const { contacts, status, ...institutionData } = data;
+
+        if (status !== undefined) {
+            institutionData.is_active = (status === 'active' || status === true || status === 'true');
+        }
 
         const institution = await Institution.findByPk(id);
         if (!institution) {
@@ -291,19 +299,6 @@ class InstitutionService {
         await institution.destroy();
 
         return { message: 'Institution deleted successfully' };
-    }
-
-    /**
-     * Update status (Activate / Deactivate)
-     */
-    async updateInstitutionStatus(id, isActive) {
-        const institution = await Institution.findByPk(id);
-        if (!institution) {
-            throw new Error('Institution not found');
-        }
-
-        await institution.update({ is_active: isActive });
-        return institution;
     }
 }
 

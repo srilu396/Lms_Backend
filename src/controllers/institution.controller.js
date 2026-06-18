@@ -17,7 +17,12 @@ const createInstitutionSchema = z.object({
     phone: z.string().optional().nullable(),
     email: z.string().email('Invalid email address').optional().nullable(),
     logo_url: z.string().url('Invalid logo URL').optional().nullable(),
-    contacts: z.array(contactSchema).max(3, 'Maximum of 3 contacts allowed').optional()
+    contacts: z.array(contactSchema).max(3, 'Maximum of 3 contacts allowed').optional(),
+    status: z.union([
+        z.enum(['active', 'inactive']),
+        z.boolean(),
+        z.enum(['true', 'false'])
+    ]).optional()
 });
 
 const updateInstitutionSchema = createInstitutionSchema.partial();
@@ -213,43 +218,6 @@ class InstitutionController {
             }
             if (error.message.includes('cannot be deleted') || error.message.includes('associated with active batches')) {
                 return res.status(400).json({
-                    success: false,
-                    message: error.message
-                });
-            }
-            res.status(500).json({
-                success: false,
-                message: error.message || 'Internal server error'
-            });
-        }
-    }
-
-    async updateInstitutionStatus(req, res) {
-        try {
-            const { id } = req.params;
-            // Validate the body directly
-            const statusSchema = z.object({
-                is_active: z.boolean()
-            });
-            const { is_active } = statusSchema.parse(req.body);
-
-            const updatedInstitution = await institutionService.updateInstitutionStatus(id, is_active);
-
-            res.status(200).json({
-                success: true,
-                message: `Institution ${is_active ? 'activated' : 'deactivated'} successfully`,
-                data: updatedInstitution
-            });
-        } catch (error) {
-            if (error instanceof z.ZodError) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Validation failed',
-                    errors: error.errors
-                });
-            }
-            if (error.message === 'Institution not found') {
-                return res.status(404).json({
                     success: false,
                     message: error.message
                 });

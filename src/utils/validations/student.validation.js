@@ -18,6 +18,7 @@ const createStudentSchema = Joi.object({
     }),
     notes: Joi.string().optional().allow(null, ''),
     course_id: Joi.number().integer().optional().allow(null),
+    institution_id: Joi.number().integer().optional().allow(null),
     status: Joi.string().valid('active', 'inactive').optional()
 });
 
@@ -29,6 +30,7 @@ const updateStudentSchema = Joi.object({
     password: Joi.string().min(6).optional(),
     notes: Joi.string().optional().allow(null, ''),
     course_id: Joi.number().integer().optional().allow(null),
+    institution_id: Joi.number().integer().optional().allow(null),
     status: Joi.string().valid('active', 'inactive').optional()
 });
 

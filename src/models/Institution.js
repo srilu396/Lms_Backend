@@ -38,6 +38,9 @@ module.exports = (sequelize, DataTypes) => {
         Institution.hasMany(models.TutorInstitutionAssignment, { foreignKey: 'institution_id' });
         Institution.hasMany(models.Course, { foreignKey: 'institution_id' });
         Institution.hasMany(models.Batch, { foreignKey: 'institution_id' });
+        if (models.Student) {
+            Institution.hasMany(models.Student, { foreignKey: 'institution_id' });
+        }
     };
 
     return Institution;

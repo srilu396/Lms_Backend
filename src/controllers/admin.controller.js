@@ -1,6 +1,20 @@
 const userService = require('../services/user.service');
+const adminService = require('../services/admin.service');
 
 class AdminController {
+    async getDashboard(req, res, next) {
+        try {
+            const stats = await adminService.getDashboardStats();
+            res.status(200).json({
+                success: true,
+                message: 'Admin dashboard stats retrieved successfully',
+                data: stats
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
     async createUser(req, res, next) {
         try {
             const { email, password, role } = req.body;

@@ -9,6 +9,7 @@ const { adminCreateUserSchema } = require('../utils/validations/auth.validation'
 router.use(authMiddleware);
 router.use(roleMiddleware('admin'));
 
+router.get('/dashboard', adminController.getDashboard);
 router.post('/create-user', validate(adminCreateUserSchema), adminController.createUser);
 
 module.exports = router;

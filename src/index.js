@@ -57,7 +57,7 @@ app.get('/', (req, res) => {
 
 // Register API Routes
 app.use('/auth', require('./routes/auth.routes'));
-app.use('/admin', require('./routes/admin.routes'));
+app.use('/api/v1/admin', require('./routes/admin.routes'));
 
 // Example Protected Route
 const authMiddleware = require('./middlewares/auth.middleware');

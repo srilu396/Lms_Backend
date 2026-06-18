@@ -39,6 +39,10 @@ module.exports = (sequelize, DataTypes) => {
             type: DataTypes.INTEGER,
             allowNull: true
         },
+        institution_id: {
+            type: DataTypes.BIGINT,
+            allowNull: true
+        },
         status: {
             type: DataTypes.ENUM('active', 'inactive'),
             defaultValue: 'active'
@@ -74,6 +78,9 @@ module.exports = (sequelize, DataTypes) => {
         // Prepare for future Course association
         if (models.Course) {
             Student.belongsTo(models.Course, { foreignKey: 'course_id', as: 'course' });
+        }
+        if (models.Institution) {
+            Student.belongsTo(models.Institution, { foreignKey: 'institution_id', as: 'institution' });
         }
     };
 

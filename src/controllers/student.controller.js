@@ -93,7 +93,7 @@ class StudentController {
             await studentService.deleteStudent(req.params.id);
             res.status(200).json({
                 success: true,
-                message: 'Operation successful', // As per user request matching the format
+                message: 'Student deleted successfully', // As per user request matching the format
                 data: null
             });
         } catch (error) {
@@ -122,8 +122,8 @@ class StudentController {
 
     async downloadBulkUploadTemplate(req, res) {
         try {
-            const csvHeaders = 'first_name,last_name,email,mobile_number,password\n';
-            const csvSampleData = 'Anilsai,Nunna,saitrinath01c@gmail.com,6300915551,P@55word\nJane,Smith,jane.smith@example.com,9876543210,Password123!\n';
+            const csvHeaders = 'first_name,last_name,email,mobile_number,password,status,institution\n';
+            const csvSampleData = 'Anilsai,Nunna,saitrinath01c@gmail.com,6300915551,P@55word,inactive,ABC College\nJane,Smith,jane.smith@example.com,9876543210,Password123!,active,\n';
             
             const csvContent = csvHeaders + csvSampleData;
 

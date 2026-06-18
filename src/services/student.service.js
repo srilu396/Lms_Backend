@@ -14,6 +14,20 @@ class StudentService {
             throw error;
         }
 
+        if (data.institution_id) {
+            const institution = await models.Institution.findByPk(data.institution_id);
+            if (!institution) {
+                const error = new Error('Invalid institution provided.');
+                error.statusCode = 400;
+                throw error;
+            }
+            if (!institution.is_active) {
+                const error = new Error('The selected institution is inactive.');
+                error.statusCode = 400;
+                throw error;
+            }
+        }
+
         let passwordProvided = true;
         
         if (!data.password) {
@@ -96,6 +110,14 @@ class StudentService {
                 required: false
             });
         }
+        if (models.Institution) {
+            includeOptions.push({
+                model: models.Institution,
+                as: 'institution',
+                required: false,
+                attributes: ['id', 'name']
+            });
+        }
 
         const { count, rows } = await Student.findAndCountAll({
             where,
@@ -112,6 +134,10 @@ class StudentService {
             if (studentJson.course) {
                 studentJson.course_name = studentJson.course.name || studentJson.course.course_name || null;
                 // clean up the nested course object as needed, or leave it
+            }
+            if (studentJson.institution) {
+                studentJson.institution_id = studentJson.institution.id;
+                studentJson.institution_name = studentJson.institution.name;
             }
             return studentJson;
         });
@@ -136,6 +162,14 @@ class StudentService {
                 required: false
             });
         }
+        if (models.Institution) {
+            includeOptions.push({
+                model: models.Institution,
+                as: 'institution',
+                required: false,
+                attributes: ['id', 'name']
+            });
+        }
 
         const student = await Student.findByPk(id, {
             include: includeOptions,
@@ -151,6 +185,10 @@ class StudentService {
         const studentJson = student.toJSON();
         if (studentJson.course) {
             studentJson.course_name = studentJson.course.name || studentJson.course.course_name || null;
+        }
+        if (studentJson.institution) {
+            studentJson.institution_id = studentJson.institution.id;
+            studentJson.institution_name = studentJson.institution.name;
         }
 
         return studentJson;
@@ -183,8 +221,34 @@ class StudentService {
             throw error;
         }
 
-        await student.destroy();
-        return true;
+        const originalEmail = student.email;
+        const [localPart, domain] = originalEmail.split('@');
+        const deletedSuffix = `+deleted_${Date.now()}`;
+        // Keep valid email format to pass Sequelize `isEmail` validation
+        const deletedEmail = domain ? `${localPart}${deletedSuffix}@${domain}` : `${originalEmail}${deletedSuffix}`;
+
+        const transaction = await sequelize.transaction();
+        try {
+            // Modify email to free up the unique constraint
+            await student.update({ email: deletedEmail }, { transaction });
+            await student.destroy({ transaction });
+
+            // Find and soft-delete the associated User account, modifying its unique fields
+            const user = await User.findOne({ where: { email: originalEmail }, transaction });
+            if (user) {
+                await user.update({ 
+                    email: deletedEmail,
+                    username: `${user.username}${deletedSuffix}` 
+                }, { transaction });
+                await user.destroy({ transaction });
+            }
+
+            await transaction.commit();
+            return true;
+        } catch (error) {
+            await transaction.rollback();
+            throw error;
+        }
     }
 
     async getStudentStats() {
@@ -237,7 +301,8 @@ class StudentService {
                             mobile_number: row.mobile_number || null,
                             password: row.password,
                             course_id: row.course_id ? parseInt(row.course_id, 10) : null,
-                            notes: row.notes || null
+                            notes: row.notes || null,
+                            institution_name: row.institution || null
                         });
                     }
                 })
@@ -282,6 +347,38 @@ class StudentService {
                                 err.statusCode = 400;
                                 return reject(err);
                             }
+                        }
+
+                        // Validate institution names
+                        const institutionNames = [...new Set(students.filter(s => s.institution_name !== null).map(s => s.institution_name))];
+                        let institutionMap = new Map();
+                        if (institutionNames.length > 0) {
+                            const validInstitutions = await models.Institution.findAll({
+                                where: { name: { [Op.in]: institutionNames } },
+                                attributes: ['id', 'name', 'is_active']
+                            });
+                            
+                            validInstitutions.forEach(inst => {
+                                institutionMap.set(inst.name, inst);
+                            });
+                        }
+
+                        for (const s of students) {
+                            if (s.institution_name) {
+                                const inst = institutionMap.get(s.institution_name);
+                                if (!inst) {
+                                    const err = new Error(`Invalid institution name provided: ${s.institution_name} for student ${s.email}`);
+                                    err.statusCode = 400;
+                                    return reject(err);
+                                }
+                                if (!inst.is_active) {
+                                    const err = new Error(`The institution ${s.institution_name} is inactive for student ${s.email}`);
+                                    err.statusCode = 400;
+                                    return reject(err);
+                                }
+                                s.institution_id = inst.id;
+                            }
+                            delete s.institution_name; // Only save the ID, delete temporary name property
                         }
 
                         // 3. Check for existing emails in the DB to strictly enforce uniqueness

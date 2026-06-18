@@ -40,7 +40,8 @@ class UserService {
                 username,
                 password_hash,
                 role: role,
-                is_active: is_active !== undefined ? is_active : true
+                is_active: is_active !== undefined ? is_active : true,
+                institution_id: institutionIdToAssign
             }, { transaction: t });
 
             // If an institution ID was resolved, link user to institution
@@ -54,9 +55,16 @@ class UserService {
             await t.commit();
 
             // Fetch clean object without password hash
-            return await User.findByPk(user.id, {
-                attributes: { exclude: ['password_hash'] }
+            const createdUser = await User.findByPk(user.id, {
+                attributes: { exclude: ['password_hash'] },
+                include: [{ model: Institution, attributes: ['id', 'name'] }]
             });
+            const userJson = createdUser.toJSON();
+            if (userJson.Institution) {
+                userJson.institution = userJson.Institution;
+                delete userJson.Institution;
+            }
+            return userJson;
         } catch (error) {
             await t.rollback();
             throw error;
@@ -66,13 +74,26 @@ class UserService {
     async getUsers(query) {
         const { search, role, page = 1, limit = 10 } = query;
         const parsedLimit = Math.min(parseInt(limit, 10) || 10, 50);
-        const parsedPage = parseInt(page, 10);
+        const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
         const offset = (parsedPage - 1) * parsedLimit;
 
         const where = {};
+        const allowedRoles = ['admin', 'institution_representative'];
 
         if (role) {
-            where.role = role;
+            const requestedRoles = Array.isArray(role) ? role : [role];
+            const validRoles = requestedRoles.filter(r => allowedRoles.includes(r));
+            
+            // If they requested only unauthorized roles, return empty result without hitting DB
+            if (validRoles.length === 0) {
+                return {
+                    data: [],
+                    pagination: { total: 0, page: parsedPage, limit: parsedLimit, totalPages: 0 }
+                };
+            }
+            where.role = { [Op.in]: validRoles };
+        } else {
+            where.role = { [Op.in]: allowedRoles };
         }
 
         if (search) {
@@ -94,11 +115,21 @@ class UserService {
             limit: parsedLimit,
             offset: offset,
             attributes: ['id', 'full_name', 'username', 'email', 'role', 'created_at', 'is_active', 'avatar_url'],
+            include: [{ model: Institution, attributes: ['id', 'name'] }],
             order: [['created_at', 'DESC']]
         });
 
+        const formattedRows = rows.map(row => {
+            const userJson = row.toJSON();
+            if (userJson.Institution) {
+                userJson.institution = userJson.Institution;
+                delete userJson.Institution;
+            }
+            return userJson;
+        });
+
         return {
-            data: rows,
+            data: formattedRows,
             pagination: {
                 total: count,
                 page: parsedPage,
@@ -110,14 +141,21 @@ class UserService {
 
     async getUserById(id) {
         const user = await User.findByPk(id, {
-            attributes: ['id', 'full_name', 'username', 'email', 'role', 'created_at', 'is_active', 'avatar_url']
+            attributes: ['id', 'full_name', 'username', 'email', 'role', 'created_at', 'is_active', 'avatar_url'],
+            include: [{ model: Institution, attributes: ['id', 'name'] }]
         });
         if (!user) {
             const error = new Error('User not found');
             error.statusCode = 404;
             throw error;
         }
-        return user;
+        
+        const userJson = user.toJSON();
+        if (userJson.Institution) {
+            userJson.institution = userJson.Institution;
+            delete userJson.Institution;
+        }
+        return userJson;
     }
 
     async getUserStats() {
@@ -150,9 +188,17 @@ class UserService {
 
         await user.update(updateData);
 
-        return await User.findByPk(id, {
-            attributes: { exclude: ['password_hash'] }
+        const updatedUser = await User.findByPk(id, {
+            attributes: { exclude: ['password_hash'] },
+            include: [{ model: Institution, attributes: ['id', 'name'] }]
         });
+
+        const userJson = updatedUser.toJSON();
+        if (userJson.Institution) {
+            userJson.institution = userJson.Institution;
+            delete userJson.Institution;
+        }
+        return userJson;
     }
 
     async deleteUser(id) {

@@ -32,7 +32,14 @@ class InstitutionService {
      * Get active institutions for dropdown lookup
      */
     async getInstitutionLookup(query) {
-        const { search, limit = 10 } = query;
+        const { limit = 10 } = query;
+        let search = query.search || query.q || query.keyword;
+        
+        // Make resilient against accidental spaces in query parameter keys (e.g. "search ")
+        if (!search && query) {
+            const searchKey = Object.keys(query).find(k => k.trim() === 'search' || k.trim() === 'q' || k.trim() === 'keyword');
+            if (searchKey) search = query[searchKey];
+        }
         const parsedLimit = Math.min(parseInt(limit, 10) || 10, 50);
 
         const where = {

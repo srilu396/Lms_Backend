@@ -11,6 +11,7 @@ router.use(roleMiddleware('admin'));
 // Standard CRUD endpoints
 router.post('/', tutorController.createTutor);
 router.get('/', tutorController.getTutors);
+router.get('/lookup', tutorController.getTutorLookup);
 
 // Statistics / Summary Endpoints
 router.get('/stats', tutorController.getTutorStats);

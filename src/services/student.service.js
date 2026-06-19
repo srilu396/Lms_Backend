@@ -153,6 +153,48 @@ class StudentService {
         };
     }
 
+    async getStudentLookup(query) {
+        const { search, limit = 10, institution_id } = query;
+        const parsedLimit = Math.min(parseInt(limit, 10) || 10, 50);
+
+        if (!institution_id) {
+            const error = new Error('institution_id is required');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        const where = {
+            status: 'active',
+            institution_id
+        };
+
+        if (search) {
+            const safeSearch = search.trim().slice(0, 50);
+            where[Op.or] = [
+                { first_name: { [Op.iLike]: `%${safeSearch}%` } },
+                { last_name: { [Op.iLike]: `%${safeSearch}%` } },
+                { email: { [Op.iLike]: `%${safeSearch}%` } }
+            ];
+        }
+
+        const rows = await Student.findAll({
+            where,
+            limit: parsedLimit,
+            attributes: ['id', 'first_name', 'last_name', 'email'],
+            order: [['first_name', 'ASC']]
+        });
+
+        const formattedRows = rows.map(s => ({
+            id: s.id,
+            name: `${s.first_name} ${s.last_name || ''}`.trim(),
+            email: s.email
+        }));
+
+        return {
+            data: formattedRows
+        };
+    }
+
     async getStudentById(id) {
         const includeOptions = [];
         if (models.Course) {

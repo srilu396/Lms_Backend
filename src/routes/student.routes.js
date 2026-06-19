@@ -36,6 +36,7 @@ router.post('/bulk-upload', upload.single('file'), studentController.bulkUpload)
 // Core CRUD endpoints
 router.post('/', validate(createStudentSchema), studentController.createStudent);
 router.get('/', studentController.getStudents);
+router.get('/lookup', studentController.getStudentLookup);
 router.get('/:id', studentController.getStudentById);
 router.put('/:id', validate(updateStudentSchema), studentController.updateStudent);
 router.delete('/:id', studentController.deleteStudent);

@@ -48,6 +48,28 @@ class StudentController {
         }
     }
 
+    async getStudentLookup(req, res) {
+        try {
+            const result = await studentService.getStudentLookup(req.query);
+            res.status(200).json({
+                success: true,
+                message: 'Students lookup retrieved successfully',
+                data: result.data
+            });
+        } catch (error) {
+            if (error.message === 'institution_id is required') {
+                return res.status(400).json({
+                    success: false,
+                    message: error.message
+                });
+            }
+            res.status(500).json({
+                success: false,
+                message: 'Server error retrieving students lookup'
+            });
+        }
+    }
+
     async getStudentById(req, res) {
         try {
             const student = await studentService.getStudentById(req.params.id);

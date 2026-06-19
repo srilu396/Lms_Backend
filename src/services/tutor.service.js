@@ -126,6 +126,41 @@ class TutorService {
         };
     }
 
+    async getTutorLookup(query) {
+        const { search, limit = 10 } = query;
+        const parsedLimit = Math.min(parseInt(limit, 10) || 10, 50);
+
+        const where = {
+            status: 'active'
+        };
+
+        if (search) {
+            const safeSearch = search.trim().slice(0, 50);
+            where[Op.or] = [
+                { full_name: { [Op.iLike]: `%${safeSearch}%` } },
+                { email: { [Op.iLike]: `%${safeSearch}%` } }
+            ];
+        }
+
+        const rows = await Tutor.findAll({
+            where,
+            limit: parsedLimit,
+            attributes: ['id', ['full_name', 'name']],
+            order: [['full_name', 'ASC']]
+        });
+
+        // Some places might expect exactly { id, name }, so renaming via array aliases
+        // but let's keep it safe in case sequelize aliases get weird.
+        const formattedRows = rows.map(t => ({
+            id: t.id,
+            name: t.get('name') || t.full_name
+        }));
+
+        return {
+            data: formattedRows
+        };
+    }
+
     async getTutorById(id) {
         const tutor = await Tutor.findByPk(id);
         if (!tutor) {

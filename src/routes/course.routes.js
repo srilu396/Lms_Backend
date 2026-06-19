@@ -17,6 +17,7 @@ const adminOnly = roleMiddleware('admin');
 
 router.post('/', adminAndTutor, validate(createCourseSchema), courseController.createCourse);
 router.get('/', courseController.getCourses); // All authenticated roles (authMiddleware handles it) 
+router.get('/lookup', courseController.getCourseLookup); 
 router.get('/stats', adminAndTutor, courseController.getCourseStats);
 router.get('/:id', courseController.getCourseById); // All authenticated roles
 router.put('/:id', adminAndTutor, validate(updateCourseSchema), courseController.updateCourse);

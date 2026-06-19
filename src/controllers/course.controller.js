@@ -34,6 +34,22 @@ class CourseController {
         }
     }
 
+    async getCourseLookup(req, res) {
+        try {
+            const result = await courseService.getCourseLookup(req.query);
+            res.status(200).json({
+                success: true,
+                message: 'Courses lookup retrieved successfully',
+                data: result.data
+            });
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: 'Server error retrieving courses lookup'
+            });
+        }
+    }
+
     async getCourseStats(req, res) {
         try {
             const stats = await courseService.getCourseStats();

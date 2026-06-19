@@ -114,6 +114,30 @@ class CourseService {
         };
     }
 
+    async getCourseLookup(query = {}) {
+        const { search, limit = 10 } = query;
+        const parsedLimit = Math.min(parseInt(limit, 10) || 10, 50);
+
+        const where = {
+            status: 'active'
+        };
+
+        if (search) {
+            where.name = { [Op.iLike]: `%${search.trim()}%` };
+        }
+
+        const rows = await Course.findAll({
+            where,
+            limit: parsedLimit,
+            attributes: ['id', 'name'],
+            order: [['name', 'ASC']]
+        });
+
+        return {
+            data: rows
+        };
+    }
+
     async getCourseStats() {
         const total = await Course.count();
         const active = await Course.count({ where: { status: 'active' } });

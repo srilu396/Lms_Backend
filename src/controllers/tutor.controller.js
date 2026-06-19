@@ -48,6 +48,22 @@ class TutorController {
         }
     }
 
+    async getTutorLookup(req, res) {
+        try {
+            const result = await tutorService.getTutorLookup(req.query);
+            res.status(200).json({
+                success: true,
+                message: 'Tutors lookup retrieved successfully',
+                data: result.data
+            });
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: 'Server error retrieving tutors lookup'
+            });
+        }
+    }
+
     async getTutorById(req, res) {
         try {
             const tutor = await tutorService.getTutorById(req.params.id);

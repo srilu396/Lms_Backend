@@ -146,6 +146,14 @@ class QuizService {
             };
         }
 
+        const existingQuiz = await Quiz.findOne({ where: { name: { [Op.iLike]: quiz_title } } });
+        if (existingQuiz) {
+            throw {
+                statusCode: 400,
+                message: 'A quiz with this title already exists'
+            };
+        }
+
         try {
             // Create the quiz
             const quiz = await Quiz.create({

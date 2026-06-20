@@ -215,6 +215,22 @@ class UserService {
             throw error;
         }
 
+        // Morph unique fields to free them up for new registrations
+        const timestamp = Date.now();
+        const updates = {};
+        
+        if (user.email) {
+            const [username, domain] = user.email.split('@');
+            updates.email = `${username}+deleted${timestamp}@${domain || 'deleted.com'}`;
+        }
+        if (user.username) updates.username = `${user.username}_deleted_${timestamp}`;
+        if (user.tutor_code) updates.tutor_code = `${user.tutor_code}_deleted_${timestamp}`;
+        if (user.student_code) updates.student_code = `${user.student_code}_deleted_${timestamp}`;
+
+        if (Object.keys(updates).length > 0) {
+            await user.update(updates);
+        }
+
         await user.destroy(); // Soft delete because of paranoid: true
         return true;
     }

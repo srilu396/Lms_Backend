@@ -61,7 +61,7 @@ module.exports = (sequelize, DataTypes) => {
             defaultValue: []
         },
         submission_type: {
-            type: DataTypes.ENUM('file', 'link'),
+            type: DataTypes.ENUM('file', 'link', 'text'),
             allowNull: false
         },
         max_score: {

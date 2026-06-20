@@ -32,7 +32,7 @@ const getAssignmentById = async (req, res) => {
         const assignment = await AssignmentService.getAssignmentById(req.params.id);
         res.status(200).json({ success: true, data: assignment });
     } catch (error) {
-        res.status(404).json({ success: false, message: error.message });
+        res.status(error.statusCode || 500).json({ success: false, message: error.message || 'Server error retrieving assignment' });
     }
 };
 

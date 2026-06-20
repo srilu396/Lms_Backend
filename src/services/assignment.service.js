@@ -26,6 +26,21 @@ class AssignmentService {
         try {
             const { title, description, domains, tags, submission_type, instructions, max_score, course_id, evaluation_matrix, status } = data;
 
+            const existingAssignment = await db.Assignment.findOne({ where: { title: { [Op.iLike]: title } } });
+            if (existingAssignment) {
+                throw new Error('An assignment with this title already exists');
+            }
+
+            // Map frontend submission types (e.g. FILE_UPLOAD) to database enums
+            let dbSubmissionType = submission_type;
+            if (dbSubmissionType) {
+                const upperType = dbSubmissionType.toUpperCase();
+                if (upperType === 'FILE_UPLOAD' || upperType === 'FILE') dbSubmissionType = 'file';
+                else if (upperType === 'LINK_SUBMISSION' || upperType === 'LINK') dbSubmissionType = 'link';
+                else if (upperType === 'TEXT_SUBMISSION' || upperType === 'TEXT') dbSubmissionType = 'text';
+                else dbSubmissionType = dbSubmissionType.toLowerCase();
+            }
+
             // calculate max_score from evaluation_matrix if not provided
             let final_max_score = max_score;
             if (!final_max_score && evaluation_matrix && evaluation_matrix.length > 0) {
@@ -37,7 +52,7 @@ class AssignmentService {
                 description,
                 domains: domains || [],
                 tags: tags || [],
-                submission_type,
+                submission_type: dbSubmissionType,
                 instructions,
                 max_score: final_max_score || 0,
                 course_id,
@@ -85,7 +100,8 @@ class AssignmentService {
             }],
             limit,
             offset,
-            order: [[sort_by, sort_order]]
+            order: [[sort_by, sort_order]],
+            distinct: true
         });
 
         // formatting as per requirements
@@ -123,7 +139,10 @@ class AssignmentService {
         });
 
         if (!assignment) {
-            throw new Error('Assignment not found');
+            throw {
+                statusCode: 404,
+                message: 'Assignment not found'
+            };
         }
 
         return assignment;
@@ -139,6 +158,16 @@ class AssignmentService {
 
             const { title, description, domains, tags, submission_type, instructions, max_score, course_id, evaluation_matrix, status } = data;
 
+            // Map frontend submission types (e.g. FILE_UPLOAD) to database enums
+            let dbSubmissionType = submission_type;
+            if (dbSubmissionType) {
+                const upperType = dbSubmissionType.toUpperCase();
+                if (upperType === 'FILE_UPLOAD' || upperType === 'FILE') dbSubmissionType = 'file';
+                else if (upperType === 'LINK_SUBMISSION' || upperType === 'LINK') dbSubmissionType = 'link';
+                else if (upperType === 'TEXT_SUBMISSION' || upperType === 'TEXT') dbSubmissionType = 'text';
+                else dbSubmissionType = dbSubmissionType.toLowerCase();
+            }
+
             let final_max_score = max_score !== undefined ? max_score : assignment.max_score;
             if (max_score === undefined && evaluation_matrix && Array.isArray(evaluation_matrix)) {
                 final_max_score = evaluation_matrix.reduce((sum, item) => sum + (parseFloat(item.marks) || 0), 0);
@@ -149,7 +178,7 @@ class AssignmentService {
                 description: description !== undefined ? description : assignment.description,
                 domains: domains !== undefined ? domains : assignment.domains,
                 tags: tags !== undefined ? tags : assignment.tags,
-                submission_type: submission_type !== undefined ? submission_type : assignment.submission_type,
+                submission_type: dbSubmissionType !== undefined ? dbSubmissionType : assignment.submission_type,
                 instructions: instructions !== undefined ? instructions : assignment.instructions,
                 max_score: final_max_score,
                 course_id: course_id !== undefined ? course_id : assignment.course_id,

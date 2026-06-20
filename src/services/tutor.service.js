@@ -211,6 +211,14 @@ class TutorService {
             throw error;
         }
 
+        // Morph unique fields to free them up for new registrations
+        const timestamp = Date.now();
+        if (tutor.email) {
+            const [username, domain] = tutor.email.split('@');
+            const newEmail = `${username}+deleted${timestamp}@${domain || 'deleted.com'}`;
+            await tutor.update({ email: newEmail });
+        }
+
         await tutor.destroy();
         return true;
     }

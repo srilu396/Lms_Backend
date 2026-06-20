@@ -109,7 +109,7 @@ class TutorController {
             await tutorService.deleteTutor(req.params.id);
             res.status(200).json({
                 success: true,
-                message: 'Operation successful',
+                message: 'Tutor deleted successfully',
                 data: null
             });
         } catch (error) {

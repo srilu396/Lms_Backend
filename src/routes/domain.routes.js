@@ -3,6 +3,9 @@ const router = express.Router();
 const domainController = require('../controllers/domain.controller');
 const validate = require('../middlewares/validate');
 const { createDomainSchema, updateDomainSchema } = require('../utils/validations/domain.validation');
+const optionalAuth = require('../middlewares/optionalAuth.middleware');
+
+router.use(optionalAuth);
 
 // Stats
 router.get('/stats', domainController.getDomainStats);

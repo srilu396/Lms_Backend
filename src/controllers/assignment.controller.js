@@ -18,6 +18,15 @@ const createAssignment = async (req, res) => {
     }
 };
 
+const getAssignmentLookup = async (req, res) => {
+    try {
+        const result = await AssignmentService.getAssignmentLookup(req.query);
+        res.status(200).json({ success: true, message: 'Assignments lookup retrieved successfully', data: result.data });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Server error retrieving assignments lookup' });
+    }
+};
+
 const getAllAssignments = async (req, res) => {
     try {
         const assignments = await AssignmentService.getAllAssignments(req.query);
@@ -57,6 +66,7 @@ const deleteAssignment = async (req, res) => {
 module.exports = {
     getAssignmentStats,
     createAssignment,
+    getAssignmentLookup,
     getAllAssignments,
     getAssignmentById,
     updateAssignment,

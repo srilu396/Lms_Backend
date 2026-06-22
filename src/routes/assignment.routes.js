@@ -6,6 +6,7 @@ const roleMiddleware = require('../middlewares/role.middleware');
 
 // Stats route should be before /:id to prevent "stats" being treated as an id
 router.get('/stats', assignmentController.getAssignmentStats);
+router.get('/lookup', assignmentController.getAssignmentLookup);
 
 // CRUD routes
 router.post('/', assignmentController.createAssignment);

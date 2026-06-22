@@ -19,7 +19,7 @@ class DomainController {
 
     async getDomains(req, res) {
         try {
-            const result = await domainService.getDomains(req.query);
+            const result = await domainService.getDomains(req.query, req.user);
             res.status(200).json({
                 success: true,
                 message: 'Domains retrieved successfully',
@@ -36,7 +36,7 @@ class DomainController {
 
     async getDomainById(req, res) {
         try {
-            const domain = await domainService.getDomainById(req.params.id);
+            const domain = await domainService.getDomainById(req.params.id, req.query, req.user);
             res.status(200).json({
                 success: true,
                 message: 'Domain retrieved successfully',

@@ -77,6 +77,30 @@ class AssignmentService {
         }
     }
 
+    async getAssignmentLookup(query = {}) {
+        const { search, limit = 10 } = query;
+        const parsedLimit = Math.min(parseInt(limit, 10) || 10, 50);
+
+        const where = {
+            status: 'active'
+        };
+
+        if (search) {
+            where.title = { [Op.iLike]: `%${search.trim()}%` };
+        }
+
+        const rows = await db.Assignment.findAll({
+            where,
+            limit: parsedLimit,
+            attributes: ['id', 'title'],
+            order: [['title', 'ASC']]
+        });
+
+        return {
+            data: rows
+        };
+    }
+
     async getAllAssignments(queryParams) {
         let { page = 1, limit = 10, search, submission_type, sort_by = 'created_at', sort_order = 'DESC' } = queryParams;
         page = parseInt(page);

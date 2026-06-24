@@ -113,6 +113,7 @@ router.get('/course/:courseId/quiz/:quizId/review', studentPortalController.getC
 // Attendance APIs
 router.get('/attendance/stats', studentPortalController.getAttendanceStats);
 router.get('/attendance/table', studentPortalController.getAttendanceTable);
+router.get('/attendance-report', studentPortalController.getAttendanceReport);
 
 // Assignment APIs
 router.get('/assignment/stats', studentPortalController.getAssignmentStats);

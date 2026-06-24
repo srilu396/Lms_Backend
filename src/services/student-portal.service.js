@@ -442,7 +442,7 @@ class StudentPortalService {
                                     as: 'course_tutors',
                                     where: { role: 'primary' },
                                     required: false,
-                                    include: [{ model: User, attributes: ['full_name'] }]
+                                    include: [{ model: User, attributes: ['full_name', 'avatar_url'] }]
                                 }
                             ]
                         }
@@ -478,7 +478,8 @@ class StudentPortalService {
             });
 
             let completionProgress = 0;
-            let lastOpened = null;
+            // Use course updated_at for lastOpened
+            let lastOpened = course.updated_at || null;
 
             if (lessonIds.length > 0) {
                 const completedCount = await LessonProgress.count({
@@ -489,16 +490,6 @@ class StudentPortalService {
                     }
                 });
                 completionProgress = Math.round((completedCount / lessonIds.length) * 100);
-
-                const lastAccessRecord = await LessonProgress.findOne({
-                    where: {
-                        enrollment_id: enrollment.id,
-                        lesson_id: { [Op.in]: lessonIds }
-                    },
-                    order: [['last_accessed', 'DESC']],
-                    attributes: ['last_accessed']
-                });
-                lastOpened = lastAccessRecord ? lastAccessRecord.last_accessed : null;
             }
 
             const primaryTutor = course.course_tutors && course.course_tutors[0] ? course.course_tutors[0].User : null;
@@ -510,7 +501,7 @@ class StudentPortalService {
                 tags: [], // Placeholder for future tag feature
                 tutor: {
                     name: primaryTutor ? primaryTutor.full_name : 'N/A',
-                    image: null // Placeholder if user/tutor profile image is added
+                    image: primaryTutor ? primaryTutor.avatar_url : null
                 },
                 completionProgress,
                 lastOpened
@@ -1513,6 +1504,45 @@ class StudentPortalService {
                 totalPages: Math.ceil(count / limit)
             }
         };
+    }
+    // ─── Attendance Report Data ──────────────────────────────────────────────────
+    async getAttendanceReportData(userId) {
+        const student = await this._getStudentByUserId(userId);
+        
+        const attendanceRecords = await StudentAttendance.findAll({
+            where: { student_id: student.id },
+            include: [
+                {
+                    model: AttendanceSession,
+                    required: true,
+                    include: [
+                        {
+                            model: Batch,
+                            required: true,
+                            include: [
+                                { model: Course, attributes: ['name'] }
+                            ],
+                            attributes: ['name']
+                        }
+                    ]
+                }
+            ],
+            order: [[AttendanceSession, 'session_date', 'DESC']]
+        });
+        
+        const totalSessions = attendanceRecords.length;
+        const presentSessions = attendanceRecords.filter(r => r.status === 'present').length;
+        const overallPercentage = totalSessions > 0 ? Math.round((presentSessions / totalSessions) * 100) : 0;
+        
+        return attendanceRecords.map(record => ({
+            student_name: `${student.first_name} ${student.last_name}`,
+            student_email: student.email,
+            batch_name: record.AttendanceSession.Batch.name,
+            course_name: record.AttendanceSession.Batch.Course.name,
+            attendance_date: record.AttendanceSession.session_date,
+            status: record.status,
+            percentage: overallPercentage
+        }));
     }
 }
 

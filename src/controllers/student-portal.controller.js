@@ -1,4 +1,5 @@
 const studentPortalService = require('../services/student-portal.service');
+const attendanceReportExport = require('../utils/fileGenerators/attendanceReportExport');
 
 class StudentPortalController {
 
@@ -334,6 +335,24 @@ class StudentPortalController {
                 data: result.data,
                 pagination: result.pagination
             });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // GET /student-portal/attendance-report
+    async getAttendanceReport(req, res, next) {
+        try {
+            const formatType = req.query.format || 'csv';
+            const data = await studentPortalService.getAttendanceReportData(req.user.id);
+
+            if (formatType === 'excel') {
+                return await attendanceReportExport.generateExcel(data, res);
+            } else if (formatType === 'pdf') {
+                return await attendanceReportExport.generatePDF(data, res);
+            } else {
+                return await attendanceReportExport.generateCSV(data, res);
+            }
         } catch (error) {
             next(error);
         }

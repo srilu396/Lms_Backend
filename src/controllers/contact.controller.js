@@ -1,17 +1,10 @@
-const { ContactRequest } = require('../models');
+const contactService = require('../services/contact.service');
 
 class ContactController {
     // POST /api/v1/contact-requests
     async createContactRequest(req, res, next) {
         try {
-            const { full_name, email, role, message } = req.body;
-
-            const contact = await ContactRequest.create({
-                full_name,
-                email,
-                role,
-                message
-            });
+            const contact = await contactService.createContactRequest(req.body);
 
             res.status(201).json({
                 success: true,
@@ -26,17 +19,27 @@ class ContactController {
     // GET /api/v1/contact-requests
     async getContactRequests(req, res, next) {
         try {
-            // Can add pagination if desired, keeping simple block to return all
-            const limit = parseInt(req.query.limit) || 100;
-            const contacts = await ContactRequest.findAll({
-                order: [['created_at', 'DESC']],
-                limit
-            });
+            const result = await contactService.getContactRequests(req.query);
 
             res.status(200).json({
                 success: true,
                 message: 'Contact requests retrieved successfully',
-                data: contacts
+                data: result
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // GET /api/v1/contact-requests/stats
+    async getContactStats(req, res, next) {
+        try {
+            const stats = await contactService.getContactStats();
+
+            res.status(200).json({
+                success: true,
+                message: 'Contact request statistics retrieved successfully',
+                data: stats
             });
         } catch (error) {
             next(error);
@@ -46,15 +49,7 @@ class ContactController {
     // GET /api/v1/contact-requests/:id
     async getContactRequestById(req, res, next) {
         try {
-            const { id } = req.params;
-            const contact = await ContactRequest.findByPk(id);
-
-            if (!contact) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Contact request not found'
-                });
-            }
+            const contact = await contactService.getContactRequestById(req.params.id);
 
             res.status(200).json({
                 success: true,

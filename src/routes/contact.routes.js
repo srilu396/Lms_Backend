@@ -13,6 +13,7 @@ router.post('/', validate(createContactRequestSchema), contactController.createC
 router.use(authMiddleware);
 router.use(roleMiddleware('admin', 'institution_representative'));
 
+router.get('/stats', contactController.getContactStats);
 router.get('/', contactController.getContactRequests);
 router.get('/:id', contactController.getContactRequestById);
 

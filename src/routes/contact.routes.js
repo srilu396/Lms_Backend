@@ -16,5 +16,6 @@ router.use(roleMiddleware('admin', 'institution_representative'));
 router.get('/stats', contactController.getContactStats);
 router.get('/', contactController.getContactRequests);
 router.get('/:id', contactController.getContactRequestById);
+router.delete('/:id', contactController.deleteContactRequest);
 
 module.exports = router;

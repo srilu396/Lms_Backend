@@ -118,6 +118,18 @@ class StudentService {
                 attributes: ['id', 'name']
             });
         }
+        if (models.Enrollment && models.Batch) {
+            includeOptions.push({
+                model: models.Enrollment,
+                as: 'enrollments',
+                required: false,
+                include: [{
+                    model: models.Batch,
+                    required: false,
+                    attributes: ['id', 'name']
+                }]
+            });
+        }
 
         const { count, rows } = await Student.findAndCountAll({
             where,
@@ -138,6 +150,17 @@ class StudentService {
             if (studentJson.institution) {
                 studentJson.institution_id = studentJson.institution.id;
                 studentJson.institution_name = studentJson.institution.name;
+            }
+            if (studentJson.enrollments) {
+                studentJson.enrolled_batches = studentJson.enrollments
+                    .filter(e => e.Batch || e.batch)
+                    .map(e => {
+                        const b = e.Batch || e.batch;
+                        return { id: b.id, name: b.name };
+                    });
+                delete studentJson.enrollments;
+            } else {
+                studentJson.enrolled_batches = [];
             }
             return studentJson;
         });

@@ -60,6 +60,21 @@ class ContactController {
             next(error);
         }
     }
+
+    // DELETE /api/v1/contact-requests/:id
+    async deleteContactRequest(req, res, next) {
+        try {
+            await contactService.deleteContactRequest(req.params.id);
+
+            res.status(200).json({
+                success: true,
+                message: 'Contact request deleted successfully',
+                data: null
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 module.exports = new ContactController();

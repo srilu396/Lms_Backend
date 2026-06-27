@@ -256,8 +256,8 @@ class BatchController {
      */
     async downloadBatchTemplate(req, res) {
         try {
-            const csvHeaders = 'name,course,institution,instructor,start_date,end_date,enroll_students,status\n';
-            const csvSampleData = 'React Batch 01,React Fundamentals,ABC College,John Doe,2026-04-01,2026-10-01,"Anil,Naveen,Rahul",inactive\n';
+            const csvHeaders = 'name,course,institution,instructor,start_date,end_date,enroll_student,status\n';
+            const csvSampleData = 'React Batch 01,React Fundamentals,ABC College,John Doe,2026-04-01,2026-10-01,Anil,inactive\nReact Batch 01,React Fundamentals,ABC College,John Doe,2026-04-01,2026-10-01,Naveen,inactive\n';
             
             const csvContent = csvHeaders + csvSampleData;
 

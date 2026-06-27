@@ -505,61 +505,72 @@ class BatchService {
                             return student ? student.id : null;
                         };
 
-                        const batchesToCreate = [];
+                        const batchesToCreateMap = new Map();
 
                         for (let i = 0; i < rawRows.length; i++) {
                             const row = rawRows[i];
                             const rowNum = i + 1;
+                            const batchNameKey = row.name.toLowerCase().trim();
 
-                            // Validate Uniqueness
-                            if (existingBatches.some(b => b.name.toLowerCase().trim() === row.name.toLowerCase().trim())) {
-                                throw new Error(`Row ${rowNum}: Batch name '${row.name}' already exists.`);
+                            if (!batchesToCreateMap.has(batchNameKey)) {
+                                // Validate Uniqueness
+                                if (existingBatches.some(b => b.name.toLowerCase().trim() === batchNameKey)) {
+                                    throw new Error(`Row ${rowNum}: Batch name '${row.name}' already exists.`);
+                                }
+
+                                // Resolve Institution
+                                const instName = row.institution ? row.institution.toLowerCase().trim() : null;
+                                const instId = instName ? institutionMap.get(instName) : defaultInstitutionId;
+                                if (!instId) throw new Error(`Row ${rowNum}: Active institution '${row.institution}' not found.`);
+
+                                // Resolve Course
+                                const courseName = row.course ? row.course.toLowerCase().trim() : null;
+                                const courseId = courseName ? courseMap.get(courseName) : null;
+                                if (!courseId) throw new Error(`Row ${rowNum}: Active course '${row.course}' not found.`);
+
+                                // Resolve Instructor
+                                const instrcName = row.instructor ? row.instructor.toLowerCase().trim() : null;
+                                const instructorId = instrcName ? instructorMap.get(instrcName) : null;
+                                if (row.instructor && !instructorId) throw new Error(`Row ${rowNum}: Active instructor '${row.instructor}' not found.`);
+
+                                // Parse Dates
+                                let startDate = row.start_date ? new Date(row.start_date) : null;
+                                let endDate = row.end_date ? new Date(row.end_date) : null;
+                                if (startDate && isNaN(startDate.getTime())) throw new Error(`Row ${rowNum}: Invalid start_date.`);
+                                if (endDate && isNaN(endDate.getTime())) throw new Error(`Row ${rowNum}: Invalid end_date.`);
+                                if (startDate && endDate && endDate <= startDate) throw new Error(`Row ${rowNum}: end_date must be after start_date.`);
+
+                                batchesToCreateMap.set(batchNameKey, {
+                                    batchObj: {
+                                        name: row.name,
+                                        course_id: courseId,
+                                        institution_id: instId,
+                                        start_date: startDate,
+                                        end_date: endDate,
+                                        status: row.status || 'active'
+                                    },
+                                    instructorId,
+                                    instId,
+                                    studentIds: new Set()
+                                });
                             }
 
-                            // Resolve Institution
-                            const instName = row.institution ? row.institution.toLowerCase().trim() : null;
-                            const instId = instName ? institutionMap.get(instName) : defaultInstitutionId;
-                            if (!instId) throw new Error(`Row ${rowNum}: Active institution '${row.institution}' not found.`);
-
-                            // Resolve Course
-                            const courseName = row.course ? row.course.toLowerCase().trim() : null;
-                            const courseId = courseName ? courseMap.get(courseName) : null;
-                            if (!courseId) throw new Error(`Row ${rowNum}: Active course '${row.course}' not found.`);
-
-                            // Resolve Instructor
-                            const instrcName = row.instructor ? row.instructor.toLowerCase().trim() : null;
-                            const instructorId = instrcName ? instructorMap.get(instrcName) : null;
-                            if (row.instructor && !instructorId) throw new Error(`Row ${rowNum}: Active instructor '${row.instructor}' not found.`);
-
-                            // Parse Dates
-                            let startDate = row.start_date ? new Date(row.start_date) : null;
-                            let endDate = row.end_date ? new Date(row.end_date) : null;
-                            if (startDate && isNaN(startDate.getTime())) throw new Error(`Row ${rowNum}: Invalid start_date.`);
-                            if (endDate && isNaN(endDate.getTime())) throw new Error(`Row ${rowNum}: Invalid end_date.`);
-                            if (startDate && endDate && endDate <= startDate) throw new Error(`Row ${rowNum}: end_date must be after start_date.`);
+                            const batchData = batchesToCreateMap.get(batchNameKey);
 
                             // Resolve Students
-                            const studentIds = [];
-                            if (row.enroll_students) {
-                                const names = row.enroll_students.split(',').map(n => n.trim()).filter(n => n);
+                            const studentName = row.enroll_student || row.enroll_students;
+                            if (studentName) {
+                                // Check if there are commas anyway, just in case they mixed formats
+                                const names = studentName.split(',').map(n => n.trim()).filter(n => n);
                                 for (const name of names) {
-                                    const sId = getStudentId(name, instId);
+                                    const sId = getStudentId(name, batchData.instId);
                                     if (!sId) throw new Error(`Row ${rowNum}: Active student '${name}' not found for this institution.`);
-                                    studentIds.push(sId);
+                                    batchData.studentIds.add(sId);
                                 }
                             }
-
-                            const batchObj = {
-                                name: row.name,
-                                course_id: courseId,
-                                institution_id: instId,
-                                start_date: startDate,
-                                end_date: endDate,
-                                status: row.status || 'active'
-                            };
-
-                            batchesToCreate.push({ batchObj, instructorId, studentIds });
                         }
+
+                        const batchesToCreate = Array.from(batchesToCreateMap.values());
 
                         transaction = await sequelize.transaction();
                         let createdCount = 0;
@@ -576,8 +587,8 @@ class BatchService {
                                 }, { transaction });
                             }
 
-                            if (b.studentIds.length > 0) {
-                                const enrollments = b.studentIds.map(sId => ({
+                            if (b.studentIds.size > 0) {
+                                const enrollments = Array.from(b.studentIds).map(sId => ({
                                     student_id: sId,
                                     batch_id: newBatch.id,
                                     status: 'active'

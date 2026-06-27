@@ -66,6 +66,17 @@ class ContactService {
         return contact;
     }
 
+    async deleteContactRequest(id) {
+        const contact = await ContactRequest.findByPk(id);
+        if (!contact) {
+            const error = new Error('Contact request not found');
+            error.statusCode = 404;
+            throw error;
+        }
+        await contact.destroy();
+        return true;
+    }
+
     async getContactStats() {
         const [total_requests, admin_requests, institution_representative_requests] = await Promise.all([
             ContactRequest.count(),

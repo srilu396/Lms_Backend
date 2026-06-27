@@ -9,6 +9,7 @@ router.use(optionalAuth);
 
 // Stats
 router.get('/stats', domainController.getDomainStats);
+router.get('/lookup', domainController.getDomainLookup);
 
 // CRUD
 router.post('/', validate(createDomainSchema), domainController.createDomain);

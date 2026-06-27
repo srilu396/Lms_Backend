@@ -34,6 +34,22 @@ class DomainController {
         }
     }
 
+    async getDomainLookup(req, res) {
+        try {
+            const result = await domainService.getDomainLookup(req.query);
+            res.status(200).json({
+                success: true,
+                message: 'Domains lookup retrieved successfully',
+                data: result.data
+            });
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: 'Server error retrieving domains lookup'
+            });
+        }
+    }
+
     async getDomainById(req, res) {
         try {
             const domain = await domainService.getDomainById(req.params.id, req.query, req.user);

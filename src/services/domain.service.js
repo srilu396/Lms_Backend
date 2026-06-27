@@ -145,6 +145,30 @@ class DomainService {
         };
     }
 
+    async getDomainLookup(query = {}) {
+        const { search, limit = 10 } = query;
+        const parsedLimit = Math.min(parseInt(limit, 10) || 10, 50);
+
+        const where = {
+            status: 'active'
+        };
+
+        if (search) {
+            where.name = { [Op.iLike]: `%${search.trim()}%` };
+        }
+
+        const rows = await Domain.findAll({
+            where,
+            limit: parsedLimit,
+            attributes: ['id', 'name'],
+            order: [['name', 'ASC']]
+        });
+
+        return {
+            data: rows
+        };
+    }
+
     async getDomainById(id, query = {}, user = null) {
         const domain = await Domain.findByPk(id);
 

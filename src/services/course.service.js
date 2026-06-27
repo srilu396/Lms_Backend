@@ -150,6 +150,40 @@ class CourseService {
         };
     }
 
+    formatMediaUrls(item) {
+        if (!item) return;
+        const fixUrl = (url) => {
+            if (!url) return url;
+            if (url.startsWith('blod:')) url = url.replace(/^blod:/, '');
+            if (url.startsWith('http')) return url;
+            const baseUrl = process.env.BASE_URL || 'http://localhost:5000';
+            return `${baseUrl.replace(/\/$/, '')}/${url.replace(/^\//, '')}`;
+        };
+
+        if (item.thumbnail_url) item.thumbnail_url = fixUrl(item.thumbnail_url);
+        if (item.image_url) item.image_url = fixUrl(item.image_url);
+        if (item.video_url) item.video_url = fixUrl(item.video_url);
+
+        if (item.modules) {
+            item.modules.forEach(m => {
+                if (m.image_url) m.image_url = fixUrl(m.image_url);
+                if (m.video_url) m.video_url = fixUrl(m.video_url);
+                if (m.topics) {
+                    m.topics.forEach(t => {
+                        if (t.image_url) t.image_url = fixUrl(t.image_url);
+                        if (t.video_url) t.video_url = fixUrl(t.video_url);
+                        if (t.lessons) {
+                            t.lessons.forEach(l => {
+                                if (l.image_url) l.image_url = fixUrl(l.image_url);
+                                if (l.video_url) l.video_url = fixUrl(l.video_url);
+                            });
+                        }
+                    });
+                }
+            });
+        }
+    }
+
     async getCourseById(id) {
         const course = await Course.findByPk(id, {
             include: [{
@@ -162,15 +196,9 @@ class CourseService {
                         model: Topic,
                         as: 'topics',
                         include: [
-                            { model: Assignment, as: 'assignments' },
-                            { model: Quiz, as: 'quizzes' },
                             { 
                                 model: Lesson,
-                                as: 'lessons',
-                                include: [
-                                    { model: Assignment, as: 'assignments' },
-                                    { model: Quiz, as: 'quizzes' }
-                                ]
+                                as: 'lessons'
                             }
                         ]
                     }
@@ -229,6 +257,8 @@ class CourseService {
         courseJson.no_of_modules = totalModules;
         courseJson.total_topics = totalTopics;
         courseJson.total_lessons = totalLessons;
+
+        this.formatMediaUrls(courseJson);
 
         return {
             ...courseJson,
@@ -299,15 +329,9 @@ class CourseService {
                         model: Topic,
                         as: 'topics',
                         include: [
-                            { model: Assignment, as: 'assignments' },
-                            { model: Quiz, as: 'quizzes' },
                             { 
                                 model: Lesson,
-                                as: 'lessons',
-                                include: [
-                                    { model: Assignment, as: 'assignments' },
-                                    { model: Quiz, as: 'quizzes' }
-                                ]
+                                as: 'lessons'
                             }
                         ]
                     }
@@ -382,6 +406,8 @@ class CourseService {
                 }
             }
         }
+
+        this.formatMediaUrls(courseJson);
 
         return {
             ...courseJson,

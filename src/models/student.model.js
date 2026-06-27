@@ -82,6 +82,9 @@ module.exports = (sequelize, DataTypes) => {
         if (models.Institution) {
             Student.belongsTo(models.Institution, { foreignKey: 'institution_id', as: 'institution' });
         }
+        if (models.Enrollment) {
+            Student.hasMany(models.Enrollment, { foreignKey: 'student_id', as: 'enrollments' });
+        }
     };
 
     return Student;

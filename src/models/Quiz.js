@@ -6,14 +6,7 @@ module.exports = (sequelize, DataTypes) => {
             autoIncrement: true,
             allowNull: false
         },
-        topic_id: {
-            type: DataTypes.INTEGER,
-            allowNull: true,
-            references: {
-                model: 'topics',
-                key: 'id'
-            }
-        },
+
         course_id: {
             type: DataTypes.INTEGER,
             allowNull: true,
@@ -93,7 +86,6 @@ module.exports = (sequelize, DataTypes) => {
     });
 
     Quiz.associate = (models) => {
-        Quiz.belongsTo(models.Topic, { foreignKey: 'topic_id', as: 'topic' });
         Quiz.belongsTo(models.Course, { foreignKey: 'course_id', as: 'course' });
         Quiz.belongsTo(models.Module, { foreignKey: 'module_id', as: 'module' });
         Quiz.belongsTo(models.Lesson, { foreignKey: 'lesson_id', as: 'lesson' });

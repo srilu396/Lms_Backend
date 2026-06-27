@@ -40,8 +40,6 @@ class ModuleService {
                     model: Topic,
                     as: 'topics',
                     include: [
-                        { model: Assignment, as: 'assignments' },
-                        { model: Quiz, as: 'quizzes' },
                         { 
                             model: Lesson, 
                             as: 'lessons', 
@@ -92,8 +90,6 @@ class ModuleService {
                     model: Topic,
                     as: 'topics',
                     include: [
-                        { model: Assignment, as: 'assignments' },
-                        { model: Quiz, as: 'quizzes' },
                         { 
                             model: Lesson, 
                             as: 'lessons', 

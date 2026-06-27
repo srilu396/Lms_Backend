@@ -22,14 +22,7 @@ module.exports = (sequelize, DataTypes) => {
                 key: 'id'
             }
         },
-        topic_id: {
-            type: DataTypes.INTEGER,
-            allowNull: true,
-            references: {
-                model: 'topics',
-                key: 'id'
-            }
-        },
+
         lesson_id: {
             type: DataTypes.INTEGER,
             allowNull: true,
@@ -82,7 +75,6 @@ module.exports = (sequelize, DataTypes) => {
     Assignment.associate = (models) => {
         Assignment.belongsTo(models.Course, { foreignKey: 'course_id' });
         Assignment.belongsTo(models.Module, { foreignKey: 'module_id' });
-        Assignment.belongsTo(models.Topic, { foreignKey: 'topic_id' });
         Assignment.belongsTo(models.Lesson, { foreignKey: 'lesson_id' });
         Assignment.belongsTo(models.Domain, { foreignKey: 'domain_id', as: 'domain' });
         Assignment.hasMany(models.AssignmentCriteria, { foreignKey: 'assignment_id', as: 'evaluation_matrix', onDelete: 'CASCADE' });

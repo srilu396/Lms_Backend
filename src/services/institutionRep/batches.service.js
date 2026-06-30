@@ -12,6 +12,8 @@ const {
     AssignmentSubmission, 
     QuizSubmission,
     Institution,
+    AttendanceSession,
+    StudentAttendance,
     sequelize
 } = require('../../models');
 const { Op } = require('sequelize');
@@ -183,29 +185,48 @@ class InstitutionRepBatchService {
     async getTotalItemsInCourse(courseId) {
         try {
             // Count Lessons
-            const [lessonsResult] = await sequelize.query(`
-                SELECT COUNT(DISTINCT l.id) as count 
-                FROM lessons l
-                JOIN topics t ON l.topic_id = t.id
-                JOIN modules m ON t.module_id = m.id
-                WHERE m.course_id = :courseId
-            `, { replacements: { courseId }, type: sequelize.QueryTypes.SELECT });
+            let lessonsCount = 0;
+            try {
+                // Try refactored hierarchy (lessons -> modules)
+                const [lessonsResult] = await sequelize.query(`
+                    SELECT COUNT(DISTINCT l.id) as count 
+                    FROM lessons l
+                    JOIN modules m ON l.module_id = m.id
+                    WHERE m.course_id = :courseId
+                `, { replacements: { courseId }, type: sequelize.QueryTypes.SELECT });
+                lessonsCount = parseInt(lessonsResult?.count || 0);
+            } catch (err) {
+                // Fallback to old hierarchy (lessons -> topics -> modules)
+                const [lessonsResult] = await sequelize.query(`
+                    SELECT COUNT(DISTINCT l.id) as count 
+                    FROM lessons l
+                    JOIN topics t ON l.topic_id = t.id
+                    JOIN modules m ON t.module_id = m.id
+                    WHERE m.course_id = :courseId
+                `, { replacements: { courseId }, type: sequelize.QueryTypes.SELECT });
+                lessonsCount = parseInt(lessonsResult?.count || 0);
+            }
 
             // Count Quizzes
-            const [quizzesResult] = await sequelize.query(`
-                SELECT COUNT(DISTINCT q.id) as count 
-                FROM quizzes q
-                JOIN topics t ON q.topic_id = t.id
-                JOIN modules m ON t.module_id = m.id
-                WHERE m.course_id = :courseId
-            `, { replacements: { courseId }, type: sequelize.QueryTypes.SELECT });
+            let quizzesCount = 0;
+            try {
+                // Try direct course_id query
+                quizzesCount = await Quiz.count({ where: { course_id: courseId } });
+            } catch (err) {
+                const [quizzesResult] = await sequelize.query(`
+                    SELECT COUNT(DISTINCT q.id) as count 
+                    FROM quizzes q
+                    JOIN topics t ON q.topic_id = t.id
+                    JOIN modules m ON t.module_id = m.id
+                    WHERE m.course_id = :courseId
+                `, { replacements: { courseId }, type: sequelize.QueryTypes.SELECT });
+                quizzesCount = parseInt(quizzesResult?.count || 0);
+            }
 
             // Count Assignments (Assignments are directly linked to Courses)
             const assignmentsCount = await Assignment.count({ where: { course_id: courseId } });
 
-            const total = parseInt(lessonsResult.count || 0) + 
-                          parseInt(quizzesResult.count || 0) + 
-                          assignmentsCount;
+            const total = lessonsCount + quizzesCount + assignmentsCount;
             
             return total;
         } catch (error) {
@@ -256,6 +277,178 @@ class InstitutionRepBatchService {
         if (!name) return colors[0];
         const index = name.length % colors.length;
         return colors[index];
+    }
+
+    /**
+     * Get summary stats for the Batch Management page
+     * @param {number} institutionId
+     */
+    async getBatchStats(institutionId) {
+        // Card 1 — Total Batches: Count of all batches where institution_id matches AND status = 'active'
+        const totalBatches = await Batch.count({
+            where: {
+                institution_id: institutionId,
+                status: 'active'
+            }
+        });
+
+        // Fetch all batches for this institution to use in other calculations
+        const batches = await Batch.findAll({
+            where: { institution_id: institutionId },
+            attributes: ['id', 'course_id']
+        });
+        const batchIds = batches.map(b => b.id);
+
+        // Card 2 — Active Students: Count of distinct active students enrolled across all batches of this institution
+        let activeStudents = 0;
+        if (batchIds.length > 0) {
+            activeStudents = await Enrollment.count({
+                distinct: true,
+                col: 'student_id',
+                where: {
+                    batch_id: { [Op.in]: batchIds },
+                    status: 'active'
+                }
+            });
+        }
+
+        // Card 3 — Avg Progress: Average of all batch progress values across all batches in this institution, rounded to whole number
+        let totalProgressSum = 0;
+        let validBatchesCount = 0;
+
+        for (const batch of batches) {
+            // Get all enrollments for this batch
+            const enrollments = await Enrollment.findAll({
+                where: { batch_id: batch.id },
+                attributes: ['id']
+            });
+
+            // If a batch has zero students, exclude it from the avg_progress calculation
+            if (enrollments.length === 0) {
+                continue;
+            }
+
+            const enrollmentIds = enrollments.map(e => e.id);
+            const courseId = batch.course_id;
+
+            // Get total lessons in the course
+            let lessonsCount = 0;
+            if (courseId) {
+                try {
+                    // Try refactored hierarchy (lessons -> modules)
+                    const [lessonsResult] = await sequelize.query(`
+                        SELECT COUNT(DISTINCT l.id) as count 
+                        FROM lessons l
+                        JOIN modules m ON l.module_id = m.id
+                        WHERE m.course_id = :courseId
+                    `, { replacements: { courseId }, type: sequelize.QueryTypes.SELECT });
+                    lessonsCount = parseInt(lessonsResult?.count || 0);
+                } catch (err) {
+                    try {
+                        // Fallback to old hierarchy (lessons -> topics -> modules)
+                        const [lessonsResult] = await sequelize.query(`
+                            SELECT COUNT(DISTINCT l.id) as count 
+                            FROM lessons l
+                            JOIN topics t ON l.topic_id = t.id
+                            JOIN modules m ON t.module_id = m.id
+                            WHERE m.course_id = :courseId
+                        `, { replacements: { courseId }, type: sequelize.QueryTypes.SELECT });
+                        lessonsCount = parseInt(lessonsResult?.count || 0);
+                    } catch (e) {
+                        lessonsCount = 0;
+                    }
+                }
+            }
+
+            if (lessonsCount > 0) {
+                const totalPossible = lessonsCount * enrollments.length;
+                const completedLessons = await LessonProgress.count({
+                    where: {
+                        enrollment_id: { [Op.in]: enrollmentIds },
+                        is_completed: true
+                    }
+                });
+                const progress = (completedLessons / totalPossible) * 100;
+                totalProgressSum += progress;
+            } else {
+                totalProgressSum += 0;
+            }
+            validBatchesCount++;
+        }
+
+        const avgProgressPercent = validBatchesCount > 0
+            ? Math.round(totalProgressSum / validBatchesCount)
+            : 0;
+
+        // Card 4 — At-Risk Students: Count of distinct students across all batches in this institution where attendance_percent < 75 OR avg_quiz_score < 60
+        let atRiskStudents = 0;
+        if (batchIds.length > 0) {
+            // Fetch all enrollments with their submissions and attendance for calculation
+            const enrollments = await Enrollment.findAll({
+                where: { batch_id: { [Op.in]: batchIds } },
+                include: [
+                    { 
+                        model: QuizSubmission, 
+                        include: [{ model: Quiz, attributes: ['total_marks'] }] 
+                    },
+                    { model: StudentAttendance, as: 'attendances' }
+                ]
+            });
+
+            // Get total sessions per batch for attendance calculation
+            const batchSessions = await AttendanceSession.findAll({
+                where: { batch_id: { [Op.in]: batchIds } },
+                attributes: ['batch_id', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
+                group: ['batch_id'],
+                raw: true
+            });
+            
+            const batchSessionMap = {};
+            batchSessions.forEach(s => {
+                batchSessionMap[s.batch_id] = parseInt(s.count);
+            });
+
+            const atRiskStudentIds = new Set();
+
+            enrollments.forEach(e => {
+                // Student Avg Quiz Score
+                let studentAvgScore = 0;
+                if (e.QuizSubmissions && e.QuizSubmissions.length > 0) {
+                    let totalPct = 0;
+                    e.QuizSubmissions.forEach(sub => {
+                        const score = parseFloat(sub.score) || 0;
+                        const maxMarks = (sub.Quiz && sub.Quiz.total_marks) ? parseFloat(sub.Quiz.total_marks) : 100;
+                        totalPct += (score / maxMarks) * 100;
+                    });
+                    studentAvgScore = totalPct / e.QuizSubmissions.length;
+                } else {
+                    studentAvgScore = 0;
+                }
+
+                // Student Attendance Percent
+                let attendancePct = 0;
+                const totalBatchSessions = batchSessionMap[e.batch_id] || 0;
+                if (totalBatchSessions > 0) {
+                    const presentCount = e.attendances ? e.attendances.filter(a => a.status === 'present' || a.status === 'late').length : 0;
+                    attendancePct = (presentCount / totalBatchSessions) * 100;
+                } else {
+                    attendancePct = 0; 
+                }
+
+                if (studentAvgScore < 60 || attendancePct < 75) {
+                    atRiskStudentIds.add(e.student_id);
+                }
+            });
+
+            atRiskStudents = atRiskStudentIds.size;
+        }
+
+        return {
+            total_batches: totalBatches,
+            active_students: activeStudents,
+            avg_progress_percent: avgProgressPercent,
+            at_risk_students: atRiskStudents
+        };
     }
 }
 

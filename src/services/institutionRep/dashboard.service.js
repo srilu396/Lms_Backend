@@ -138,7 +138,7 @@ class DashboardService {
                 attendancePct = (presentCount / totalBatchSessions) * 100;
             } else {
                 // If no sessions, they are not failing attendance
-                attendancePct = 100; 
+                attendancePct = 0; 
             }
 
             if (studentAvgScore < 60 || attendancePct < 75) {
@@ -262,7 +262,7 @@ class DashboardService {
                 sessionsAttended = e.attendances ? e.attendances.filter(a => a.status === 'present' || a.status === 'late').length : 0;
                 attendancePercent = Math.round((sessionsAttended / totalSessions) * 100);
             } else {
-                attendancePercent = 100;
+                attendancePercent = 0;
             }
 
             // Status logic

@@ -3,8 +3,10 @@ const { Op } = require('sequelize');
 const { 
     Institution, Batch, User, Student, Enrollment, Course, 
     StudentAttendance, AttendanceSession, 
-    QuizSubmission, AssignmentSubmission, Module, Topic, Lesson, LessonProgress, Quiz, Assignment 
-} = require('../../models');const getRecentReports = async (institutionId, search) => {
+    QuizSubmission, AssignmentSubmission, Module, Topic, Lesson, LessonProgress, Quiz, Assignment,
+    sequelize
+} = require('../../models');
+const getRecentReports = async (institutionId, search) => {
     // Fetch the institution to get its name
     const institution = await Institution.findByPk(institutionId);
     if (!institution) {
@@ -373,18 +375,57 @@ const generateReportPdf = async (institutionId, reportType) => {
     } else if (reportType === 'progress') {
         const modules = await Module.findAll({ where: { course_id: courseIds } });
         const moduleIds = modules.map(m => m.id);
-        const topics = await Topic.findAll({ where: { module_id: moduleIds } });
-        const topicIds = topics.map(t => t.id);
-        const dbLessons = await Lesson.findAll({ where: { topic_id: topicIds } });
-
-        const topicModuleMap = new Map(topics.map(t => [t.id, t.module_id]));
-        const moduleCourseMap = new Map(modules.map(m => [m.id, m.course_id]));
         
-        const lessons = dbLessons.map(l => {
-            const mId = topicModuleMap.get(l.topic_id);
-            l.course_id = mId ? moduleCourseMap.get(mId) : null;
-            return l;
-        });
+        let lessons = [];
+        try {
+            // Try refactored hierarchy (lessons table has module_id)
+            const dbLessons = await sequelize.query(
+                'SELECT id, name, module_id FROM lessons WHERE module_id IN (:moduleIds)',
+                {
+                    replacements: { moduleIds },
+                    type: sequelize.QueryTypes.SELECT
+                }
+            );
+            const moduleCourseMap = new Map(modules.map(m => [m.id, m.course_id]));
+            lessons = dbLessons.map(l => ({
+                id: l.id,
+                name: l.name,
+                module_id: l.module_id,
+                course_id: l.module_id ? moduleCourseMap.get(l.module_id) : null
+            }));
+        } catch (err) {
+            // Fallback to old hierarchy (lessons -> topics -> modules)
+            const dbTopics = await sequelize.query(
+                'SELECT id, module_id FROM topics WHERE module_id IN (:moduleIds)',
+                {
+                    replacements: { moduleIds },
+                    type: sequelize.QueryTypes.SELECT
+                }
+            );
+            const topicIds = dbTopics.map(t => t.id);
+            const topicModuleMap = new Map(dbTopics.map(t => [t.id, t.module_id]));
+            const moduleCourseMap = new Map(modules.map(m => [m.id, m.course_id]));
+
+            if (topicIds.length > 0) {
+                const dbLessons = await sequelize.query(
+                    'SELECT id, name, topic_id FROM lessons WHERE topic_id IN (:topicIds)',
+                    {
+                        replacements: { topicIds },
+                        type: sequelize.QueryTypes.SELECT
+                    }
+                );
+                lessons = dbLessons.map(l => {
+                    const mId = topicModuleMap.get(l.topic_id);
+                    return {
+                        id: l.id,
+                        name: l.name,
+                        topic_id: l.topic_id,
+                        module_id: mId || null,
+                        course_id: mId ? moduleCourseMap.get(mId) : null
+                    };
+                });
+            }
+        }
         
         const lessonProgresses = await LessonProgress.findAll({
             where: { enrollment_id: enrollmentIds }
@@ -543,7 +584,7 @@ const generateReportPdf = async (institutionId, reportType) => {
                 const sAttendances = attendances.filter(a => a.enrollment_id === enrollment.id);
                 const sTotalAtt = sAttendances.length;
                 const sPresent = sAttendances.filter(a => a.status === 'present' || a.status === 'late').length;
-                let sAttPerc = 100;
+                let sAttPerc = 0;
                 if (sTotalAtt > 0) {
                     sAttPerc = (sPresent / sTotalAtt) * 100;
                 }

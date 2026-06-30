@@ -11,6 +11,13 @@ const institutionRepAuth = require('../../middlewares/institutionRepAuth');
 router.get('/', institutionRepAuth, batchesController.getBatches);
 
 /**
+ * @route   GET /api/v1/institution-rep/batches/stats
+ * @desc    Get batch management stat cards
+ * @access  Private (Institution Representative)
+ */
+router.get('/stats', institutionRepAuth, batchesController.getBatchStats);
+
+/**
  * @route   GET /api/v1/institution-rep/batches/download
  * @desc    Download batch list as CSV or Excel
  * @access  Private (Institution Representative)

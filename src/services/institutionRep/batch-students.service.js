@@ -288,23 +288,68 @@ class BatchStudentsService {
         }
 
         let combinedSubmissions = [];
+        const lessonIds = new Set();
 
         // Fetch Assignments if type is 'all' or 'assignment'
+        let assignmentSubmissions = [];
         if (type === 'all' || type === 'assignment') {
-            const assignmentSubmissions = await AssignmentSubmission.findAll({
+            assignmentSubmissions = await AssignmentSubmission.findAll({
                 where: { enrollment_id: enrollment.id },
                 attributes: ['id', 'grade', 'submitted_at', 'created_at', 'enrollment_id', 'assignment_id', 'status'],
                 include: [
                     {
                         model: Assignment,
                         include: [
-                            { model: Module, attributes: ['name'] },
-                            { model: Topic, attributes: ['name'] }
+                            { model: Module, attributes: ['name'] }
                         ]
                     }
                 ]
             });
+            assignmentSubmissions.forEach(sub => {
+                if (sub.Assignment && sub.Assignment.lesson_id) {
+                    lessonIds.add(sub.Assignment.lesson_id);
+                }
+            });
+        }
 
+        // Fetch Quizzes if type is 'all' or 'quiz'
+        let quizSubmissions = [];
+        if (type === 'all' || type === 'quiz') {
+            quizSubmissions = await QuizSubmission.findAll({
+                where: { enrollment_id: enrollment.id },
+                include: [
+                    {
+                        model: Quiz,
+                        include: [
+                            { model: Module, as: 'module', attributes: ['name'] }
+                        ]
+                    }
+                ]
+            });
+            quizSubmissions.forEach(sub => {
+                if (sub.Quiz && sub.Quiz.lesson_id) {
+                    lessonIds.add(sub.Quiz.lesson_id);
+                }
+            });
+        }
+
+        // Resolve Lesson names from DB to handle lessons subtitle properly
+        const lessonMap = new Map();
+        if (lessonIds.size > 0) {
+            const lessons = await sequelize.query(
+                'SELECT id, name FROM lessons WHERE id IN (:ids)',
+                {
+                    replacements: { ids: Array.from(lessonIds) },
+                    type: sequelize.QueryTypes.SELECT
+                }
+            );
+            lessons.forEach(l => {
+                lessonMap.set(l.id, l.name);
+            });
+        }
+
+        // Process Assignments
+        if (type === 'all' || type === 'assignment') {
             assignmentSubmissions.forEach(sub => {
                 const assignment = sub.Assignment;
                 if (!assignment) return;
@@ -313,9 +358,11 @@ class BatchStudentsService {
                 const score_total = parseFloat(assignment.max_score || 100);
                 const score_percent = score_total > 0 ? Math.round((score_obtained / score_total) * 100) : 0;
 
+                const parentName = (assignment.Module && assignment.Module.name) || (assignment.lesson_id && lessonMap.get(assignment.lesson_id)) || null;
+
                 combinedSubmissions.push({
                     title: assignment.title,
-                    subtitle: (assignment.Module && assignment.Module.name) || (assignment.Topic && assignment.Topic.name) || null,
+                    subtitle: parentName,
                     type: 'assignment',
                     submission_date: sub.submitted_at ? this._formatDate(sub.submitted_at) : this._formatDate(sub.created_at),
                     raw_date: sub.submitted_at || sub.created_at,
@@ -326,21 +373,8 @@ class BatchStudentsService {
             });
         }
 
-        // Fetch Quizzes if type is 'all' or 'quiz'
+        // Process Quizzes
         if (type === 'all' || type === 'quiz') {
-            const quizSubmissions = await QuizSubmission.findAll({
-                where: { enrollment_id: enrollment.id },
-                include: [
-                    {
-                        model: Quiz,
-                        include: [
-                            { model: Module, as: 'module', attributes: ['name'] },
-                            { model: Topic, as: 'topic', attributes: ['name'] }
-                        ]
-                    }
-                ]
-            });
-
             quizSubmissions.forEach(sub => {
                 const quiz = sub.Quiz;
                 if (!quiz) return;
@@ -349,9 +383,11 @@ class BatchStudentsService {
                 const score_total = parseFloat(quiz.total_marks || 100);
                 const score_percent = score_total > 0 ? Math.round((score_obtained / score_total) * 100) : 0;
 
+                const parentName = (quiz.module && quiz.module.name) || (quiz.lesson_id && lessonMap.get(quiz.lesson_id)) || null;
+
                 combinedSubmissions.push({
                     title: quiz.name,
-                    subtitle: (quiz.module && quiz.module.name) || (quiz.topic && quiz.topic.name) || null,
+                    subtitle: parentName,
                     type: 'quiz',
                     submission_date: sub.submitted_at ? this._formatDate(sub.submitted_at) : this._formatDate(sub.created_at),
                     raw_date: sub.submitted_at || sub.created_at,

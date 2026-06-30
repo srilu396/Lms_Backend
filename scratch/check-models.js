@@ -1,0 +1,10 @@
+const models = require('../src/models');
+console.log("Topic model attributes:", Object.keys(models.Topic.rawAttributes));
+console.log("Lesson model attributes:", Object.keys(models.Lesson.rawAttributes));
+console.log("Module model attributes:", Object.keys(models.Module.rawAttributes));
+console.log("Assignment model attributes:", Object.keys(models.Assignment.rawAttributes));
+console.log("Topic associations:", Object.keys(models.Topic.associations));
+console.log("Lesson associations:", Object.keys(models.Lesson.associations));
+console.log("Module associations:", Object.keys(models.Module.associations));
+console.log("Assignment associations:", Object.keys(models.Assignment.associations));
+models.sequelize.close();

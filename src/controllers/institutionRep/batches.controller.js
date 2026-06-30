@@ -45,6 +45,29 @@ class InstitutionRepBatchesController {
         }
     }
 
+    /**
+     * GET /api/v1/institution-rep/batches/stats
+     */
+    async getBatchStats(req, res, next) {
+        try {
+            const institutionId = req.user.institution_id;
+            if (!institutionId) {
+                return res.status(403).json({ 
+                    success: false, 
+                    message: 'Forbidden: institution_id cannot be resolved' 
+                });
+            }
+            
+            const stats = await batchesService.getBatchStats(institutionId);
+            
+            return res.status(200).json({
+                success: true,
+                data: stats
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
 
 }
 

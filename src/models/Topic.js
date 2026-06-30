@@ -6,11 +6,11 @@ module.exports = (sequelize, DataTypes) => {
             autoIncrement: true,
             allowNull: false
         },
-        module_id: {
+        lesson_id: {
             type: DataTypes.INTEGER,
             allowNull: false,
             references: {
-                model: 'modules',
+                model: 'lessons',
                 key: 'id'
             }
         },
@@ -36,8 +36,9 @@ module.exports = (sequelize, DataTypes) => {
     });
 
     Topic.associate = (models) => {
-        Topic.belongsTo(models.Module, { foreignKey: 'module_id' });
-        Topic.hasMany(models.Lesson, { foreignKey: 'topic_id', as: 'lessons' });
+        Topic.belongsTo(models.Lesson, { foreignKey: 'lesson_id' });
+        Topic.hasMany(models.Assignment, { foreignKey: 'topic_id', as: 'assignments' });
+        Topic.hasMany(models.Quiz, { foreignKey: 'topic_id', as: 'quizzes' });
     };
 
     return Topic;

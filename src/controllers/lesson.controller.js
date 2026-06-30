@@ -3,11 +3,11 @@ const lessonService = require('../services/lesson.service');
 class LessonController {
     async addLesson(req, res) {
         try {
-            const topicId = req.params.topicId || req.body.topic_id;
-            if (!topicId) {
-                return res.status(400).json({ success: false, message: 'topic_id is required' });
+            const moduleId = req.body.module_id;
+            if (!moduleId) {
+                return res.status(400).json({ success: false, message: 'module_id is required' });
             }
-            const lesson = await lessonService.createLesson(topicId, req.body);
+            const lesson = await lessonService.createLesson(moduleId, req.body);
             res.status(201).json({
                 success: true,
                 message: 'Lesson added successfully',

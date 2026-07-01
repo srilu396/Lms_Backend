@@ -2,43 +2,6 @@ const tutorPortalService = require('../services/tutor-portal.service');
 
 class TutorPortalController {
 
-    // GET /tutor-portal/profile
-    async getProfile(req, res, next) {
-        try {
-            const profile = await tutorPortalService.getProfile(req.tutorId);
-            res.status(200).json({
-                success: true,
-                message: 'Tutor profile retrieved successfully',
-                data: profile
-            });
-        } catch (error) {
-            next(error);
-        }
-    }
-
-    // PUT /tutor-portal/profile
-    async updateProfile(req, res, next) {
-        try {
-            const updateData = { ...req.body };
-            
-            // If there's a file uploaded, add its URL/path to updateData
-            if (req.file) {
-                updateData.profile_image = `/uploads/profiles/${req.file.filename}`;
-            }
-
-            // We pass both req.tutorId (internal tutor table id) and req.user.id (users table id) 
-            // so we can update both tables as done in student portal.
-            const updatedProfile = await tutorPortalService.updateProfile(req.tutorId, req.user.id, updateData);
-            
-            res.status(200).json({
-                success: true,
-                message: 'Profile updated successfully',
-                data: updatedProfile
-            });
-        } catch (error) {
-            next(error);
-        }
-    }
 
     // GET /tutor-portal/stats
     // Returns the 4 overview card values for the tutor dashboard

@@ -59,19 +59,8 @@ app.get('/', (req, res) => {
 app.use('/auth', require('./routes/auth.routes'));
 app.use('/api/v1/admin', require('./routes/admin.routes'));
 
-// Example Protected Route
-const authMiddleware = require('./middlewares/auth.middleware');
-app.get('/profile', authMiddleware, (req, res) => {
-    res.json({
-        success: true,
-        user: {
-            id: req.user.id,
-            email: req.user.email,
-            role: req.user.role,
-            full_name: req.user.full_name
-        }
-    });
-});
+// Unified Profile Routes
+app.use('/api/v1/profile', require('./routes/profile.routes'));
 
 app.use('/api/v1/users', require('./routes/user.routes'));
 app.use('/api/v1/institutions', require('./routes/institution.routes'));
@@ -92,7 +81,6 @@ app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/expo
 app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/attendance-calendar.routes'));
 app.use('/api/v1/institution-rep/reports', require('./routes/institutionRep/reports.routes'));
 app.use('/api/v1/institution-rep/dashboard', require('./routes/institutionRep/dashboard.routes'));
-app.use('/api/v1/institution-rep/profile', require('./routes/institutionRep/profile.routes'));
 app.use('/api/v1/institution-rep/student-performance', require('./routes/institutionRep/student-performance.routes'));
 app.use('/api/v1/contact-requests', require('./routes/contact.routes'));
 app.use('/api/v1/enrollments', require('./routes/enrollment.routes'));

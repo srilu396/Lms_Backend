@@ -3,19 +3,7 @@ const attendanceReportExport = require('../utils/fileGenerators/attendanceReport
 
 class StudentPortalController {
 
-    // GET /student-portal/profile
-    async getProfile(req, res, next) {
-        try {
-            const profile = await studentPortalService.getProfile(req.user.id);
-            res.status(200).json({
-                success: true,
-                message: 'Student profile retrieved successfully',
-                data: profile
-            });
-        } catch (error) {
-            next(error);
-        }
-    }
+
 
     // GET /student-portal/stats
     async getStats(req, res, next) {
@@ -159,28 +147,6 @@ class StudentPortalController {
         }
     }
 
-    // PUT /student-portal/profile
-    async updateProfile(req, res, next) {
-        try {
-            const updateData = { ...req.body };
-            
-            // If there's a file uploaded, add its URL/path to updateData
-            if (req.file) {
-                // Assuming static serving of 'uploads' folder
-                updateData.profile_image = `/uploads/profiles/${req.file.filename}`;
-            }
-
-            const updatedProfile = await studentPortalService.updateProfile(req.user.id, updateData);
-            
-            res.status(200).json({
-                success: true,
-                message: 'Profile updated successfully',
-                data: updatedProfile
-            });
-        } catch (error) {
-            next(error);
-        }
-    }
 
     // GET /student-portal/enrolled-courses?search=&page=1&limit=10
     async getEnrolledCourses(req, res, next) {

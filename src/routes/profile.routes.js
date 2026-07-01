@@ -21,17 +21,9 @@ const storage = multer.diskStorage({
         cb(null, 'profile-' + uniqueSuffix + path.extname(file.originalname));
     }
 });
-
-const upload = multer({
+const upload = multer({ 
     storage: storage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-    fileFilter: (req, file, cb) => {
-        if (file.mimetype.startsWith('image/')) {
-            cb(null, true);
-        } else {
-            cb(new Error('Only image files are allowed!'), false);
-        }
-    }
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
 });
 
 // Dynamic validation middleware

@@ -12,6 +12,13 @@ const services = {
     user: userService
 };
 
+const formatProfileImage = (req, imagePath) => {
+    if (!imagePath) return null;
+    if (imagePath.startsWith('http')) return imagePath;
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    return `${baseUrl}${imagePath.startsWith('/') ? '' : '/'}${imagePath}`;
+};
+
 class ProfileController {
     
     // GET /profile/basic
@@ -23,7 +30,7 @@ class ProfileController {
                     id: req.user.id,
                     name: req.user.full_name,
                     email: req.user.email,
-                    profile_image: req.user.avatar_url
+                    profile_image: formatProfileImage(req, req.user.avatar_url)
                 }
             });
         } catch (error) {
@@ -47,7 +54,7 @@ class ProfileController {
                 name: req.user.full_name,
                 email: req.user.email,
                 role: req.user.role,
-                profile_image: req.user.avatar_url,
+                profile_image: formatProfileImage(req, req.user.avatar_url),
                 created_date: req.user.created_at,
                 status: req.user.is_active ? 'active' : 'inactive'
             };
@@ -68,7 +75,7 @@ class ProfileController {
                 responseData.allocated_batches = allocated_batches;
                 responseData.allocated_batches_count = allocated_batches.length;
                 if (tutor && tutor.profile_image && !responseData.profile_image) {
-                    responseData.profile_image = tutor.profile_image;
+                    responseData.profile_image = formatProfileImage(req, tutor.profile_image);
                 }
             } 
             else if (role === 'student') {
@@ -179,8 +186,10 @@ class ProfileController {
             }
 
             if (updatedProfile && updatedProfile.avatar_url !== undefined) {
-                updatedProfile.profile_image = updatedProfile.avatar_url;
+                updatedProfile.profile_image = formatProfileImage(req, updatedProfile.avatar_url);
                 delete updatedProfile.avatar_url;
+            } else if (updatedProfile && updatedProfile.profile_image) {
+                updatedProfile.profile_image = formatProfileImage(req, updatedProfile.profile_image);
             }
 
             res.status(200).json({

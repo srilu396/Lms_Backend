@@ -162,23 +162,14 @@ class ProfileController {
                 updateData.full_name = updateData.name;
                 delete updateData.name;
             }
-            // If there's a file uploaded in memory, push it to Supabase Storage
-            if (req.file) {
-                updateData.profile_image = `/uploads/profiles/${req.file.filename}`;
-                updateData.avatar_url = updateData.profile_image; // Fallback
+            // The frontend uploads directly and sends the URL
+            const incomingImage = updateData.profile_image || updateData.avatar_url;
+            if (incomingImage) {
+                updateData.profile_image = incomingImage;
+                updateData.avatar_url = incomingImage;
                 
                 // Force sync avatar_url on the User model regardless of underlying service logic
-                await req.user.update({ avatar_url: updateData.profile_image });
-            } else {
-                // If the frontend uploads directly and sends the URL
-                const incomingImage = updateData.profile_image || updateData.avatar_url;
-                if (incomingImage) {
-                    updateData.profile_image = incomingImage;
-                    updateData.avatar_url = incomingImage;
-                    
-                    // Force sync avatar_url on the User model regardless of underlying service logic
-                    await req.user.update({ avatar_url: incomingImage });
-                }
+                await req.user.update({ avatar_url: incomingImage });
             }
 
             let updatedProfile;

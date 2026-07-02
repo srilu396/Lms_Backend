@@ -2,31 +2,6 @@ const express = require('express');
 const router = express.Router();
 const profileController = require('../controllers/profile.controller');
 const authMiddleware = require('../middlewares/auth.middleware');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-
-// Ensure upload directory exists
-const uploadDir = 'uploads/profiles';
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-        cb(null, 'profile-' + uniqueSuffix + path.extname(file.originalname));
-    }
-});
-
-const upload = multer({ 
-    storage: storage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-});
-
 // Dynamic validation middleware
 const validate = require('../middlewares/validate');
 const { 
@@ -72,6 +47,6 @@ router.get('/basic', profileController.getBasicProfile);
 router.get('/', profileController.getProfile);
 
 // PUT /profile
-router.put('/', upload.single('profile_image'), dynamicValidation, profileController.updateProfile);
+router.put('/', dynamicValidation, profileController.updateProfile);
 
 module.exports = router;

@@ -57,6 +57,7 @@ class ProfileController {
                 name: req.user.full_name,
                 email: req.user.email,
                 role: req.user.role,
+                phone_number: req.user.phone_number,
                 profile_image: formatProfileImage(req, req.user.avatar_url),
                 created_date: req.user.created_at,
                 status: req.user.is_active ? 'active' : 'inactive'
@@ -161,6 +162,10 @@ class ProfileController {
             if (updateData.name && !updateData.full_name) {
                 updateData.full_name = updateData.name;
                 delete updateData.name;
+            }
+            if (updateData.status) {
+                updateData.is_active = (updateData.status === 'active');
+                delete updateData.status;
             }
             // The frontend uploads directly and sends the URL
             const incomingImage = updateData.profile_image || updateData.avatar_url;

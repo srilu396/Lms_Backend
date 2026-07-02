@@ -10,6 +10,7 @@ const baseProfileSchema = {
     designation: Joi.string().min(1).max(100).allow(null, '').optional(),
     avatar_url: Joi.string().uri().allow(null, '').optional(),
     profile_image: Joi.string().uri().allow(null, '').optional(),
+    status: Joi.string().valid('active', 'inactive').optional(),
     bio: Joi.string().allow(null, '').optional() // Common for tutors/students
 };
 

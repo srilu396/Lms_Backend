@@ -12,7 +12,15 @@ const services = {
     user: userService
 };
 
-const supabase = require('../config/supabase');
+const formatProfileImage = (req, imagePath) => {
+    if (!imagePath) return null;
+    if (imagePath.startsWith('http')) return imagePath;
+    
+    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
+    return `${baseUrl}${imagePath.startsWith('/') ? '' : '/'}${imagePath}`;
+};
+
+
 
 class ProfileController {
     
@@ -25,7 +33,7 @@ class ProfileController {
                     id: req.user.id,
                     name: req.user.full_name,
                     email: req.user.email,
-                    profile_image: req.user.avatar_url
+                    profile_image: formatProfileImage(req, req.user.avatar_url)
                 }
             });
         } catch (error) {
@@ -49,7 +57,7 @@ class ProfileController {
                 name: req.user.full_name,
                 email: req.user.email,
                 role: req.user.role,
-                profile_image: req.user.avatar_url,
+                profile_image: formatProfileImage(req, req.user.avatar_url),
                 created_date: req.user.created_at,
                 status: req.user.is_active ? 'active' : 'inactive'
             };
@@ -70,7 +78,7 @@ class ProfileController {
                 responseData.allocated_batches = allocated_batches;
                 responseData.allocated_batches_count = allocated_batches.length;
                 if (tutor && tutor.profile_image && !responseData.profile_image) {
-                    responseData.profile_image = tutor.profile_image;
+                    responseData.profile_image = formatProfileImage(req, tutor.profile_image);
                 }
             } 
             else if (role === 'student') {
@@ -156,30 +164,11 @@ class ProfileController {
             }
             // If there's a file uploaded in memory, push it to Supabase Storage
             if (req.file) {
-                const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-                const fileExt = req.file.originalname.split('.').pop();
-                const fileName = `profile-${uniqueSuffix}.${fileExt}`;
-
-                const { data, error } = await supabase.storage
-                    .from('profiles')
-                    .upload(fileName, req.file.buffer, {
-                        contentType: req.file.mimetype,
-                        upsert: false
-                    });
-
-                if (error) {
-                    return res.status(500).json({ success: false, message: 'Failed to upload image to Supabase', error: error.message });
-                }
-
-                const { data: publicUrlData } = supabase.storage
-                    .from('profiles')
-                    .getPublicUrl(fileName);
-
-                updateData.profile_image = publicUrlData.publicUrl;
-                updateData.avatar_url = publicUrlData.publicUrl; // Fallback
+                updateData.profile_image = `/uploads/profiles/${req.file.filename}`;
+                updateData.avatar_url = updateData.profile_image; // Fallback
                 
                 // Force sync avatar_url on the User model regardless of underlying service logic
-                await req.user.update({ avatar_url: publicUrlData.publicUrl });
+                await req.user.update({ avatar_url: updateData.profile_image });
             } else {
                 // If the frontend uploads directly and sends the URL
                 const incomingImage = updateData.profile_image || updateData.avatar_url;
@@ -209,8 +198,10 @@ class ProfileController {
             }
 
             if (updatedProfile && updatedProfile.avatar_url !== undefined) {
-                updatedProfile.profile_image = updatedProfile.avatar_url;
+                updatedProfile.profile_image = formatProfileImage(req, updatedProfile.avatar_url);
                 delete updatedProfile.avatar_url;
+            } else if (updatedProfile && updatedProfile.profile_image) {
+                updatedProfile.profile_image = formatProfileImage(req, updatedProfile.profile_image);
             }
 
             res.status(200).json({

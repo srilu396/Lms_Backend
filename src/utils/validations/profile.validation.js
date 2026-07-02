@@ -9,6 +9,7 @@ const baseProfileSchema = {
     phone_number: Joi.string().pattern(/^\+?[0-9]{10,15}$/).allow(null, '').optional(),
     designation: Joi.string().min(1).max(100).allow(null, '').optional(),
     avatar_url: Joi.string().uri().allow(null, '').optional(),
+    profile_image: Joi.string().uri().allow(null, '').optional(),
     bio: Joi.string().allow(null, '').optional() // Common for tutors/students
 };
 

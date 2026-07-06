@@ -13,12 +13,12 @@ class CourseService {
                     as: 'modules',
                     include: [
                         {
-                            model: Lesson,
-                            as: 'lessons',
+                            model: Topic,
+                            as: 'topics',
                             include: [
                                 { 
-                                    model: Topic, 
-                                    as: 'topics',
+                                    model: Lesson, 
+                                    as: 'lessons',
                                     include: [
                                         { model: Assignment, as: 'assignments' },
                                         { model: Quiz, as: 'quizzes' }
@@ -71,8 +71,8 @@ class CourseService {
                         sequelize.literal(`(
                             SELECT COUNT(*)
                             FROM "topics" t
-                            WHERE t."lesson_id" IN (
-                                SELECT id FROM "lessons" WHERE "module_id" IN (SELECT id FROM "modules" WHERE "course_id" = "Course"."id")
+                            WHERE t."module_id" IN (
+                                SELECT id FROM "modules" WHERE "course_id" = "Course"."id"
                             )
                         )`),
                         'total_topics'
@@ -81,7 +81,9 @@ class CourseService {
                         sequelize.literal(`(
                             SELECT COUNT(*)
                             FROM "lessons" l
-                            WHERE l."module_id" IN (SELECT id FROM "modules" WHERE "course_id" = "Course"."id")
+                            WHERE l."topic_id" IN (
+                                SELECT id FROM "topics" WHERE "module_id" IN (SELECT id FROM "modules" WHERE "course_id" = "Course"."id")
+                            )
                         )`),
                         'total_lessons'
                     ]
@@ -158,14 +160,14 @@ class CourseService {
             item.modules.forEach(m => {
                 if (m.image_url) m.image_url = fixUrl(m.image_url);
                 if (m.video_url) m.video_url = fixUrl(m.video_url);
-                if (m.lessons) {
-                    m.lessons.forEach(l => {
-                        if (l.image_url) l.image_url = fixUrl(l.image_url);
-                        if (l.video_url) l.video_url = fixUrl(l.video_url);
-                        if (l.topics) {
-                            l.topics.forEach(t => {
-                                if (t.image_url) t.image_url = fixUrl(t.image_url);
-                                if (t.video_url) t.video_url = fixUrl(t.video_url);
+                if (m.topics) {
+                    m.topics.forEach(t => {
+                        if (t.image_url) t.image_url = fixUrl(t.image_url);
+                        if (t.video_url) t.video_url = fixUrl(t.video_url);
+                        if (t.lessons) {
+                            t.lessons.forEach(l => {
+                                if (l.image_url) l.image_url = fixUrl(l.image_url);
+                                if (l.video_url) l.video_url = fixUrl(l.video_url);
                             });
                         }
                     });
@@ -183,12 +185,12 @@ class CourseService {
                     as: 'modules',
                     include: [
                         {
-                            model: Lesson,
-                            as: 'lessons',
+                            model: Topic,
+                            as: 'topics',
                             include: [
                                 { 
-                                    model: Topic, 
-                                    as: 'topics',
+                                    model: Lesson, 
+                                    as: 'lessons',
                                     include: [
                                         { model: Assignment, as: 'assignments' },
                                         { model: Quiz, as: 'quizzes' }
@@ -202,8 +204,8 @@ class CourseService {
             ],
             order: [
                 [{ model: Module, as: 'modules' }, 'order_num', 'ASC'],
-                [{ model: Module, as: 'modules' }, { model: Lesson, as: 'lessons' }, 'order_num', 'ASC'],
-                [{ model: Module, as: 'modules' }, { model: Lesson, as: 'lessons' }, { model: Topic, as: 'topics' }, 'order_num', 'ASC']
+                [{ model: Module, as: 'modules' }, { model: Topic, as: 'topics' }, 'order_num', 'ASC'],
+                [{ model: Module, as: 'modules' }, { model: Topic, as: 'topics' }, { model: Lesson, as: 'lessons' }, 'order_num', 'ASC']
             ]
         });
         if (!course) {
@@ -221,11 +223,15 @@ class CourseService {
         let totalDuration = 0;
 
         courseJson.modules.forEach(m => {
-            totalLessons += (m.lessons ? m.lessons.length : 0);
-            if (m.lessons) {
-                m.lessons.forEach(l => {
-                    totalDuration += (l.duration_minutes || 0);
-                    totalTopics += (l.topics ? l.topics.length : 0);
+            totalTopics += (m.topics ? m.topics.length : 0);
+            if (m.topics) {
+                m.topics.forEach(t => {
+                    totalLessons += (t.lessons ? t.lessons.length : 0);
+                    if (t.lessons) {
+                        t.lessons.forEach(l => {
+                            totalDuration += (l.duration_minutes || 0);
+                        });
+                    }
                 });
             }
         });
@@ -286,12 +292,12 @@ class CourseService {
                     as: 'modules',
                     include: [
                         {
-                            model: Lesson,
-                            as: 'lessons',
+                            model: Topic,
+                            as: 'topics',
                             include: [
                                 { 
-                                    model: Topic, 
-                                    as: 'topics',
+                                    model: Lesson, 
+                                    as: 'lessons',
                                     include: [
                                         { model: Assignment, as: 'assignments' },
                                         { model: Quiz, as: 'quizzes' }
@@ -305,8 +311,8 @@ class CourseService {
             ],
             order: [
                 [{ model: Module, as: 'modules' }, 'order_num', 'ASC'],
-                [{ model: Module, as: 'modules' }, { model: Lesson, as: 'lessons' }, 'order_num', 'ASC'],
-                [{ model: Module, as: 'modules' }, { model: Lesson, as: 'lessons' }, { model: Topic, as: 'topics' }, 'order_num', 'ASC']
+                [{ model: Module, as: 'modules' }, { model: Topic, as: 'topics' }, 'order_num', 'ASC'],
+                [{ model: Module, as: 'modules' }, { model: Topic, as: 'topics' }, { model: Lesson, as: 'lessons' }, 'order_num', 'ASC']
             ]
         });
 
@@ -330,11 +336,15 @@ class CourseService {
             let totalLessonsCount = 0;
             let completedLessonsCount = 0;
             
-            if (mod.lessons) {
-                totalLessonsCount += mod.lessons.length;
-                mod.lessons.forEach(l => {
-                    const progress = progressRecords.find(p => p.module_id === mod.id);
-                    if (progress && progress.is_completed) completedLessonsCount++; 
+            if (mod.topics) {
+                mod.topics.forEach(t => {
+                    if (t.lessons) {
+                        totalLessonsCount += t.lessons.length;
+                        t.lessons.forEach(l => {
+                            const progress = progressRecords.find(p => p.module_id === mod.id);
+                            if (progress && progress.is_completed) completedLessonsCount++; 
+                        });
+                    }
                 });
             }
 

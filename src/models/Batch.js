@@ -20,6 +20,14 @@ module.exports = (sequelize, DataTypes) => {
                 key: 'id'
             }
         },
+        domain_id: {
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            references: {
+                model: 'domains',
+                key: 'id'
+            }
+        },
         institution_id: {
             type: DataTypes.BIGINT,
             allowNull: true,
@@ -47,6 +55,7 @@ module.exports = (sequelize, DataTypes) => {
 
     Batch.associate = (models) => {
         Batch.belongsTo(models.Course, { foreignKey: 'course_id' });
+        Batch.belongsTo(models.Domain, { foreignKey: 'domain_id' });
         Batch.belongsTo(models.Institution, { foreignKey: 'institution_id' });
         Batch.hasMany(models.BatchTutor, { foreignKey: 'batch_id', as: 'batchTutors' });
         Batch.belongsToMany(models.User, { through: models.BatchTutor, foreignKey: 'batch_id', otherKey: 'tutor_id', as: 'tutors' });

@@ -1,4 +1,4 @@
-const { Batch, Course, Institution, Enrollment, BatchTutor, BatchAssignment, Assignment, BatchPerformance, User, Student, Tutor, sequelize } = require('../models');
+const { Batch, Course, Domain, Institution, Enrollment, BatchTutor, BatchAssignment, Assignment, BatchPerformance, User, Student, Tutor, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const fs = require('fs');
 const csvParser = require('csv-parser');
@@ -15,6 +15,24 @@ class BatchService {
             if (existingBatch) {
                 const error = new Error('A batch with this name already exists.');
                 error.statusCode = 409;
+                throw error;
+            }
+        }
+
+        if (batchData.course_id) {
+            const course = await Course.findByPk(batchData.course_id);
+            if (!course || course.status !== 'active') {
+                const error = new Error('Course must exist and be active.');
+                error.statusCode = 400;
+                throw error;
+            }
+        }
+
+        if (batchData.domain_id) {
+            const domain = await Domain.findByPk(batchData.domain_id);
+            if (!domain || domain.status !== 'active') {
+                const error = new Error('Domain must exist and be active.');
+                error.statusCode = 400;
                 throw error;
             }
         }
@@ -128,6 +146,7 @@ class BatchService {
             },
             include: [
                 { model: Course, attributes: ['id', 'name'] },
+                { model: Domain, attributes: ['id', 'name'] },
                 { model: Institution, attributes: ['id', 'name'] },
                 {
                     model: BatchTutor,
@@ -148,14 +167,29 @@ class BatchService {
             const primaryTutor = batchJson.batchTutors?.find(bt => bt.is_primary)?.Tutor
                 || batchJson.batchTutors?.[0]?.Tutor
                 || null;
+                
+            let type = null;
+            let course = null;
+            let domain = null;
+            
+            if (batchJson.course_id) {
+                type = 'course';
+                course = batchJson.Course ? { id: batchJson.Course.id, name: batchJson.Course.name } : null;
+            } else if (batchJson.domain_id) {
+                type = 'domain';
+                domain = batchJson.Domain ? { id: batchJson.Domain.id, name: batchJson.Domain.name } : null;
+            }
+
             return {
                 id: batchJson.id,
                 batch_id: `#BATCH-${batchJson.id}`,
                 batch_name: batchJson.name,
+                type,
+                course,
+                domain,
                 institution_id: batchJson.Institution?.id || batchJson.institution_id || null,
                 institution_name: batchJson.Institution?.name || 'N/A',
                 tutor: primaryTutor?.full_name || 'Not Assigned',
-                course: batchJson.Course?.name || 'N/A',
                 start_date: batchJson.start_date,
                 status: batchJson.status,
                 department: batchJson.department || 'N/A',
@@ -179,6 +213,7 @@ class BatchService {
         const batch = await Batch.findByPk(id, {
             include: [
                 { model: Course, attributes: ['id', 'name'] },
+                { model: Domain, attributes: ['id', 'name'] },
                 { model: Institution, attributes: ['id', 'name'], required: false },
                 {
                     model: BatchTutor,
@@ -201,6 +236,18 @@ class BatchService {
         batchJson.institution_id = batchJson.Institution?.id || batchJson.institution_id || null;
         batchJson.institution_name = batchJson.Institution?.name || 'N/A';
         batchJson.completion_percentage = 0; // Mocked - dependent on student course topic progression structures 
+        
+        if (batchJson.course_id) {
+            batchJson.type = 'course';
+            batchJson.course = batchJson.Course ? { id: batchJson.Course.id, name: batchJson.Course.name } : null;
+        } else if (batchJson.domain_id) {
+            batchJson.type = 'domain';
+            batchJson.domain = batchJson.Domain ? { id: batchJson.Domain.id, name: batchJson.Domain.name } : null;
+        }
+        
+        // Remove redundant associations
+        delete batchJson.Course;
+        delete batchJson.Domain;
 
         return batchJson;
     }
@@ -220,6 +267,24 @@ class BatchService {
             if (existingBatch) {
                 const error = new Error('A batch with this name already exists.');
                 error.statusCode = 409;
+                throw error;
+            }
+        }
+        
+        if (batchData.course_id) {
+            const course = await Course.findByPk(batchData.course_id);
+            if (!course || course.status !== 'active') {
+                const error = new Error('Course must exist and be active.');
+                error.statusCode = 400;
+                throw error;
+            }
+        }
+
+        if (batchData.domain_id) {
+            const domain = await Domain.findByPk(batchData.domain_id);
+            if (!domain || domain.status !== 'active') {
+                const error = new Error('Domain must exist and be active.');
+                error.statusCode = 400;
                 throw error;
             }
         }

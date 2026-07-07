@@ -43,6 +43,11 @@ module.exports = (sequelize, DataTypes) => {
         department: {
             type: DataTypes.STRING,
             allowNull: true
+        },
+        unique_code: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            unique: true
         }
     }, {
         tableName: 'batches',
@@ -50,7 +55,15 @@ module.exports = (sequelize, DataTypes) => {
         timestamps: true,
         createdAt: 'created_at',
         updatedAt: 'updated_at',
-        deletedAt: 'deleted_at'
+        deletedAt: 'deleted_at',
+        hooks: {
+            beforeCreate: (batch) => {
+                if (!batch.unique_code) {
+                    const crypto = require('crypto');
+                    batch.unique_code = `BCH-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+                }
+            }
+        }
     });
 
     Batch.associate = (models) => {

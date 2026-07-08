@@ -10,8 +10,9 @@ const createLessonSchema = Joi.object({
     url: Joi.string().uri().allow('', null),
     duration_minutes: Joi.number().integer().allow(null),
     order_num: Joi.number().integer().required(),
-    topics: Joi.array().items(Joi.link('#topicSchema'))
-}).id('lessonSchema');
+    assignments: Joi.array().items(Joi.alternatives().try(Joi.number().integer(), Joi.object().unknown(true))),
+    quizzes: Joi.array().items(Joi.alternatives().try(Joi.number().integer(), Joi.object().unknown(true)))
+});
 
 const createTopicSchema = Joi.object({
     name: Joi.string().required(),
@@ -22,9 +23,10 @@ const createTopicSchema = Joi.object({
     video_url: Joi.string().uri().allow('', null),
     url: Joi.string().uri().allow('', null),
     order_num: Joi.number().integer().required(),
+    lessons: Joi.array().items(createLessonSchema),
     assignments: Joi.array().items(Joi.alternatives().try(Joi.number().integer(), Joi.object().unknown(true))),
     quizzes: Joi.array().items(Joi.alternatives().try(Joi.number().integer(), Joi.object().unknown(true)))
-}).id('topicSchema');
+});
 
 const createModuleSchema = Joi.object({
     name: Joi.string().required(),
@@ -37,7 +39,7 @@ const createModuleSchema = Joi.object({
     order_num: Joi.number().integer().required(),
     is_locked: Joi.boolean().allow(null),
     created_at: Joi.any().allow(null),
-    lessons: Joi.array().items(createLessonSchema),
+    topics: Joi.array().items(createTopicSchema),
     assignments: Joi.array().items(Joi.alternatives().try(Joi.number().integer(), Joi.object().unknown(true))),
     quizzes: Joi.array().items(Joi.alternatives().try(Joi.number().integer(), Joi.object().unknown(true)))
 });
@@ -99,7 +101,9 @@ const updateLessonSchema = Joi.object({
     video_url: Joi.string().uri().allow('', null),
     url: Joi.string().uri().allow('', null),
     duration_minutes: Joi.number().integer().allow(null),
-    order_num: Joi.number().integer()
+    order_num: Joi.number().integer(),
+    assignments: Joi.array().items(Joi.number().integer()),
+    quizzes: Joi.array().items(Joi.number().integer())
 }).min(1);
 
 const enrollStudentSchema = Joi.object({

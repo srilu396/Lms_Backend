@@ -3,11 +3,36 @@ const { Op } = require('sequelize');
 
 class CourseService {
     async createCourse(data) {
-        const { ...courseData } = data;
+        const courseData = JSON.parse(JSON.stringify(data));
         
+        const courseAssignments = courseData.assignments || [];
+        const courseQuizzes = courseData.quizzes || [];
+        delete courseData.assignments;
+        delete courseData.quizzes;
+
+        if (courseData.modules) {
+            courseData.modules.forEach(m => {
+                delete m.assignments;
+                delete m.quizzes;
+
+                if (m.topics) {
+                    m.topics.forEach(t => {
+                        delete t.assignments;
+                        delete t.quizzes;
+
+                        if (t.lessons) {
+                            t.lessons.forEach(l => {
+                                delete l.assignments;
+                                delete l.quizzes;
+                            });
+                        }
+                    });
+                }
+            });
+        }
+
         const course = await Course.create(courseData, {
             include: [
-                { model: Assignment, as: 'assignments' },
                 {
                     model: Module,
                     as: 'modules',
@@ -18,19 +43,63 @@ class CourseService {
                             include: [
                                 { 
                                     model: Lesson, 
-                                    as: 'lessons',
-                                    include: [
-                                        { model: Assignment, as: 'assignments' },
-                                        { model: Quiz, as: 'quizzes' }
-                                    ]
+                                    as: 'lessons'
                                 }
                             ]
-                        },
-                        { model: Assignment, as: 'assignments' }
+                        }
                     ]
                 }
             ]
         });
+
+        if (courseAssignments.length > 0) {
+            await Assignment.update({ course_id: course.id }, { where: { id: courseAssignments } });
+        }
+        if (courseQuizzes.length > 0) {
+            await Quiz.update({ course_id: course.id }, { where: { id: courseQuizzes } });
+        }
+
+        if (data.modules && course.modules) {
+            for (let mIdx = 0; mIdx < data.modules.length; mIdx++) {
+                const origModule = data.modules[mIdx];
+                const createdModule = course.modules[mIdx];
+
+                if (origModule.assignments && origModule.assignments.length > 0) {
+                    await Assignment.update({ module_id: createdModule.id }, { where: { id: origModule.assignments } });
+                }
+                if (origModule.quizzes && origModule.quizzes.length > 0) {
+                    await Quiz.update({ module_id: createdModule.id }, { where: { id: origModule.quizzes } });
+                }
+
+                if (origModule.topics && createdModule.topics) {
+                    for (let tIdx = 0; tIdx < origModule.topics.length; tIdx++) {
+                        const origTopic = origModule.topics[tIdx];
+                        const createdTopic = createdModule.topics[tIdx];
+
+                        if (origTopic.assignments && origTopic.assignments.length > 0) {
+                            await Assignment.update({ topic_id: createdTopic.id }, { where: { id: origTopic.assignments } });
+                        }
+                        if (origTopic.quizzes && origTopic.quizzes.length > 0) {
+                            await Quiz.update({ topic_id: createdTopic.id }, { where: { id: origTopic.quizzes } });
+                        }
+
+                        if (origTopic.lessons && createdTopic.lessons) {
+                            for (let lIdx = 0; lIdx < origTopic.lessons.length; lIdx++) {
+                                const origLesson = origTopic.lessons[lIdx];
+                                const createdLesson = createdTopic.lessons[lIdx];
+
+                                if (origLesson.assignments && origLesson.assignments.length > 0) {
+                                    await Assignment.update({ lesson_id: createdLesson.id }, { where: { id: origLesson.assignments } });
+                                }
+                                if (origLesson.quizzes && origLesson.quizzes.length > 0) {
+                                    await Quiz.update({ lesson_id: createdLesson.id }, { where: { id: origLesson.quizzes } });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         return await this.getCourseById(course.id);
     }
@@ -81,9 +150,7 @@ class CourseService {
                         sequelize.literal(`(
                             SELECT COUNT(*)
                             FROM "lessons" l
-                            WHERE l."topic_id" IN (
-                                SELECT id FROM "topics" WHERE "module_id" IN (SELECT id FROM "modules" WHERE "course_id" = "Course"."id")
-                            )
+                            WHERE l."topic_id" IN (SELECT id FROM "topics" WHERE "module_id" IN (SELECT id FROM "modules" WHERE "course_id" = "Course"."id"))
                         )`),
                         'total_lessons'
                     ]
@@ -180,14 +247,19 @@ class CourseService {
         const course = await Course.findByPk(id, {
             include: [
                 { model: Assignment, as: 'assignments' },
+                { model: Quiz, as: 'quizzes' },
                 {
                     model: Module,
                     as: 'modules',
                     include: [
+                        { model: Assignment, as: 'assignments' },
+                        { model: Quiz, as: 'quizzes' },
                         {
                             model: Topic,
                             as: 'topics',
                             include: [
+                                { model: Assignment, as: 'assignments' },
+                                { model: Quiz, as: 'quizzes' },
                                 { 
                                     model: Lesson, 
                                     as: 'lessons',
@@ -197,8 +269,7 @@ class CourseService {
                                     ]
                                 }
                             ]
-                        },
-                        { model: Assignment, as: 'assignments' }
+                        }
                     ]
                 }
             ],
@@ -287,14 +358,19 @@ class CourseService {
         const course = await Course.findByPk(courseId, {
             include: [
                 { model: Assignment, as: 'assignments' },
+                { model: Quiz, as: 'quizzes' },
                 {
                     model: Module,
                     as: 'modules',
                     include: [
+                        { model: Assignment, as: 'assignments' },
+                        { model: Quiz, as: 'quizzes' },
                         {
                             model: Topic,
                             as: 'topics',
                             include: [
+                                { model: Assignment, as: 'assignments' },
+                                { model: Quiz, as: 'quizzes' },
                                 { 
                                     model: Lesson, 
                                     as: 'lessons',
@@ -304,8 +380,7 @@ class CourseService {
                                     ]
                                 }
                             ]
-                        },
-                        { model: Assignment, as: 'assignments' }
+                        }
                     ]
                 }
             ],

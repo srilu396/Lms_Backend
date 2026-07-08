@@ -79,6 +79,7 @@ router.get('/:id/stats', batchController.getBatchStudentStats);
 
 // Get batch assignments
 router.get('/:id/assignments', batchController.getBatchAssignments);
+router.post('/:id/assignments', batchController.linkAssignmentToBatch);
 
 // Get batch performance
 router.get('/:id/performance', batchController.getBatchPerformance);

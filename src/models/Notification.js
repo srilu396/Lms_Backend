@@ -23,7 +23,24 @@ module.exports = (sequelize, DataTypes) => {
             }
         },
         type: {
-            type: DataTypes.ENUM('assignment_submitted', 'announcement_created', 'quiz_graded', 'assignment_graded', 'attendance_marked', 'risk_alert', 'system'),
+            type: DataTypes.ENUM(
+                'assignment_submitted',
+                'announcement_created',
+                'quiz_graded',
+                'assignment_graded',
+                'attendance_marked',
+                'risk_alert',
+                'system',
+                'BATCH_CREATED',
+                'BATCH_ALLOCATED_TUTOR',
+                'BATCH_ALLOCATED_STUDENT',
+                'TOP_PERFORMER',
+                'LEAST_PERFORMER',
+                'ATTENDANCE_WARNING',
+                'AT_RISK_INCREASED',
+                'ASSIGNMENT_SUBMITTED',
+                'ASSIGNMENT_ADDED'
+            ),
             allowNull: false
         },
         title: DataTypes.STRING,

@@ -20,10 +20,11 @@ const upload = multer({
     dest: os.tmpdir(),
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
     fileFilter: (req, file, cb) => {
-        if (file.mimetype === 'text/csv' || file.mimetype === 'application/vnd.ms-excel' || file.originalname.endsWith('.csv')) {
+        const allowedMimes = ['text/csv', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
+        if (allowedMimes.includes(file.mimetype) || file.originalname.endsWith('.csv') || file.originalname.endsWith('.xlsx')) {
             cb(null, true);
         } else {
-            cb(new Error('Please upload a valid CSV file'));
+            cb(new Error('Please upload a valid CSV or Excel (.xlsx) file'));
         }
     }
 });

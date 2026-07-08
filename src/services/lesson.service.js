@@ -1,36 +1,19 @@
 const { Lesson, Topic, Module, StudentProgress, LessonProgress, Enrollment, Assignment, Quiz } = require('../models');
 
 class LessonService {
-    async createLesson(topicId, data) {
+    async createLesson(moduleId, data) {
         const { assignments, quizzes, ...lessonData } = data;
-        const topic = await Topic.findByPk(topicId, {
-            include: [{ model: Module }]
-        });
-        if (!topic) {
-            const error = new Error('Topic not found');
+        const mod = await Module.findByPk(moduleId);
+        if (!mod) {
+            const error = new Error('Module not found');
             error.statusCode = 404;
             throw error;
         }
-        const lesson = await Lesson.create({ ...lessonData, topic_id: topicId });
-
-        // Link assessments
-        if (assignments && Array.isArray(assignments)) {
-            await Assignment.update(
-                { lesson_id: lesson.id, topic_id: topic.id, module_id: topic.module_id, course_id: topic.Module?.course_id },
-                { where: { id: assignments } }
-            );
-        }
-        if (quizzes && Array.isArray(quizzes)) {
-            await Quiz.update(
-                { lesson_id: lesson.id, topic_id: topic.id, module_id: topic.module_id, course_id: topic.Module?.course_id },
-                { where: { id: quizzes } }
-            );
-        }
+        const lesson = await Lesson.create({ ...lessonData, module_id: moduleId });
 
         return await lesson.reload({
             include: [
-                { model: Assignment, as: 'assignments' },
-                { model: Quiz, as: 'quizzes' }
+                { model: Topic, as: 'topics' }
             ]
         });
     }
@@ -38,10 +21,7 @@ class LessonService {
     async updateLesson(lessonId, data) {
         const { assignments, quizzes, ...lessonData } = data;
         const lesson = await Lesson.findByPk(lessonId, {
-            include: [{
-                model: Topic,
-                include: [{ model: Module }]
-            }]
+            include: [{ model: Module }]
         });
         if (!lesson) {
             const error = new Error('Lesson not found');
@@ -50,24 +30,9 @@ class LessonService {
         }
         await lesson.update(lessonData);
 
-        // Link assessments
-        if (assignments && Array.isArray(assignments)) {
-            await Assignment.update(
-                { lesson_id: lesson.id, topic_id: lesson.topic_id, module_id: lesson.Topic?.module_id, course_id: lesson.Topic?.Module?.course_id },
-                { where: { id: assignments } }
-            );
-        }
-        if (quizzes && Array.isArray(quizzes)) {
-            await Quiz.update(
-                { lesson_id: lesson.id, topic_id: lesson.topic_id, module_id: lesson.Topic?.module_id, course_id: lesson.Topic?.Module?.course_id },
-                { where: { id: quizzes } }
-            );
-        }
-
         return await lesson.reload({
             include: [
-                { model: Assignment, as: 'assignments' },
-                { model: Quiz, as: 'quizzes' }
+                { model: Topic, as: 'topics' }
             ]
         });
     }
@@ -85,10 +50,7 @@ class LessonService {
 
     async completeLesson(lessonId, studentId, enrollmentId) {
         const lesson = await Lesson.findByPk(lessonId, {
-            include: [{
-                model: Topic,
-                include: [{ model: Module }]
-            }]
+            include: [{ model: Module }]
         });
 
         if (!lesson) {
@@ -97,8 +59,7 @@ class LessonService {
             throw error;
         }
 
-        const topic = lesson.Topic;
-        const moduleItem = topic.Module;
+        const moduleItem = lesson.Module;
         const moduleId = moduleItem.id;
 
         // Note: Project uses LessonProgress for lessons logic.
@@ -115,10 +76,7 @@ class LessonService {
 
         // Check overall module completion
         const allLessonsInModule = await Lesson.findAll({
-            include: [{
-                model: Topic,
-                where: { module_id: moduleId }
-            }]
+            where: { module_id: moduleId }
         });
 
         const allLessonIds = allLessonsInModule.map(l => l.id);

@@ -31,6 +31,11 @@ module.exports = (sequelize, DataTypes) => {
         status: {
             type: DataTypes.ENUM('active', 'inactive', 'archived', 'draft'),
             defaultValue: 'draft'
+        },
+        unique_code: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            unique: true
         }
     }, {
         tableName: 'courses',
@@ -38,7 +43,15 @@ module.exports = (sequelize, DataTypes) => {
         timestamps: true,
         createdAt: 'created_at',
         updatedAt: 'updated_at',
-        deletedAt: 'deleted_at'
+        deletedAt: 'deleted_at',
+        hooks: {
+            beforeCreate: (course) => {
+                if (!course.unique_code) {
+                    const crypto = require('crypto');
+                    course.unique_code = `CRS-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+                }
+            }
+        }
     });
 
     Course.associate = (models) => {

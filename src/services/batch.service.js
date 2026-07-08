@@ -1,4 +1,4 @@
-const { Batch, Course, Institution, Enrollment, BatchTutor, BatchAssignment, Assignment, BatchPerformance, User, Student, Tutor, sequelize } = require('../models');
+const { Batch, Course, Domain, Institution, Enrollment, BatchTutor, BatchAssignment, Assignment, BatchPerformance, User, Student, Tutor, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const fs = require('fs');
 const csvParser = require('csv-parser');
@@ -15,6 +15,24 @@ class BatchService {
             if (existingBatch) {
                 const error = new Error('A batch with this name already exists.');
                 error.statusCode = 409;
+                throw error;
+            }
+        }
+
+        if (batchData.course_id) {
+            const course = await Course.findByPk(batchData.course_id);
+            if (!course || course.status !== 'active') {
+                const error = new Error('Course must exist and be active.');
+                error.statusCode = 400;
+                throw error;
+            }
+        }
+
+        if (batchData.domain_id) {
+            const domain = await Domain.findByPk(batchData.domain_id);
+            if (!domain || domain.status !== 'active') {
+                const error = new Error('Domain must exist and be active.');
+                error.statusCode = 400;
                 throw error;
             }
         }
@@ -128,6 +146,7 @@ class BatchService {
             },
             include: [
                 { model: Course, attributes: ['id', 'name'] },
+                { model: Domain, attributes: ['id', 'name'] },
                 { model: Institution, attributes: ['id', 'name'] },
                 {
                     model: BatchTutor,
@@ -148,14 +167,29 @@ class BatchService {
             const primaryTutor = batchJson.batchTutors?.find(bt => bt.is_primary)?.Tutor
                 || batchJson.batchTutors?.[0]?.Tutor
                 || null;
+                
+            let type = null;
+            let course = null;
+            let domain = null;
+            
+            if (batchJson.course_id) {
+                type = 'course';
+                course = batchJson.Course ? { id: batchJson.Course.id, name: batchJson.Course.name } : null;
+            } else if (batchJson.domain_id) {
+                type = 'domain';
+                domain = batchJson.Domain ? { id: batchJson.Domain.id, name: batchJson.Domain.name } : null;
+            }
+
             return {
                 id: batchJson.id,
                 batch_id: `#BATCH-${batchJson.id}`,
                 batch_name: batchJson.name,
+                type,
+                course,
+                domain,
                 institution_id: batchJson.Institution?.id || batchJson.institution_id || null,
                 institution_name: batchJson.Institution?.name || 'N/A',
                 tutor: primaryTutor?.full_name || 'Not Assigned',
-                course: batchJson.Course?.name || 'N/A',
                 start_date: batchJson.start_date,
                 status: batchJson.status,
                 department: batchJson.department || 'N/A',
@@ -179,6 +213,7 @@ class BatchService {
         const batch = await Batch.findByPk(id, {
             include: [
                 { model: Course, attributes: ['id', 'name'] },
+                { model: Domain, attributes: ['id', 'name'] },
                 { model: Institution, attributes: ['id', 'name'], required: false },
                 {
                     model: BatchTutor,
@@ -201,6 +236,18 @@ class BatchService {
         batchJson.institution_id = batchJson.Institution?.id || batchJson.institution_id || null;
         batchJson.institution_name = batchJson.Institution?.name || 'N/A';
         batchJson.completion_percentage = 0; // Mocked - dependent on student course topic progression structures 
+        
+        if (batchJson.course_id) {
+            batchJson.type = 'course';
+            batchJson.course = batchJson.Course ? { id: batchJson.Course.id, name: batchJson.Course.name } : null;
+        } else if (batchJson.domain_id) {
+            batchJson.type = 'domain';
+            batchJson.domain = batchJson.Domain ? { id: batchJson.Domain.id, name: batchJson.Domain.name } : null;
+        }
+        
+        // Remove redundant associations
+        delete batchJson.Course;
+        delete batchJson.Domain;
 
         return batchJson;
     }
@@ -220,6 +267,24 @@ class BatchService {
             if (existingBatch) {
                 const error = new Error('A batch with this name already exists.');
                 error.statusCode = 409;
+                throw error;
+            }
+        }
+        
+        if (batchData.course_id) {
+            const course = await Course.findByPk(batchData.course_id);
+            if (!course || course.status !== 'active') {
+                const error = new Error('Course must exist and be active.');
+                error.statusCode = 400;
+                throw error;
+            }
+        }
+
+        if (batchData.domain_id) {
+            const domain = await Domain.findByPk(batchData.domain_id);
+            if (!domain || domain.status !== 'active') {
+                const error = new Error('Domain must exist and be active.');
+                error.statusCode = 400;
                 throw error;
             }
         }
@@ -261,7 +326,22 @@ class BatchService {
 
             // 2. Handle Students
             if (enroll_students !== undefined && Array.isArray(enroll_students)) {
-                if (enroll_students.length > 0) {
+                
+                // Remove students that are no longer in the array
+                if (enroll_students.length === 0) {
+                    // If empty array, remove all students from this batch
+                    await Enrollment.destroy({ where: { batch_id: batch.id }, transaction });
+                } else {
+                    // Remove those not in the new list
+                    await Enrollment.destroy({ 
+                        where: { 
+                            batch_id: batch.id,
+                            student_id: { [Op.notIn]: enroll_students }
+                        }, 
+                        transaction 
+                    });
+
+                    // Add the new ones (bulkCreate with ignoreDuplicates will skip ones that already exist)
                     const enrollments = enroll_students.map(studentId => ({
                         student_id: studentId,
                         batch_id: batch.id,
@@ -343,6 +423,9 @@ class BatchService {
         const studentWhere = {};
         if (search) {
             studentWhere[Op.or] = [
+                sequelize.where(sequelize.fn('concat', sequelize.col('student.first_name'), ' ', sequelize.col('student.last_name')), {
+                    [Op.iLike]: `%${search}%`
+                }),
                 { first_name: { [Op.iLike]: `%${search}%` } },
                 { last_name: { [Op.iLike]: `%${search}%` } },
                 { email: { [Op.iLike]: `%${search}%` } }
@@ -354,8 +437,8 @@ class BatchService {
             include: [{
                 model: Student,
                 as: 'student',
-                where: Object.keys(studentWhere).length > 0 ? studentWhere : undefined,
-                required: Object.keys(studentWhere).length > 0, // This inner join forces search query to work reliably 
+                where: search ? studentWhere : undefined,
+                required: !!search, // This inner join forces search query to work reliably 
                 attributes: ['id', 'first_name', 'last_name', 'email']
             }],
             limit,
@@ -469,154 +552,8 @@ class BatchService {
      * Expected CSV format: name,course,institution,instructor,start_date,end_date,enroll_students,status
      */
     async bulkCreateBatchesFromCSV(filePath, defaultInstitutionId) {
-        return new Promise((resolve, reject) => {
-            const rawRows = [];
-
-            fs.createReadStream(filePath)
-                .pipe(csvParser())
-                .on('data', (row) => {
-                    if (row.name) {
-                        rawRows.push(row);
-                    }
-                })
-                .on('end', async () => {
-                    let transaction;
-                    try {
-                        if (rawRows.length === 0) throw new Error('No valid batch data found in CSV');
-
-                        // Pre-fetch active entities
-                        const activeInstitutions = await Institution.findAll({ where: { is_active: true } });
-                        const activeCourses = await Course.findAll({ where: { status: 'active' } });
-                        const activeInstructors = await Tutor.findAll({ where: { status: 'active' } });
-                        const activeStudents = await Student.findAll({ where: { status: 'active' } });
-                        const existingBatches = await Batch.findAll();
-
-                        const institutionMap = new Map(activeInstitutions.map(i => [i.name.toLowerCase().trim(), i.id]));
-                        const courseMap = new Map(activeCourses.map(c => [c.name.toLowerCase().trim(), c.id]));
-                        const instructorMap = new Map(activeInstructors.map(i => [i.full_name.toLowerCase().trim(), i.id]));
-                        
-                        // To map students safely by institution
-                        const getStudentId = (name, instId) => {
-                            const nameLower = name.toLowerCase().trim();
-                            const student = activeStudents.find(s => 
-                                s.institution_id === instId && 
-                                `${s.first_name} ${s.last_name || ''}`.toLowerCase().trim() === nameLower
-                            );
-                            return student ? student.id : null;
-                        };
-
-                        const batchesToCreateMap = new Map();
-
-                        for (let i = 0; i < rawRows.length; i++) {
-                            const row = rawRows[i];
-                            const rowNum = i + 1;
-                            const batchNameKey = row.name.toLowerCase().trim();
-
-                            if (!batchesToCreateMap.has(batchNameKey)) {
-                                // Validate Uniqueness
-                                if (existingBatches.some(b => b.name.toLowerCase().trim() === batchNameKey)) {
-                                    throw new Error(`Row ${rowNum}: Batch name '${row.name}' already exists.`);
-                                }
-
-                                // Resolve Institution
-                                const instName = row.institution ? row.institution.toLowerCase().trim() : null;
-                                const instId = instName ? institutionMap.get(instName) : defaultInstitutionId;
-                                if (!instId) throw new Error(`Row ${rowNum}: Active institution '${row.institution}' not found.`);
-
-                                // Resolve Course
-                                const courseName = row.course ? row.course.toLowerCase().trim() : null;
-                                const courseId = courseName ? courseMap.get(courseName) : null;
-                                if (!courseId) throw new Error(`Row ${rowNum}: Active course '${row.course}' not found.`);
-
-                                // Resolve Instructor
-                                const instrcName = row.instructor ? row.instructor.toLowerCase().trim() : null;
-                                const instructorId = instrcName ? instructorMap.get(instrcName) : null;
-                                if (row.instructor && !instructorId) throw new Error(`Row ${rowNum}: Active instructor '${row.instructor}' not found.`);
-
-                                // Parse Dates
-                                let startDate = row.start_date ? new Date(row.start_date) : null;
-                                let endDate = row.end_date ? new Date(row.end_date) : null;
-                                if (startDate && isNaN(startDate.getTime())) throw new Error(`Row ${rowNum}: Invalid start_date.`);
-                                if (endDate && isNaN(endDate.getTime())) throw new Error(`Row ${rowNum}: Invalid end_date.`);
-                                if (startDate && endDate && endDate <= startDate) throw new Error(`Row ${rowNum}: end_date must be after start_date.`);
-
-                                batchesToCreateMap.set(batchNameKey, {
-                                    batchObj: {
-                                        name: row.name,
-                                        course_id: courseId,
-                                        institution_id: instId,
-                                        start_date: startDate,
-                                        end_date: endDate,
-                                        status: row.status || 'active'
-                                    },
-                                    instructorId,
-                                    instId,
-                                    studentIds: new Set()
-                                });
-                            }
-
-                            const batchData = batchesToCreateMap.get(batchNameKey);
-
-                            // Resolve Students
-                            const studentName = row.enroll_student || row.enroll_students;
-                            if (studentName) {
-                                // Check if there are commas anyway, just in case they mixed formats
-                                const names = studentName.split(',').map(n => n.trim()).filter(n => n);
-                                for (const name of names) {
-                                    const sId = getStudentId(name, batchData.instId);
-                                    if (!sId) throw new Error(`Row ${rowNum}: Active student '${name}' not found for this institution.`);
-                                    batchData.studentIds.add(sId);
-                                }
-                            }
-                        }
-
-                        const batchesToCreate = Array.from(batchesToCreateMap.values());
-
-                        transaction = await sequelize.transaction();
-                        let createdCount = 0;
-
-                        for (const b of batchesToCreate) {
-                            const newBatch = await Batch.create(b.batchObj, { transaction });
-                            createdCount++;
-
-                            if (b.instructorId) {
-                                await BatchTutor.create({
-                                    batch_id: newBatch.id,
-                                    tutor_id: b.instructorId,
-                                    is_primary: true
-                                }, { transaction });
-                            }
-
-                            if (b.studentIds.size > 0) {
-                                const enrollments = Array.from(b.studentIds).map(sId => ({
-                                    student_id: sId,
-                                    batch_id: newBatch.id,
-                                    status: 'active'
-                                }));
-                                await Enrollment.bulkCreate(enrollments, { transaction, ignoreDuplicates: true });
-                            }
-                        }
-
-                        await transaction.commit();
-
-                        try { fs.unlinkSync(filePath); } catch (e) {}
-
-                        resolve({
-                            processed_rows: rawRows.length,
-                            created_count: createdCount
-                        });
-
-                    } catch (error) {
-                        if (transaction) await transaction.rollback();
-                        try { fs.unlinkSync(filePath); } catch (e) {}
-                        reject(error);
-                    }
-                })
-                .on('error', (error) => {
-                    try { fs.unlinkSync(filePath); } catch (e) {}
-                    reject(error);
-                });
-        });
+        const BulkUploadService = require('../utils/batchBulkUpload/BulkUploadService');
+        return await BulkUploadService.processUpload(filePath, defaultInstitutionId);
     }
 }
 

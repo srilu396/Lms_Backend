@@ -256,14 +256,83 @@ class BatchController {
      */
     async downloadBatchTemplate(req, res) {
         try {
-            const csvHeaders = 'name,course,institution,instructor,start_date,end_date,enroll_student,status\n';
-            const csvSampleData = 'React Batch 01,React Fundamentals,ABC College,John Doe,2026-04-01,2026-10-01,Anil,inactive\nReact Batch 01,React Fundamentals,ABC College,John Doe,2026-04-01,2026-10-01,Naveen,inactive\n';
-            
-            const csvContent = csvHeaders + csvSampleData;
+            const ExcelJS = require('exceljs');
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Batch Template');
 
-            res.setHeader('Content-Type', 'text/csv');
-            res.setHeader('Content-Disposition', 'attachment; filename="batch_creation_upload_template.csv"');
-            res.status(200).send(csvContent);
+            // Set Headers
+            worksheet.columns = [
+                { header: 'name', key: 'name', width: 25 },
+                { header: 'course', key: 'course', width: 25 },
+                { header: 'institution', key: 'institution', width: 25 },
+                { header: 'instructor', key: 'instructor', width: 20 },
+                { header: 'start_date', key: 'start_date', width: 15 },
+                { header: 'end_date', key: 'end_date', width: 15 },
+                { header: 'enroll_students', key: 'enroll_students', width: 25 },
+                { header: 'status', key: 'status', width: 15 }
+            ];
+
+            // Add Header Styling
+            worksheet.getRow(1).font = { bold: true };
+            worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
+
+            // Add Sample Data
+            worksheet.addRow({ name: 'Batch Alpha 01', course: 'React Fundamentals', institution: 'ABC College', instructor: 'John Doe', start_date: '2026-04-01', end_date: '2026-10-01', enroll_students: 'Anil', status: 'active' });
+            worksheet.addRow({ name: 'Batch Alpha 01', enroll_students: 'Sunil' });
+            worksheet.addRow({ name: 'Batch Alpha 01', enroll_students: 'Sandeep' });
+
+            // Instructions outside the table
+            const instructionsRowIndex = 7;
+            worksheet.mergeCells(`A${instructionsRowIndex}:H${instructionsRowIndex + 12}`);
+            const instructionCell = worksheet.getCell(`A${instructionsRowIndex}`);
+            
+            instructionCell.value = {
+                richText: [
+                    { font: { bold: true, size: 14, color: { argb: 'FF1976D2' } }, text: '💡 INSTRUCTIONS & GUIDELINES\n\n' },
+                    { font: { bold: true, size: 11, color: { argb: 'FF333333' } }, text: 'HOW TO FORMAT YOUR DATA:\n' },
+                    { font: { bold: true, color: { argb: 'FF000000' } }, text: '• Creating a Batch: ' },
+                    { font: { color: { argb: 'FF333333' } }, text: 'Fill out all columns in the first row.\n' },
+                    { font: { bold: true, color: { argb: 'FF000000' } }, text: '• Multiple Students: ' },
+                    { font: { color: { argb: 'FF333333' } }, text: 'To add multiple students to the same batch, leave the other columns blank and just repeat the name and add the next student in enroll_students.\n\n' },
+                    
+                    { font: { bold: true, size: 11, color: { argb: 'FF333333' } }, text: 'COLUMN RULES:\n' },
+                    { font: { bold: true, color: { argb: 'FF000000' } }, text: '• name: ' },
+                    { font: { color: { argb: 'FF333333' } }, text: 'The unique name of the batch ' },
+                    { font: { bold: true, italic: true, color: { argb: 'FFD32F2F' } }, text: '(REQUIRED)\n' },
+                    
+                    { font: { bold: true, color: { argb: 'FF000000' } }, text: '• course: ' },
+                    { font: { color: { argb: 'FF333333' } }, text: 'Must match an active course exactly\n' },
+                    
+                    { font: { bold: true, color: { argb: 'FF000000' } }, text: '• institution: ' },
+                    { font: { color: { argb: 'FF333333' } }, text: 'Must match an active institution exactly\n' },
+                    
+                    { font: { bold: true, color: { argb: 'FF000000' } }, text: '• instructor: ' },
+                    { font: { color: { argb: 'FF333333' } }, text: 'Full name of the active instructor\n' },
+                    
+                    { font: { bold: true, color: { argb: 'FF000000' } }, text: '• dates: ' },
+                    { font: { color: { argb: 'FF333333' } }, text: 'Format YYYY-MM-DD (e.g. 2026-08-01)\n' },
+                    
+                    { font: { bold: true, color: { argb: 'FF000000' } }, text: '• enroll_students: ' },
+                    { font: { color: { argb: 'FF333333' } }, text: 'Name of the student.\n' },
+                    
+                    { font: { bold: true, size: 10, color: { argb: 'FFD32F2F' } }, text: '  ⚠️ CRITICAL: Students MUST belong to the institution you selected!' }
+                ]
+            };
+            
+            instructionCell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
+            instructionCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9F9F9' } };
+            instructionCell.border = {
+                top: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+                left: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+                bottom: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+                right: { style: 'thin', color: { argb: 'FFCCCCCC' } }
+            };
+
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            res.setHeader('Content-Disposition', 'attachment; filename="batch_creation_upload_template.xlsx"');
+            
+            await workbook.xlsx.write(res);
+            res.end();
         } catch (error) {
             res.status(500).json({
                 success: false,
@@ -434,6 +503,13 @@ class BatchController {
                 data: result
             });
         } catch (error) {
+            if (error.validationErrors) {
+                return res.status(error.statusCode || 400).json({
+                    success: false,
+                    message: `Validation failed for ${error.validationErrors.rows.length} rows.`,
+                    errors: error.validationErrors
+                });
+            }
             res.status(500).json({
                 success: false,
                 message: error.message || 'Internal server error'

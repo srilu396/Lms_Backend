@@ -3,10 +3,11 @@ const { Op } = require('sequelize');
 
 class CourseService {
     async createCourse(data) {
-        const { assignments, quizzes, ...courseData } = data;
+        const { ...courseData } = data;
         
         const course = await Course.create(courseData, {
             include: [
+                { model: Assignment, as: 'assignments' },
                 {
                     model: Module,
                     as: 'modules',
@@ -15,32 +16,21 @@ class CourseService {
                             model: Topic,
                             as: 'topics',
                             include: [
-                                {
-                                    model: Lesson,
-                                    as: 'lessons'
+                                { 
+                                    model: Lesson, 
+                                    as: 'lessons',
+                                    include: [
+                                        { model: Assignment, as: 'assignments' },
+                                        { model: Quiz, as: 'quizzes' }
+                                    ]
                                 }
                             ]
-                        }
+                        },
+                        { model: Assignment, as: 'assignments' }
                     ]
                 }
             ]
         });
-
-        // Link existing assignments
-        if (assignments && Array.isArray(assignments)) {
-            await Assignment.update(
-                { course_id: course.id },
-                { where: { id: assignments } }
-            );
-        }
-
-        // Link existing quizzes
-        if (quizzes && Array.isArray(quizzes)) {
-            await Quiz.update(
-                { course_id: course.id },
-                { where: { id: quizzes } }
-            );
-        }
 
         return await this.getCourseById(course.id);
     }
@@ -81,7 +71,9 @@ class CourseService {
                         sequelize.literal(`(
                             SELECT COUNT(*)
                             FROM "topics" t
-                            WHERE t."module_id" IN (SELECT id FROM "modules" WHERE "course_id" = "Course"."id")
+                            WHERE t."module_id" IN (
+                                SELECT id FROM "modules" WHERE "course_id" = "Course"."id"
+                            )
                         )`),
                         'total_topics'
                     ],
@@ -186,24 +178,30 @@ class CourseService {
 
     async getCourseById(id) {
         const course = await Course.findByPk(id, {
-            include: [{
-                model: Module,
-                as: 'modules',
-                include: [
-                    { model: Assignment, as: 'assignments' },
-                    { model: Quiz, as: 'quizzes' },
-                    {
-                        model: Topic,
-                        as: 'topics',
-                        include: [
-                            { 
-                                model: Lesson,
-                                as: 'lessons'
-                            }
-                        ]
-                    }
-                ]
-            }, { model: Assignment, as: 'assignments' }, { model: Quiz, as: 'quizzes' }],
+            include: [
+                { model: Assignment, as: 'assignments' },
+                {
+                    model: Module,
+                    as: 'modules',
+                    include: [
+                        {
+                            model: Topic,
+                            as: 'topics',
+                            include: [
+                                { 
+                                    model: Lesson, 
+                                    as: 'lessons',
+                                    include: [
+                                        { model: Assignment, as: 'assignments' },
+                                        { model: Quiz, as: 'quizzes' }
+                                    ]
+                                }
+                            ]
+                        },
+                        { model: Assignment, as: 'assignments' }
+                    ]
+                }
+            ],
             order: [
                 [{ model: Module, as: 'modules' }, 'order_num', 'ASC'],
                 [{ model: Module, as: 'modules' }, { model: Topic, as: 'topics' }, 'order_num', 'ASC'],
@@ -218,22 +216,6 @@ class CourseService {
 
         const courseJson = course.toJSON();
 
-        // If the course has a domain, include domain-level assignments
-        if (courseJson.domain_id) {
-            const domainAssignments = await Assignment.findAll({
-                where: {
-                    domain_id: courseJson.domain_id,
-                    course_id: null,
-                    module_id: null,
-                    topic_id: null,
-                    lesson_id: null
-                }
-            });
-            if (domainAssignments && domainAssignments.length > 0) {
-                courseJson.assignments = [...(courseJson.assignments || []), ...domainAssignments];
-            }
-        }
-        
         // Calculate totals for stats
         let totalModules = courseJson.modules.length;
         let totalTopics = 0;
@@ -272,7 +254,7 @@ class CourseService {
     }
 
     async updateCourse(id, data) {
-        const { assignments, quizzes, ...courseData } = data;
+        const { ...courseData } = data;
         const course = await Course.findByPk(id);
         if (!course) {
             const error = new Error('Course not found');
@@ -280,22 +262,6 @@ class CourseService {
             throw error;
         }
         await course.update(courseData);
-
-        // Link existing assignments
-        if (assignments && Array.isArray(assignments)) {
-            await Assignment.update(
-                { course_id: course.id },
-                { where: { id: assignments } }
-            );
-        }
-
-        // Link existing quizzes
-        if (quizzes && Array.isArray(quizzes)) {
-            await Quiz.update(
-                { course_id: course.id },
-                { where: { id: quizzes } }
-            );
-        }
 
         return await this.getCourseById(course.id);
     }
@@ -319,24 +285,30 @@ class CourseService {
         }
 
         const course = await Course.findByPk(courseId, {
-            include: [{
-                model: Module,
-                as: 'modules',
-                include: [
-                    { model: Assignment, as: 'assignments' },
-                    { model: Quiz, as: 'quizzes' },
-                    {
-                        model: Topic,
-                        as: 'topics',
-                        include: [
-                            { 
-                                model: Lesson,
-                                as: 'lessons'
-                            }
-                        ]
-                    }
-                ]
-            }, { model: Assignment, as: 'assignments' }, { model: Quiz, as: 'quizzes' }],
+            include: [
+                { model: Assignment, as: 'assignments' },
+                {
+                    model: Module,
+                    as: 'modules',
+                    include: [
+                        {
+                            model: Topic,
+                            as: 'topics',
+                            include: [
+                                { 
+                                    model: Lesson, 
+                                    as: 'lessons',
+                                    include: [
+                                        { model: Assignment, as: 'assignments' },
+                                        { model: Quiz, as: 'quizzes' }
+                                    ]
+                                }
+                            ]
+                        },
+                        { model: Assignment, as: 'assignments' }
+                    ]
+                }
+            ],
             order: [
                 [{ model: Module, as: 'modules' }, 'order_num', 'ASC'],
                 [{ model: Module, as: 'modules' }, { model: Topic, as: 'topics' }, 'order_num', 'ASC'],
@@ -352,21 +324,6 @@ class CourseService {
 
         const courseJson = course.toJSON();
 
-        if (courseJson.domain_id) {
-            const domainAssignments = await Assignment.findAll({
-                where: {
-                    domain_id: courseJson.domain_id,
-                    course_id: null,
-                    module_id: null,
-                    topic_id: null,
-                    lesson_id: null
-                }
-            });
-            if (domainAssignments && domainAssignments.length > 0) {
-                courseJson.assignments = [...(courseJson.assignments || []), ...domainAssignments];
-            }
-        }
-
         const progressRecords = await StudentProgress.findAll({
             where: { student_id: studentId, enrollment_id: enrollmentId }
         });
@@ -381,8 +338,8 @@ class CourseService {
             
             if (mod.topics) {
                 mod.topics.forEach(t => {
-                    totalLessonsCount += (t.lessons ? t.lessons.length : 0);
                     if (t.lessons) {
+                        totalLessonsCount += t.lessons.length;
                         t.lessons.forEach(l => {
                             const progress = progressRecords.find(p => p.module_id === mod.id);
                             if (progress && progress.is_completed) completedLessonsCount++; 

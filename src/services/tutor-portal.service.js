@@ -1,6 +1,7 @@
 const {
     Batch,
     Course,
+    Domain,
     Enrollment,
     User,
     Module,
@@ -126,6 +127,10 @@ class TutorPortalService {
                     attributes: ['id', 'name']
                 },
                 {
+                    model: Domain,
+                    attributes: ['id', 'name']
+                },
+                {
                     model: BatchPerformance,
                     attributes: ['overall_progress', 'completion_rate'],
                     required: false
@@ -147,15 +152,27 @@ class TutorPortalService {
                     }
                 });
 
+                let type = null;
+                let course = null;
+                let domain = null;
+                
+                if (batch.course_id) {
+                    type = 'course';
+                    course = batch.Course ? { id: batch.Course.id, name: batch.Course.name } : null;
+                } else if (batch.domain_id) {
+                    type = 'domain';
+                    domain = batch.Domain ? { id: batch.Domain.id, name: batch.Domain.name } : null;
+                }
+
                 return {
                     id: batch.id,
                     batch_name: batch.name,
                     status: batch.status,
                     start_date: batch.start_date,
                     end_date: batch.end_date,
-                    course: batch.Course
-                        ? { id: batch.Course.id, name: batch.Course.name }
-                        : null,
+                    type,
+                    course,
+                    domain,
                     total_students: studentCount,
                     progress_percentage: batch.BatchPerformance
                         ? parseFloat(batch.BatchPerformance.overall_progress)

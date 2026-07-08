@@ -17,7 +17,8 @@ const {
     Assignment,
     QuizAnswer,
     QuizQuestion,
-    Note
+    Note,
+    Domain
 } = models;
 const { Op } = require('sequelize');
 
@@ -61,6 +62,10 @@ class StudentPortalService {
                         {
                             model: Course,
                             attributes: ['id', 'name', 'description']
+                        },
+                        {
+                            model: Domain,
+                            attributes: ['id', 'name', 'description']
                         }
                     ]
                 }
@@ -69,20 +74,24 @@ class StudentPortalService {
 
         const profileData = profile.toJSON();
         
-        // Extract unique courses from active enrollments
-        const courses = enrollments
-            .map(e => e.Batch && e.Batch.Course)
+        const resources = enrollments
+            .map(e => {
+                if (e.Batch && e.Batch.course_id && e.Batch.Course) {
+                    return { type: 'course', id: e.Batch.Course.id, name: e.Batch.Course.name, description: e.Batch.Course.description };
+                } else if (e.Batch && e.Batch.domain_id && e.Batch.Domain) {
+                    return { type: 'domain', id: e.Batch.Domain.id, name: e.Batch.Domain.name, description: e.Batch.Domain.description };
+                }
+                return null;
+            })
             .filter(Boolean);
             
-        // Deduplicate courses by id
-        const uniqueCoursesMap = new Map();
-        courses.forEach(c => {
-            if (c && c.id) {
-                uniqueCoursesMap.set(c.id, c);
-            }
+        // Deduplicate resources by id and type
+        const uniqueResourcesMap = new Map();
+        resources.forEach(r => {
+            uniqueResourcesMap.set(`${r.type}_${r.id}`, r);
         });
         
-        profileData.allocated_courses = Array.from(uniqueCoursesMap.values());
+        profileData.allocated_resources = Array.from(uniqueResourcesMap.values());
 
         return profileData;
     }
@@ -143,6 +152,10 @@ class StudentPortalService {
                         {
                             model: Course,
                             attributes: ['id', 'name']
+                        },
+                        {
+                            model: Domain,
+                            attributes: ['id', 'name']
                         }
                     ]
                 }
@@ -153,21 +166,31 @@ class StudentPortalService {
             distinct: true
         });
 
-        const data = enrollments.map(enrollment => ({
-            enrollment_id: enrollment.id,
-            enrollment_status: enrollment.status,
-            enrollment_date: enrollment.enrollment_date,
-            batch: {
+        const data = enrollments.map(enrollment => {
+            let batchInfo = {
                 id: enrollment.Batch.id,
                 name: enrollment.Batch.name,
                 status: enrollment.Batch.status,
                 start_date: enrollment.Batch.start_date,
                 end_date: enrollment.Batch.end_date,
-                course: enrollment.Batch.Course
-                    ? { id: enrollment.Batch.Course.id, name: enrollment.Batch.Course.name }
-                    : null
+                type: null,
+                course: null,
+                domain: null
+            };
+            if (enrollment.Batch.course_id) {
+                batchInfo.type = 'course';
+                batchInfo.course = enrollment.Batch.Course ? { id: enrollment.Batch.Course.id, name: enrollment.Batch.Course.name } : null;
+            } else if (enrollment.Batch.domain_id) {
+                batchInfo.type = 'domain';
+                batchInfo.domain = enrollment.Batch.Domain ? { id: enrollment.Batch.Domain.id, name: enrollment.Batch.Domain.name } : null;
             }
-        }));
+            return {
+                enrollment_id: enrollment.id,
+                enrollment_status: enrollment.status,
+                enrollment_date: enrollment.enrollment_date,
+                batch: batchInfo
+            };
+        });
 
         return {
             total_items: count,
@@ -445,6 +468,10 @@ class StudentPortalService {
                                     include: [{ model: User, attributes: ['full_name', 'avatar_url'] }]
                                 }
                             ]
+                        },
+                        {
+                            model: Domain,
+                            required: false
                         }
                     ]
                 }
@@ -457,7 +484,19 @@ class StudentPortalService {
 
         // 2. Process each enrollment to calculate progress and format response
         const formattedData = await Promise.all(enrollments.map(async (enrollment) => {
+            if (enrollment.Batch.domain_id && enrollment.Batch.Domain) {
+                const domain = enrollment.Batch.Domain;
+                return {
+                    type: 'domain',
+                    id: domain.id,
+                    name: domain.name,
+                    image: domain.image_url || null,
+                    tags: domain.tags || []
+                };
+            }
+
             const course = enrollment.Batch.Course;
+            if (!course) return null;
             
             // Calculate progress
             // Get all lesson IDs for this course
@@ -495,9 +534,10 @@ class StudentPortalService {
             const primaryTutor = course.course_tutors && course.course_tutors[0] ? course.course_tutors[0].User : null;
 
             return {
-                courseId: course.id,
-                courseName: course.name,
-                courseImage: course.thumbnail_url || null,
+                type: 'course',
+                id: course.id,
+                name: course.name,
+                image: course.thumbnail_url || null,
                 tags: [], // Placeholder for future tag feature
                 tutor: {
                     name: primaryTutor ? primaryTutor.full_name : 'N/A',
@@ -509,7 +549,7 @@ class StudentPortalService {
         }));
 
         return {
-            data: formattedData,
+            data: formattedData.filter(Boolean),
             pagination: {
                 currentPage: parsedPage,
                 totalPages: Math.ceil(count / parsedLimit),

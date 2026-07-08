@@ -38,6 +38,8 @@ module.exports = (sequelize, DataTypes) => {
     Topic.associate = (models) => {
         Topic.belongsTo(models.Module, { foreignKey: 'module_id' });
         Topic.hasMany(models.Lesson, { foreignKey: 'topic_id', as: 'lessons' });
+        Topic.hasMany(models.Assignment, { foreignKey: 'topic_id', as: 'assignments' });
+        Topic.hasMany(models.Quiz, { foreignKey: 'topic_id', as: 'quizzes' });
     };
 
     return Topic;

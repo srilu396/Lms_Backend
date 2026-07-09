@@ -12,6 +12,7 @@ router.get('/lookup', assignmentController.getAssignmentLookup);
 router.post('/', assignmentController.createAssignment);
 router.get('/', assignmentController.getAllAssignments);
 router.get('/:id', authMiddleware, roleMiddleware('admin'), assignmentController.getAssignmentById);
+router.post('/:id/unlink', authMiddleware, roleMiddleware('admin', 'tutor'), assignmentController.unlinkAssignment);
 router.put('/:id', assignmentController.updateAssignment);
 router.delete('/:id', assignmentController.deleteAssignment);
 

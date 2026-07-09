@@ -3,7 +3,7 @@ const lessonService = require('../services/lesson.service');
 class LessonController {
     async addLesson(req, res) {
         try {
-            const moduleId = req.body.module_id;
+            const moduleId = req.params.moduleId || req.body.module_id;
             if (!moduleId) {
                 return res.status(400).json({ success: false, message: 'module_id is required' });
             }

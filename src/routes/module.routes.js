@@ -1,14 +1,19 @@
 const express = require('express');
 const router = express.Router();
 const moduleController = require('../controllers/courseModule.controller');
-const topicController = require('../controllers/topic.controller');
+const lessonController = require('../controllers/lesson.controller');
 const validate = require('../middlewares/validate');
-const { createModuleSchema, updateModuleSchema, createTopicSchema } = require('../utils/validations/course.validation');
+const { createModuleSchema, updateModuleSchema, createLessonSchema } = require('../utils/validations/course.validation');
+const authMiddleware = require('../middlewares/auth.middleware');
+const roleMiddleware = require('../middlewares/role.middleware');
 
-router.put('/:moduleId', validate(updateModuleSchema), moduleController.updateModule);
-router.delete('/:moduleId', moduleController.deleteModule);
-router.post('/', validate(createModuleSchema), moduleController.addModule);
+const adminAndTutor = roleMiddleware('admin', 'tutor');
 
-router.post('/:moduleId/topics', validate(createTopicSchema), topicController.addTopic);
+router.use(authMiddleware);
+
+router.put('/:moduleId', adminAndTutor, validate(updateModuleSchema), moduleController.updateModule);
+router.delete('/:moduleId', adminAndTutor, moduleController.deleteModule);
+
+router.post('/:moduleId/lessons', adminAndTutor, validate(createLessonSchema), lessonController.addLesson);
 
 module.exports = router;

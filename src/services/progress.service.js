@@ -7,10 +7,7 @@ class ProgressService {
     async updateLessonProgress(studentId, enrollmentId, lessonId, data) {
         // Find if the lesson exists
         const lesson = await Lesson.findByPk(lessonId, {
-            include: [{
-                model: Topic,
-                include: [{ model: Module }]
-            }]
+            include: [{ model: Module }]
         });
 
         if (!lesson) {
@@ -37,7 +34,7 @@ class ProgressService {
             throw error;
         }
 
-        const moduleId = lesson.Topic.module_id;
+        const moduleId = lesson.module_id;
 
         // Upsert lesson progress using a transaction
         const result = await sequelize.transaction(async (t) => {
@@ -81,11 +78,7 @@ class ProgressService {
     async recalculateModuleProgress(studentId, enrollmentId, moduleId, t) {
         // Get all lessons in the module
         const moduleLessons = await Lesson.findAll({
-            include: [{
-                model: Topic,
-                where: { module_id: moduleId },
-                attributes: []
-            }],
+            where: { module_id: moduleId },
             transaction: t
         });
 

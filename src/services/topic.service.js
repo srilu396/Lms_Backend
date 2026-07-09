@@ -1,70 +1,34 @@
-const { Topic, Module, Assignment, Quiz, Lesson } = require('../models');
+const { Topic, Lesson } = require('../models');
 
 class TopicService {
     async createTopic(lessonId, data) {
-        const { assignments, quizzes, ...topicData } = data;
-        const lesson = await Lesson.findByPk(lessonId, { include: [{ model: Module }] });
+        const topicData = { ...data };
+        const lesson = await Lesson.findByPk(lessonId);
         if (!lesson) {
             const error = new Error('Lesson not found');
             error.statusCode = 404;
             throw error;
         }
+        
+        // Remove created_at if passed to let Sequelize handle it
+        delete topicData.created_at;
+
         const topic = await Topic.create({ ...topicData, lesson_id: lessonId });
-
-        // Link assessments
-        if (assignments && Array.isArray(assignments)) {
-            await Assignment.update(
-                { topic_id: topic.id, lesson_id: lesson.id, module_id: lesson.module_id, course_id: lesson.Module?.course_id },
-                { where: { id: assignments } }
-            );
-        }
-        if (quizzes && Array.isArray(quizzes)) {
-            await Quiz.update(
-                { topic_id: topic.id, lesson_id: lesson.id, module_id: lesson.module_id, course_id: lesson.Module?.course_id },
-                { where: { id: quizzes } }
-            );
-        }
-
-        return await topic.reload({
-            include: [
-                { model: Assignment, as: 'assignments' },
-                { model: Quiz, as: 'quizzes' }
-            ]
-        });
+        return topic;
     }
 
     async updateTopic(topicId, data) {
-        const { assignments, quizzes, ...topicData } = data;
-        const topic = await Topic.findByPk(topicId, {
-            include: [{ model: Lesson, include: [{ model: Module }] }]
-        });
+        const topicData = { ...data };
+        const topic = await Topic.findByPk(topicId);
         if (!topic) {
             const error = new Error('Topic not found');
             error.statusCode = 404;
             throw error;
         }
+
+        delete topicData.created_at;
         await topic.update(topicData);
-
-        // Link assessments
-        if (assignments && Array.isArray(assignments)) {
-            await Assignment.update(
-                { topic_id: topic.id, lesson_id: topic.lesson_id, module_id: topic.Lesson?.module_id, course_id: topic.Lesson?.Module?.course_id },
-                { where: { id: assignments } }
-            );
-        }
-        if (quizzes && Array.isArray(quizzes)) {
-            await Quiz.update(
-                { topic_id: topic.id, lesson_id: topic.lesson_id, module_id: topic.Lesson?.module_id, course_id: topic.Lesson?.Module?.course_id },
-                { where: { id: quizzes } }
-            );
-        }
-
-        return await topic.reload({
-            include: [
-                { model: Assignment, as: 'assignments' },
-                { model: Quiz, as: 'quizzes' }
-            ]
-        });
+        return topic;
     }
 
     async deleteTopic(topicId) {

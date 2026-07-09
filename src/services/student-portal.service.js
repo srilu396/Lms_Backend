@@ -228,22 +228,40 @@ class StudentPortalService {
                     attributes: ['id', 'name', 'order_num', 'description'],
                     include: [
                         {
-                            model: Topic,
-                            as: 'topics',
-                            attributes: ['id', 'name', 'order_num'],
+                            model: Lesson,
+                            as: 'lessons',
+                            attributes: ['id', 'name', 'order_num', 'type', 'duration_minutes', 'content_text', 'video_url', 'url', 'pdf_url'],
                             include: [
                                 {
-                                    model: Lesson,
-                                    as: 'lessons',
-                                    attributes: ['id', 'name', 'order_num', 'type', 'duration_minutes', 'content_text', 'video_url', 'url']
+                                    model: Topic,
+                                    as: 'topics',
+                                    attributes: ['id', 'name', 'order_num', 'description', 'content_text', 'text', 'image_url', 'video_url', 'url', 'pdf_url']
                                 },
                                 {
                                     model: Quiz,
                                     as: 'quizzes',
                                     attributes: ['id', 'name'],
                                     required: false
+                                },
+                                {
+                                    model: Assignment,
+                                    as: 'assignments',
+                                    attributes: ['id', 'title'],
+                                    required: false
                                 }
                             ]
+                        },
+                        {
+                            model: Quiz,
+                            as: 'quizzes',
+                            attributes: ['id', 'name'],
+                            required: false
+                        },
+                        {
+                            model: Assignment,
+                            as: 'assignments',
+                            attributes: ['id', 'title'],
+                            required: false
                         }
                     ]
                 }
@@ -587,18 +605,14 @@ class StudentPortalService {
                     attributes: ['id', 'name', 'order_num', 'description'],
                     include: [
                         {
-                            model: Topic,
-                            as: 'topics',
-                            attributes: ['id', 'name', 'order_num'],
+                            model: Lesson,
+                            as: 'lessons',
+                            attributes: ['id', 'name', 'order_num', 'type', 'content_text', 'video_url', 'image_url', 'duration_minutes', 'pdf_url'],
                             include: [
                                 {
-                                    model: Lesson,
-                                    as: 'lessons',
-                                    attributes: ['id', 'name', 'order_num', 'type', 'content_text', 'video_url', 'image_url', 'duration_minutes'],
-                                    include: [
-                                        { model: Quiz, as: 'quizzes', attributes: ['id', 'name'] },
-                                        { model: Assignment, as: 'assignments', attributes: ['id', 'title'] }
-                                    ]
+                                    model: Topic,
+                                    as: 'topics',
+                                    attributes: ['id', 'name', 'order_num', 'description', 'content_text', 'text', 'image_url', 'video_url', 'url', 'pdf_url']
                                 },
                                 { model: Quiz, as: 'quizzes', attributes: ['id', 'name'] },
                                 { model: Assignment, as: 'assignments', attributes: ['id', 'title'] }
@@ -611,8 +625,8 @@ class StudentPortalService {
             ],
             order: [
                 [{ model: Module, as: 'modules' }, 'order_num', 'ASC'],
-                [{ model: Module, as: 'modules' }, { model: Topic, as: 'topics' }, 'order_num', 'ASC'],
-                [{ model: Module, as: 'modules' }, { model: Topic, as: 'topics' }, { model: Lesson, as: 'lessons' }, 'order_num', 'ASC']
+                [{ model: Module, as: 'modules' }, { model: Lesson, as: 'lessons' }, 'order_num', 'ASC'],
+                [{ model: Module, as: 'modules' }, { model: Lesson, as: 'lessons' }, { model: Topic, as: 'topics' }, 'order_num', 'ASC']
             ]
         });
 
@@ -634,29 +648,28 @@ class StudentPortalService {
             let totalLessonsInMod = 0;
             let completedLessonsInMod = 0;
 
-            const topics = mod.topics.map(top => {
-                const lessons = top.lessons.map(les => {
-                    totalLessonsInMod++;
-                    totalLessonsInCourse++;
-                    const progress = progressMap[les.id];
-                    const isCompleted = progress ? progress.is_completed : false;
-                    if (isCompleted) {
-                        completedLessonsInMod++;
-                        completedLessonsInCourse++;
-                    }
+            const lessons = mod.lessons.map(les => {
+                totalLessonsInMod++;
+                totalLessonsInCourse++;
+                const progress = progressMap[les.id];
+                const isCompleted = progress ? progress.is_completed : false;
+                if (isCompleted) {
+                    completedLessonsInMod++;
+                    completedLessonsInCourse++;
+                }
 
+                const topics = (les.topics || []).map(top => {
                     return {
-                        ...les.toJSON(),
-                        isCompleted,
-                        progressPct: progress ? parseFloat(progress.video_watch_pct || 0) : 0,
-                        lastAccessed: progress ? progress.last_accessed : null
+                        ...top.toJSON()
                     };
                 });
 
                 return {
-                    ...top.toJSON(),
-                    isCompleted: lessons.length > 0 && lessons.every(l => l.isCompleted),
-                    lessons
+                    ...les.toJSON(),
+                    isCompleted,
+                    progressPct: progress ? parseFloat(progress.video_watch_pct || 0) : 0,
+                    lastAccessed: progress ? progress.last_accessed : null,
+                    topics
                 };
             });
 
@@ -671,7 +684,7 @@ class StudentPortalService {
                 progressPct,
                 isLocked,
                 isCompleted: progressPct === 100,
-                topics
+                lessons
             };
         });
 
@@ -694,14 +707,15 @@ class StudentPortalService {
         
         // Find enrollment for this lesson's course
         const lesson = await Lesson.findByPk(lessonId, {
-            include: [{ model: Topic, include: [{ model: Module }] }]
+            include: [{ model: Module }]
         });
         if (!lesson) throw { statusCode: 404, message: 'Lesson not found' };
+        if (!lesson.Module) throw { statusCode: 404, message: 'Module not found for this lesson' };
 
         const enrollment = await Enrollment.findOne({
             include: [{
                 model: Batch,
-                where: { course_id: lesson.Topic.Module.course_id },
+                where: { course_id: lesson.Module.course_id },
                 required: true
             }],
             where: { student_id: student.id, status: 'active' }
@@ -736,14 +750,14 @@ class StudentPortalService {
                     attributes: ['id', 'name', 'order_num'],
                     include: [
                         {
-                            model: Topic,
-                            as: 'topics',
-                            attributes: ['id', 'name', 'order_num'],
+                            model: Lesson,
+                            as: 'lessons',
+                            attributes: ['id', 'name', 'order_num', 'type'],
                             include: [
                                 {
-                                    model: Lesson,
-                                    as: 'lessons',
-                                    attributes: ['id', 'name', 'order_num', 'type']
+                                    model: Topic,
+                                    as: 'topics',
+                                    attributes: ['id', 'name', 'order_num']
                                 }
                             ]
                         }
@@ -752,8 +766,8 @@ class StudentPortalService {
             ],
             order: [
                 [{ model: Module, as: 'modules' }, 'order_num', 'ASC'],
-                [{ model: Module, as: 'modules' }, { model: Topic, as: 'topics' }, 'order_num', 'ASC'],
-                [{ model: Module, as: 'modules' }, { model: Topic, as: 'topics' }, { model: Lesson, as: 'lessons' }, 'order_num', 'ASC']
+                [{ model: Module, as: 'modules' }, { model: Lesson, as: 'lessons' }, 'order_num', 'ASC'],
+                [{ model: Module, as: 'modules' }, { model: Lesson, as: 'lessons' }, { model: Topic, as: 'topics' }, 'order_num', 'ASC']
             ]
         });
 
@@ -771,18 +785,22 @@ class StudentPortalService {
             let totalLessonsInMod = 0;
             let completedLessonsInMod = 0;
 
-            const topics = mod.topics.map(top => {
-                const lessons = top.lessons.map(les => {
-                    totalLessonsInMod++;
-                    const isCompleted = progressMap[les.id] || false;
-                    if (isCompleted) completedLessonsInMod++;
-                    return { id: les.id, name: les.name, type: les.type, isCompleted };
-                });
-                return {
+            const lessons = mod.lessons.map(les => {
+                totalLessonsInMod++;
+                const isCompleted = progressMap[les.id] || false;
+                if (isCompleted) completedLessonsInMod++;
+
+                const topics = (les.topics || []).map(top => ({
                     id: top.id,
-                    name: top.name,
-                    isCompleted: lessons.length > 0 && lessons.every(l => l.isCompleted),
-                    lessons
+                    name: top.name
+                }));
+
+                return {
+                    id: les.id,
+                    name: les.name,
+                    type: les.type,
+                    isCompleted,
+                    topics
                 };
             });
 
@@ -797,7 +815,7 @@ class StudentPortalService {
                 name: mod.name,
                 progressPct,
                 isLocked,
-                topics
+                lessons
             });
         }
 

@@ -52,10 +52,9 @@ async function seedQuizData() {
         });
 
         const [quiz1] = await models.Quiz.findOrCreate({
-            where: { name: 'Web Foundation Quiz', topic_id: topic1.id },
+            where: { name: 'Web Foundation Quiz', module_id: module1.id },
             defaults: {
                 course_id: course.id,
-                module_id: module1.id,
                 total_marks: 50,
                 status: 'published',
                 is_published: true

@@ -2,7 +2,10 @@ const { Module, Course, Assignment, Quiz, Topic, Lesson } = require('../models')
 
 class ModuleService {
     async createModule(courseId, data) {
-        const { assignments, quizzes, ...moduleData } = data;
+        if (data.quiz_ids !== undefined && data.quizzes === undefined) {
+            data.quizzes = data.quiz_ids;
+        }
+        const { assignment_ids, quizzes, ...moduleData } = data;
         
         const course = await Course.findByPk(courseId);
         if (!course) {
@@ -17,10 +20,10 @@ class ModuleService {
         const mod = await Module.create({ ...moduleData, course_id: courseId });
 
         // Link existing assignments
-        if (assignments && Array.isArray(assignments)) {
+        if (assignment_ids && Array.isArray(assignment_ids)) {
             await Assignment.update(
                 { module_id: mod.id, course_id: courseId },
-                { where: { id: assignments } }
+                { where: { id: assignment_ids } }
             );
         }
 
@@ -37,16 +40,14 @@ class ModuleService {
                 { model: Assignment, as: 'assignments' },
                 { model: Quiz, as: 'quizzes' },
                 {
-                    model: Topic,
-                    as: 'topics',
+                    model: Lesson,
+                    as: 'lessons',
                     include: [
+                        { model: Assignment, as: 'assignments' },
+                        { model: Quiz, as: 'quizzes' },
                         { 
-                            model: Lesson, 
-                            as: 'lessons', 
-                            include: [
-                                { model: Assignment, as: 'assignments' },
-                                { model: Quiz, as: 'quizzes' }
-                            ]
+                            model: Topic, 
+                            as: 'topics'
                         }
                     ]
                 }
@@ -55,7 +56,10 @@ class ModuleService {
     }
 
     async updateModule(moduleId, data) {
-        const { assignments, quizzes, ...moduleData } = data;
+        if (data.quiz_ids !== undefined && data.quizzes === undefined) {
+            data.quizzes = data.quiz_ids;
+        }
+        const { assignment_ids, quizzes, ...moduleData } = data;
         const mod = await Module.findByPk(moduleId);
         if (!mod) {
             const error = new Error('Module not found');
@@ -67,19 +71,25 @@ class ModuleService {
         await mod.update(moduleData);
 
         // Link existing assignments
-        if (assignments && Array.isArray(assignments)) {
-            await Assignment.update(
-                { module_id: mod.id },
-                { where: { id: assignments } }
-            );
+        if (assignment_ids !== undefined) {
+            await Assignment.update({ module_id: null, course_id: null }, { where: { module_id: mod.id } });
+            if (Array.isArray(assignment_ids) && assignment_ids.length > 0) {
+                await Assignment.update(
+                    { module_id: mod.id, course_id: mod.course_id },
+                    { where: { id: assignment_ids } }
+                );
+            }
         }
 
         // Link existing quizzes
-        if (quizzes && Array.isArray(quizzes)) {
-            await Quiz.update(
-                { module_id: mod.id },
-                { where: { id: quizzes } }
-            );
+        if (quizzes !== undefined) {
+            await Quiz.update({ module_id: null, course_id: null }, { where: { module_id: mod.id } });
+            if (Array.isArray(quizzes) && quizzes.length > 0) {
+                await Quiz.update(
+                    { module_id: mod.id, course_id: mod.course_id },
+                    { where: { id: quizzes } }
+                );
+            }
         }
 
         return await mod.reload({
@@ -87,16 +97,14 @@ class ModuleService {
                 { model: Assignment, as: 'assignments' },
                 { model: Quiz, as: 'quizzes' },
                 {
-                    model: Topic,
-                    as: 'topics',
+                    model: Lesson,
+                    as: 'lessons',
                     include: [
+                        { model: Assignment, as: 'assignments' },
+                        { model: Quiz, as: 'quizzes' },
                         { 
-                            model: Lesson, 
-                            as: 'lessons', 
-                            include: [
-                                { model: Assignment, as: 'assignments' },
-                                { model: Quiz, as: 'quizzes' }
-                            ]
+                            model: Topic, 
+                            as: 'topics'
                         }
                     ]
                 }

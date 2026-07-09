@@ -2,7 +2,10 @@ const { Lesson, Topic, Module, StudentProgress, LessonProgress, Enrollment, Assi
 
 class LessonService {
     async createLesson(moduleId, data) {
-        const { assignments, quizzes, ...lessonData } = data;
+        if (data.quiz_ids !== undefined && data.quizzes === undefined) {
+            data.quizzes = data.quiz_ids;
+        }
+        const { assignment_ids, quizzes, ...lessonData } = data;
         const mod = await Module.findByPk(moduleId);
         if (!mod) {
             const error = new Error('Module not found');
@@ -11,15 +14,33 @@ class LessonService {
         }
         const lesson = await Lesson.create({ ...lessonData, module_id: moduleId });
 
+        if (assignment_ids && Array.isArray(assignment_ids)) {
+            await Assignment.update(
+                { lesson_id: lesson.id, module_id: moduleId, course_id: mod.course_id },
+                { where: { id: assignment_ids } }
+            );
+        }
+        if (quizzes && Array.isArray(quizzes)) {
+            await Quiz.update(
+                { lesson_id: lesson.id, module_id: moduleId, course_id: mod.course_id },
+                { where: { id: quizzes } }
+            );
+        }
+
         return await lesson.reload({
             include: [
-                { model: Topic, as: 'topics' }
+                { model: Topic, as: 'topics' },
+                { model: Assignment, as: 'assignments' },
+                { model: Quiz, as: 'quizzes' }
             ]
         });
     }
 
     async updateLesson(lessonId, data) {
-        const { assignments, quizzes, ...lessonData } = data;
+        if (data.quiz_ids !== undefined && data.quizzes === undefined) {
+            data.quizzes = data.quiz_ids;
+        }
+        const { assignment_ids, quizzes, ...lessonData } = data;
         const lesson = await Lesson.findByPk(lessonId, {
             include: [{ model: Module }]
         });
@@ -30,9 +51,30 @@ class LessonService {
         }
         await lesson.update(lessonData);
 
+        if (assignment_ids !== undefined) {
+            await Assignment.update({ lesson_id: null, module_id: null, course_id: null }, { where: { lesson_id: lesson.id } });
+            if (Array.isArray(assignment_ids) && assignment_ids.length > 0) {
+                await Assignment.update(
+                    { lesson_id: lesson.id, module_id: lesson.module_id, course_id: lesson.Module ? lesson.Module.course_id : null },
+                    { where: { id: assignment_ids } }
+                );
+            }
+        }
+        if (quizzes !== undefined) {
+            await Quiz.update({ lesson_id: null, module_id: null, course_id: null }, { where: { lesson_id: lesson.id } });
+            if (Array.isArray(quizzes) && quizzes.length > 0) {
+                await Quiz.update(
+                    { lesson_id: lesson.id, module_id: lesson.module_id, course_id: lesson.Module ? lesson.Module.course_id : null },
+                    { where: { id: quizzes } }
+                );
+            }
+        }
+
         return await lesson.reload({
             include: [
-                { model: Topic, as: 'topics' }
+                { model: Topic, as: 'topics' },
+                { model: Assignment, as: 'assignments' },
+                { model: Quiz, as: 'quizzes' }
             ]
         });
     }
@@ -60,6 +102,11 @@ class LessonService {
         }
 
         const moduleItem = lesson.Module;
+        if (!moduleItem) {
+            const error = new Error('Associated module not found');
+            error.statusCode = 404;
+            throw error;
+        }
         const moduleId = moduleItem.id;
 
         // Note: Project uses LessonProgress for lessons logic.

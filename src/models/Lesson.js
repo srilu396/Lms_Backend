@@ -6,11 +6,11 @@ module.exports = (sequelize, DataTypes) => {
             autoIncrement: true,
             allowNull: false
         },
-        topic_id: {
+        module_id: {
             type: DataTypes.INTEGER,
             allowNull: false,
             references: {
-                model: 'topics',
+                model: 'modules',
                 key: 'id'
             }
         },
@@ -27,6 +27,7 @@ module.exports = (sequelize, DataTypes) => {
         image_url: DataTypes.STRING,
         video_url: DataTypes.STRING,
         url: DataTypes.STRING,
+        pdf_url: DataTypes.STRING,
         duration_minutes: DataTypes.INTEGER,
         order_num: {
             type: DataTypes.INTEGER,
@@ -40,7 +41,8 @@ module.exports = (sequelize, DataTypes) => {
     });
 
     Lesson.associate = (models) => {
-        Lesson.belongsTo(models.Topic, { foreignKey: 'topic_id' });
+        Lesson.belongsTo(models.Module, { foreignKey: 'module_id' });
+        Lesson.hasMany(models.Topic, { foreignKey: 'lesson_id', as: 'topics' });
         Lesson.hasMany(models.LessonProgress, { foreignKey: 'lesson_id' });
         Lesson.hasMany(models.Quiz, { foreignKey: 'lesson_id', as: 'quizzes' });
         Lesson.hasMany(models.Assignment, { foreignKey: 'lesson_id', as: 'assignments' });

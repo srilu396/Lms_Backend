@@ -3,7 +3,7 @@ const topicService = require('../services/topic.service');
 class TopicController {
     async addTopic(req, res) {
         try {
-            const lessonId = req.body.lesson_id;
+            const lessonId = req.params.lessonId || req.body.lesson_id;
             if (!lessonId) {
                 return res.status(400).json({ success: false, message: 'lesson_id is required' });
             }

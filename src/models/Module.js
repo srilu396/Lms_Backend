@@ -24,6 +24,7 @@ module.exports = (sequelize, DataTypes) => {
         image_url: DataTypes.STRING,
         video_url: DataTypes.STRING,
         url: DataTypes.STRING,
+        pdf_url: DataTypes.STRING,
         order_num: {
             type: DataTypes.INTEGER,
             allowNull: false
@@ -41,7 +42,7 @@ module.exports = (sequelize, DataTypes) => {
 
     Module.associate = (models) => {
         Module.belongsTo(models.Course, { foreignKey: 'course_id' });
-        Module.hasMany(models.Topic, { foreignKey: 'module_id', as: 'topics' });
+        Module.hasMany(models.Lesson, { foreignKey: 'module_id', as: 'lessons' });
         Module.hasMany(models.Assignment, { foreignKey: 'module_id', as: 'assignments' });
         Module.hasMany(models.Quiz, { foreignKey: 'module_id', as: 'quizzes' });
         Module.hasMany(models.StudentProgress, { foreignKey: 'module_id' });

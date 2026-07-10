@@ -15,6 +15,100 @@ function mapQuizIdsToQuizzes(obj, isRoot = false) {
     }
 }
 
+function reorderAssignment(assignment) {
+    if (!assignment || typeof assignment !== 'object') return assignment;
+    return { ...assignment };
+}
+
+function reorderQuiz(quiz) {
+    if (!quiz || typeof quiz !== 'object') return quiz;
+    return { ...quiz };
+}
+
+function reorderTopic(topic) {
+    if (!topic || typeof topic !== 'object') return topic;
+    return { ...topic };
+}
+
+function reorderLesson(lesson) {
+    if (!lesson || typeof lesson !== 'object') return lesson;
+    const excludeKeys = ['topics', 'quizzes', 'assignments'];
+    const reordered = {};
+    Object.keys(lesson).forEach(key => {
+        if (!excludeKeys.includes(key)) {
+            reordered[key] = lesson[key];
+        }
+    });
+    if ('topics' in lesson) {
+        reordered.topics = Array.isArray(lesson.topics)
+            ? lesson.topics.map(reorderTopic)
+            : lesson.topics;
+    }
+    if ('quizzes' in lesson) {
+        reordered.quizzes = Array.isArray(lesson.quizzes)
+            ? lesson.quizzes.map(reorderQuiz)
+            : lesson.quizzes;
+    }
+    if ('assignments' in lesson) {
+        reordered.assignments = Array.isArray(lesson.assignments)
+            ? lesson.assignments.map(reorderAssignment)
+            : lesson.assignments;
+    }
+    return reordered;
+}
+
+function reorderModule(module) {
+    if (!module || typeof module !== 'object') return module;
+    const excludeKeys = ['lessons', 'quizzes', 'assignments'];
+    const reordered = {};
+    Object.keys(module).forEach(key => {
+        if (!excludeKeys.includes(key)) {
+            reordered[key] = module[key];
+        }
+    });
+    if ('lessons' in module) {
+        reordered.lessons = Array.isArray(module.lessons)
+            ? module.lessons.map(reorderLesson)
+            : module.lessons;
+    }
+    if ('quizzes' in module) {
+        reordered.quizzes = Array.isArray(module.quizzes)
+            ? module.quizzes.map(reorderQuiz)
+            : module.quizzes;
+    }
+    if ('assignments' in module) {
+        reordered.assignments = Array.isArray(module.assignments)
+            ? module.assignments.map(reorderAssignment)
+            : module.assignments;
+    }
+    return reordered;
+}
+
+function reorderCourse(course) {
+    if (!course || typeof course !== 'object') return course;
+    const excludeKeys = ['modules', 'assignments', 'stats'];
+    const reordered = {};
+    Object.keys(course).forEach(key => {
+        if (!excludeKeys.includes(key)) {
+            reordered[key] = course[key];
+        }
+    });
+    if ('modules' in course) {
+        reordered.modules = Array.isArray(course.modules)
+            ? course.modules.map(reorderModule)
+            : course.modules;
+    }
+    if ('assignments' in course) {
+        reordered.assignments = Array.isArray(course.assignments)
+            ? course.assignments.map(reorderAssignment)
+            : course.assignments;
+    }
+    if ('stats' in course) {
+        reordered.stats = course.stats;
+    }
+    return reordered;
+}
+
 class CourseService {
     async createCourse(data) {
         const courseData = JSON.parse(JSON.stringify(data));
@@ -330,7 +424,7 @@ class CourseService {
 
         this.formatMediaUrls(courseJson);
 
-        return {
+        const courseWithStats = {
             ...courseJson,
             stats: {
                 no_of_modules: totalModules,
@@ -339,6 +433,7 @@ class CourseService {
                 total_duration_minutes: totalDuration
             }
         };
+        return reorderCourse(courseWithStats);
     }
 
     async updateCourse(id, data) {

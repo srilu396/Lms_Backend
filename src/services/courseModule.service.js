@@ -164,15 +164,13 @@ function stripMediaArrays(data) {
  */
 function serializeModuleWithMedia(moduleJson) {
     const mod = serializeWithMedia(moduleJson);
-    if (mod.lessons) {
-        mod.lessons = mod.lessons.map(l => {
-            const les = serializeWithMedia(l);
-            if (les.topics) {
-                les.topics = les.topics.map(t => serializeWithMedia(t));
-            }
-            return les;
-        });
-    }
+    const lessons = Array.isArray(mod.lessons) ? mod.lessons : [];
+    mod.lessons = lessons.map(l => {
+        const les = serializeWithMedia(l);
+        const topics = Array.isArray(les.topics) ? les.topics : [];
+        les.topics = topics.map(t => serializeWithMedia(t));
+        return les;
+    });
     return mod;
 }
 

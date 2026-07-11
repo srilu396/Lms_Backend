@@ -184,9 +184,8 @@ class LessonService {
         });
         const json = reloaded.toJSON();
         const result = serializeWithMedia(json);
-        if (result.topics) {
-            result.topics = result.topics.map(t => serializeWithMedia(t));
-        }
+        const topics = Array.isArray(result.topics) ? result.topics : [];
+        result.topics = topics.map(t => serializeWithMedia(t));
         return result;
     }
 }

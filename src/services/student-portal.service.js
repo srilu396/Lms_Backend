@@ -460,14 +460,26 @@ class StudentPortalService {
     // ─── 10. Enrolled Courses (Table Data) ──────────────────────────────────────
     async getEnrolledCourses(userId, filters = {}) {
         const student = await this._getStudentByUserId(userId);
-        const { search = '', page = 1, limit = 10 } = filters;
+        const { search = '', page = 1, limit = 10, filter = 'all' } = filters;
         const parsedLimit = Math.min(parseInt(limit, 10) || 10, 50);
         const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
         const offset = (parsedPage - 1) * parsedLimit;
 
+        const enrollmentWhere = { student_id: student.id };
+
+        if (filter === 'completed') {
+            enrollmentWhere.status = 'completed';
+        } else if (filter === 'ongoing') {
+            enrollmentWhere.status = 'active';
+            enrollmentWhere[Op.and] = models.sequelize.literal('EXISTS (SELECT 1 FROM lesson_progress WHERE lesson_progress.enrollment_id = "Enrollment"."id")');
+        } else if (filter === 'not_started') {
+            enrollmentWhere.status = 'active';
+            enrollmentWhere[Op.and] = models.sequelize.literal('NOT EXISTS (SELECT 1 FROM lesson_progress WHERE lesson_progress.enrollment_id = "Enrollment"."id")');
+        }
+
         // 1. Fetch Enrollments with Batch and Course details
         const { count, rows: enrollments } = await Enrollment.findAndCountAll({
-            where: { student_id: student.id },
+            where: enrollmentWhere,
             include: [
                 {
                     model: Batch,
@@ -476,20 +488,18 @@ class StudentPortalService {
                         {
                             model: Course,
                             required: true,
-                            where: search ? { name: { [Op.iLike]: `%${search}%` } } : {},
-                            include: [
-                                {
-                                    model: models.CourseTutor,
-                                    as: 'course_tutors',
-                                    where: { role: 'primary' },
-                                    required: false,
-                                    include: [{ model: User, attributes: ['full_name', 'avatar_url'] }]
-                                }
-                            ]
+                            where: search ? { name: { [Op.iLike]: `%${search}%` } } : {}
                         },
                         {
                             model: Domain,
                             required: false
+                        },
+                        {
+                            model: models.BatchTutor,
+                            as: 'batchTutors',
+                            required: false,
+                            where: { is_primary: true },
+                            include: [{ model: models.Tutor, attributes: ['id', 'full_name', 'profile_image'] }]
                         }
                     ]
                 }
@@ -516,51 +526,93 @@ class StudentPortalService {
             const course = enrollment.Batch.Course;
             if (!course) return null;
             
-            // Calculate progress
-            // Get all lesson IDs for this course
+            // Calculate progress and current module
             const modules = await models.Module.findAll({
                 where: { course_id: course.id },
+                order: [['order_num', 'ASC']],
                 include: [{
-                    model: models.Topic,
-                    as: 'topics',
-                    include: [{ model: models.Lesson, as: 'lessons', attributes: ['id'] }]
+                    model: models.Lesson,
+                    as: 'lessons',
+                    order: [['order_num', 'ASC']],
+                    include: [{ model: models.Topic, as: 'topics', attributes: ['id', 'order_num'] }]
                 }]
             });
 
-            const lessonIds = [];
-            modules.forEach(m => {
-                m.topics.forEach(t => {
-                    t.lessons.forEach(l => lessonIds.push(l.id));
-                });
-            });
-
             let completionProgress = 0;
-            // Use course updated_at for lastOpened
             let lastOpened = course.updated_at || null;
+            let currentModule = null;
 
-            if (lessonIds.length > 0) {
-                const completedCount = await LessonProgress.count({
-                    where: {
-                        enrollment_id: enrollment.id,
-                        lesson_id: { [Op.in]: lessonIds },
-                        is_completed: true
-                    }
+            if (modules.length > 0) {
+                let firstModule = { module_id: modules[0].id, module_name: modules[0].name };
+                let lastModule = { module_id: modules[modules.length - 1].id, module_name: modules[modules.length - 1].name };
+                
+                let allCompletedCount = 0;
+                let allLessonsCount = 0;
+                
+                const lessonProgress = await LessonProgress.findAll({
+                    where: { enrollment_id: enrollment.id },
+                    attributes: ['lesson_id', 'is_completed']
                 });
-                completionProgress = Math.round((completedCount / lessonIds.length) * 100);
+                const progressMap = new Map();
+                lessonProgress.forEach(lp => progressMap.set(lp.lesson_id, lp.is_completed));
+                
+                let foundCurrent = false;
+
+                for (const m of modules) {
+                    let modLessons = 0;
+                    let modCompleted = 0;
+                    
+                    if (m.lessons) {
+                        m.lessons.forEach(l => {
+                            modLessons++;
+                            allLessonsCount++;
+                            if (progressMap.get(l.id)) {
+                                modCompleted++;
+                                allCompletedCount++;
+                            }
+                        });
+                    }
+                    
+                    if (!foundCurrent) {
+                        if (modLessons > 0 && modCompleted < modLessons) {
+                            currentModule = { module_id: m.id, module_name: m.name };
+                            foundCurrent = true;
+                        }
+                    }
+                }
+                
+                if (allLessonsCount > 0) {
+                    completionProgress = Math.round((allCompletedCount / allLessonsCount) * 100);
+                }
+                
+                if (!currentModule) {
+                    if (allCompletedCount === allLessonsCount && allLessonsCount > 0) {
+                        currentModule = lastModule;
+                    } else {
+                        currentModule = firstModule;
+                    }
+                }
             }
 
-            const primaryTutor = course.course_tutors && course.course_tutors[0] ? course.course_tutors[0].User : null;
+            const primaryTutorRecord = enrollment.Batch.batchTutors && enrollment.Batch.batchTutors.length > 0 ? enrollment.Batch.batchTutors[0].Tutor : null;
+            const tutor = primaryTutorRecord ? {
+                tutor_id: primaryTutorRecord.id,
+                tutor_name: primaryTutorRecord.full_name,
+                tutor_profile_image: primaryTutorRecord.profile_image
+            } : {
+                tutor_id: null,
+                tutor_name: 'N/A',
+                tutor_profile_image: null
+            };
 
             return {
                 type: 'course',
                 id: course.id,
                 name: course.name,
-                image: course.thumbnail_url || null,
+                course_image: course.thumbnail_url || null,
                 tags: [], // Placeholder for future tag feature
-                tutor: {
-                    name: primaryTutor ? primaryTutor.full_name : 'N/A',
-                    image: primaryTutor ? primaryTutor.avatar_url : null
-                },
+                tutor,
+                current_module: currentModule,
                 completionProgress,
                 lastOpened
             };
@@ -577,7 +629,160 @@ class StudentPortalService {
         };
     }
 
-    // ─── 11. Inside Course View (Learning Page) ─────────────────────────────────
+    // ─── 11. Course Home (Overview & Stats) ─────────────────────────────────────
+    async getCourseHome(userId, courseId) {
+        const student = await this._getStudentByUserId(userId);
+
+        const enrollment = await Enrollment.findOne({
+            include: [{
+                model: Batch,
+                where: { course_id: courseId },
+                required: true
+            }],
+            where: { student_id: student.id, status: 'active' }
+        });
+
+        if (!enrollment) {
+            throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
+        }
+
+        const course = await Course.findByPk(courseId, {
+            attributes: ['id', 'name', 'description', 'thumbnail_url'],
+            include: [
+                {
+                    model: Module,
+                    as: 'modules',
+                    attributes: ['id'],
+                    include: [
+                        {
+                            model: Lesson,
+                            as: 'lessons',
+                            attributes: ['id'],
+                            include: [
+                                {
+                                    model: Topic,
+                                    as: 'topics',
+                                    attributes: ['id']
+                                },
+                                { model: Quiz, as: 'quizzes', attributes: ['id'] },
+                                { model: Assignment, as: 'assignments', attributes: ['id'] }
+                            ]
+                        },
+                        { model: Quiz, as: 'quizzes', attributes: ['id'] },
+                        { model: Assignment, as: 'assignments', attributes: ['id'] }
+                    ]
+                }
+            ]
+        });
+
+        if (!course) {
+            throw { statusCode: 404, message: 'Course not found' };
+        }
+
+        let totalModules = course.modules.length;
+        let totalTopics = 0;
+        let totalLessons = 0;
+        let totalQuizzes = 0;
+        let totalAssignments = 0;
+
+        const moduleIds = [];
+        const lessonIds = [];
+        const quizIds = [];
+        const assignmentIds = [];
+        const topicsMap = new Map();
+
+        course.modules.forEach(mod => {
+            moduleIds.push(mod.id);
+            if (mod.quizzes) mod.quizzes.forEach(q => quizIds.push(q.id));
+            if (mod.assignments) mod.assignments.forEach(a => assignmentIds.push(a.id));
+            
+            if (mod.lessons) {
+                totalLessons += mod.lessons.length;
+                mod.lessons.forEach(les => {
+                    lessonIds.push(les.id);
+                    if (les.quizzes) les.quizzes.forEach(q => quizIds.push(q.id));
+                    if (les.assignments) les.assignments.forEach(a => assignmentIds.push(a.id));
+                    
+                    if (les.topics) {
+                        totalTopics += les.topics.length;
+                        les.topics.forEach(top => {
+                            topicsMap.set(top.id, [les.id]); // Topics just belong to this lesson
+                        });
+                    }
+                });
+            }
+        });
+
+        totalQuizzes = quizIds.length;
+        totalAssignments = assignmentIds.length;
+
+        const completedModules = moduleIds.length > 0 ? await models.StudentProgress.count({
+            where: { enrollment_id: enrollment.id, module_id: { [Op.in]: moduleIds }, is_completed: true }
+        }) : 0;
+
+        const completedLessonRecords = lessonIds.length > 0 ? await LessonProgress.findAll({
+            where: { enrollment_id: enrollment.id, lesson_id: { [Op.in]: lessonIds }, is_completed: true },
+            attributes: ['lesson_id']
+        }) : [];
+        const completedLessons = completedLessonRecords.length;
+        const completedLessonIds = new Set(completedLessonRecords.map(r => r.lesson_id));
+
+        let completedTopics = 0;
+        topicsMap.forEach((topLessonIds) => {
+            if (topLessonIds.length > 0 && topLessonIds.every(id => completedLessonIds.has(id))) {
+                completedTopics++;
+            }
+        });
+
+        const completedQuizzes = quizIds.length > 0 ? await QuizSubmission.count({
+            where: { student_id: userId, quiz_id: { [Op.in]: quizIds } },
+            distinct: true,
+            col: 'quiz_id'
+        }) : 0;
+
+        const completedAssignments = assignmentIds.length > 0 ? await AssignmentSubmission.count({
+            where: { student_id: userId, assignment_id: { [Op.in]: assignmentIds } },
+            distinct: true,
+            col: 'assignment_id'
+        }) : 0;
+
+        const calcPct = (completed, total) => total > 0 ? Math.round((completed / total) * 100) : 0;
+
+        return {
+            course_id: course.id,
+            course_name: course.name,
+            description: course.description,
+            course_image: course.thumbnail_url || null,
+            tags: course.tags || [],
+            modules: {
+                completed_count: completedModules,
+                total_count: totalModules,
+                progress_percentage: calcPct(completedModules, totalModules)
+            },
+            lessons: {
+                completed_count: completedLessons,
+                total_count: totalLessons,
+                progress_percentage: calcPct(completedLessons, totalLessons)
+            },
+            topics: {
+                completed_count: completedTopics,
+                total_count: totalTopics,
+                progress_percentage: calcPct(completedTopics, totalTopics)
+            },
+            quizzes: {
+                completed_count: completedQuizzes,
+                total_count: totalQuizzes,
+                progress_percentage: calcPct(completedQuizzes, totalQuizzes)
+            },
+            assignments: {
+                completed_count: completedAssignments,
+                total_count: totalAssignments,
+                progress_percentage: calcPct(completedAssignments, totalAssignments)
+            }
+        };
+    }
+
+    // ─── 12. Inside Course View (Learning Page) ─────────────────────────────────
     async getCourseView(userId, courseId) {
         const student = await this._getStudentByUserId(userId);
 

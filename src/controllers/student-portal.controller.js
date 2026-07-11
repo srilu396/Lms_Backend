@@ -148,17 +148,54 @@ class StudentPortalController {
     }
 
 
-    // GET /student-portal/enrolled-courses?search=&page=1&limit=10
+    // GET /student-portal/enrolled-courses?search=&page=1&limit=10&filter=all
     async getEnrolledCourses(req, res, next) {
         try {
-            const { search, page, limit } = req.query;
-            const result = await studentPortalService.getEnrolledCourses(req.user.id, { search, page, limit });
+            const { search, page, limit, filter } = req.query;
+            const result = await studentPortalService.getEnrolledCourses(req.user.id, { search, page, limit, filter });
             
             res.status(200).json({
                 success: true,
                 message: 'Enrolled courses retrieved successfully',
                 data: result.data,
                 pagination: result.pagination
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // GET /student-portal/course/:courseId/home
+    async getCourseHome(req, res, next) {
+        try {
+            const { courseId } = req.params;
+            const homeData = await studentPortalService.getCourseHome(req.user.id, courseId);
+            
+            res.status(200).json({
+                success: true,
+                message: 'Course home retrieved successfully',
+                data: homeData
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // GET /student-portal/course/:courseId/:contentType/activity
+    async getCompletedItems(req, res, next) {
+        try {
+            const { courseId, contentType } = req.params;
+            const { page, limit, search, filter } = req.query;
+            
+            const completionService = require('../services/completion.service');
+            const data = await completionService.getCompletedContent(req.user.id, courseId, contentType, { page, limit, search, filter });
+            
+            res.status(200).json({
+                success: true,
+                message: `Activity for ${contentType} retrieved successfully`,
+                course_name: data.course_name,
+                data: data.data,
+                pagination: data.pagination
             });
         } catch (error) {
             next(error);

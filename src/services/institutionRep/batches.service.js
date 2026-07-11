@@ -184,44 +184,18 @@ class InstitutionRepBatchService {
 
     async getTotalItemsInCourse(courseId) {
         try {
-            // Count Lessons
+            // Count Lessons — new hierarchy: lessons.module_id → modules.course_id
             let lessonsCount = 0;
-            try {
-                // Try refactored hierarchy (lessons -> modules)
-                const [lessonsResult] = await sequelize.query(`
-                    SELECT COUNT(DISTINCT l.id) as count 
-                    FROM lessons l
-                    JOIN modules m ON l.module_id = m.id
-                    WHERE m.course_id = :courseId
-                `, { replacements: { courseId }, type: sequelize.QueryTypes.SELECT });
-                lessonsCount = parseInt(lessonsResult?.count || 0);
-            } catch (err) {
-                // Fallback to old hierarchy (lessons -> topics -> modules)
-                const [lessonsResult] = await sequelize.query(`
-                    SELECT COUNT(DISTINCT l.id) as count 
-                    FROM lessons l
-                    JOIN topics t ON l.topic_id = t.id
-                    JOIN modules m ON t.module_id = m.id
-                    WHERE m.course_id = :courseId
-                `, { replacements: { courseId }, type: sequelize.QueryTypes.SELECT });
-                lessonsCount = parseInt(lessonsResult?.count || 0);
-            }
+            const [lessonsResult] = await sequelize.query(`
+                SELECT COUNT(DISTINCT l.id) as count 
+                FROM lessons l
+                JOIN modules m ON l.module_id = m.id
+                WHERE m.course_id = :courseId
+            `, { replacements: { courseId }, type: sequelize.QueryTypes.SELECT });
+            lessonsCount = parseInt(lessonsResult?.count || 0);
 
-            // Count Quizzes
-            let quizzesCount = 0;
-            try {
-                // Try direct course_id query
-                quizzesCount = await Quiz.count({ where: { course_id: courseId } });
-            } catch (err) {
-                const [quizzesResult] = await sequelize.query(`
-                    SELECT COUNT(DISTINCT q.id) as count 
-                    FROM quizzes q
-                    JOIN topics t ON q.topic_id = t.id
-                    JOIN modules m ON t.module_id = m.id
-                    WHERE m.course_id = :courseId
-                `, { replacements: { courseId }, type: sequelize.QueryTypes.SELECT });
-                quizzesCount = parseInt(quizzesResult?.count || 0);
-            }
+            // Count Quizzes — quizzes link directly via course_id
+            const quizzesCount = await Quiz.count({ where: { course_id: courseId } });
 
             // Count Assignments (Assignments are directly linked to Courses)
             const assignmentsCount = await Assignment.count({ where: { course_id: courseId } });
@@ -334,30 +308,14 @@ class InstitutionRepBatchService {
             // Get total lessons in the course
             let lessonsCount = 0;
             if (courseId) {
-                try {
-                    // Try refactored hierarchy (lessons -> modules)
-                    const [lessonsResult] = await sequelize.query(`
-                        SELECT COUNT(DISTINCT l.id) as count 
-                        FROM lessons l
-                        JOIN modules m ON l.module_id = m.id
-                        WHERE m.course_id = :courseId
-                    `, { replacements: { courseId }, type: sequelize.QueryTypes.SELECT });
-                    lessonsCount = parseInt(lessonsResult?.count || 0);
-                } catch (err) {
-                    try {
-                        // Fallback to old hierarchy (lessons -> topics -> modules)
-                        const [lessonsResult] = await sequelize.query(`
-                            SELECT COUNT(DISTINCT l.id) as count 
-                            FROM lessons l
-                            JOIN topics t ON l.topic_id = t.id
-                            JOIN modules m ON t.module_id = m.id
-                            WHERE m.course_id = :courseId
-                        `, { replacements: { courseId }, type: sequelize.QueryTypes.SELECT });
-                        lessonsCount = parseInt(lessonsResult?.count || 0);
-                    } catch (e) {
-                        lessonsCount = 0;
-                    }
-                }
+                // New hierarchy: lessons belong directly to modules via module_id
+                const [lessonsResult] = await sequelize.query(`
+                    SELECT COUNT(DISTINCT l.id) as count 
+                    FROM lessons l
+                    JOIN modules m ON l.module_id = m.id
+                    WHERE m.course_id = :courseId
+                `, { replacements: { courseId }, type: sequelize.QueryTypes.SELECT });
+                lessonsCount = parseInt(lessonsResult?.count || 0);
             }
 
             if (lessonsCount > 0) {

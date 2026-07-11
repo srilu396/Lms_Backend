@@ -19,6 +19,7 @@ const {
     Tutor
 } = require('../models');
 const { Op } = require('sequelize');
+const { mediaInclude, serializeWithMedia } = require('../utils/media');
 
 function formatDate(date) {
     if (!date) return '';
@@ -235,17 +236,20 @@ class TutorPortalService {
                 {
                     model: Module,
                     as: 'modules',
-                    attributes: ['id', 'name', 'order_num', 'description'],
+                    attributes: ['id', 'name', 'order_num', 'description', 'image_url', 'video_url', 'pdf_url', 'url'],
                     include: [
+                        mediaInclude(),
                         {
                             model: Lesson,
                             as: 'lessons',
-                            attributes: ['id', 'name', 'order_num', 'type', 'duration_minutes', 'content_text', 'video_url', 'url', 'pdf_url'],
+                            attributes: ['id', 'name', 'order_num', 'type', 'duration_minutes', 'content_text', 'image_url', 'video_url', 'url', 'pdf_url'],
                             include: [
+                                mediaInclude(),
                                 {
                                     model: Topic,
                                     as: 'topics',
-                                    attributes: ['id', 'name', 'order_num', 'description', 'content_text', 'text', 'image_url', 'video_url', 'url', 'pdf_url']
+                                    attributes: ['id', 'name', 'order_num', 'description', 'content_text', 'text', 'image_url', 'video_url', 'url', 'pdf_url'],
+                                    include: [mediaInclude()]
                                 },
                                 {
                                     model: Quiz,
@@ -283,13 +287,29 @@ class TutorPortalService {
             ]
         });
 
+        // Serialize course structure with grouped media arrays
+        const courseJson = courseStructure ? courseStructure.toJSON() : null;
+        if (courseJson && courseJson.modules) {
+            courseJson.modules = courseJson.modules.map(m => {
+                const mod = serializeWithMedia(m);
+                if (mod.lessons) {
+                    mod.lessons = mod.lessons.map(l => {
+                        const les = serializeWithMedia(l);
+                        if (les.topics) les.topics = les.topics.map(t => serializeWithMedia(t));
+                        return les;
+                    });
+                }
+                return mod;
+            });
+        }
+
         return {
             batch_id: batch.id,
             batch_name: batch.name,
             batch_progress: batch.BatchPerformance
                 ? parseFloat(batch.BatchPerformance.overall_progress)
                 : 0,
-            course_structure: courseStructure
+            course_structure: courseJson
         };
     }
 

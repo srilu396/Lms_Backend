@@ -21,6 +21,7 @@ const {
     Domain
 } = models;
 const { Op } = require('sequelize');
+const { mediaInclude, serializeWithMedia } = require('../utils/media');
 
 class StudentPortalService {
 
@@ -225,17 +226,20 @@ class StudentPortalService {
                 {
                     model: Module,
                     as: 'modules',
-                    attributes: ['id', 'name', 'order_num', 'description'],
+                    attributes: ['id', 'name', 'order_num', 'description', 'image_url', 'video_url', 'pdf_url', 'url'],
                     include: [
+                        mediaInclude(),
                         {
                             model: Lesson,
                             as: 'lessons',
-                            attributes: ['id', 'name', 'order_num', 'type', 'duration_minutes', 'content_text', 'video_url', 'url', 'pdf_url'],
+                            attributes: ['id', 'name', 'order_num', 'type', 'duration_minutes', 'content_text', 'image_url', 'video_url', 'url', 'pdf_url'],
                             include: [
+                                mediaInclude(),
                                 {
                                     model: Topic,
                                     as: 'topics',
-                                    attributes: ['id', 'name', 'order_num', 'description', 'content_text', 'text', 'image_url', 'video_url', 'url', 'pdf_url']
+                                    attributes: ['id', 'name', 'order_num', 'description', 'content_text', 'text', 'image_url', 'video_url', 'url', 'pdf_url'],
+                                    include: [mediaInclude()]
                                 },
                                 {
                                     model: Quiz,
@@ -268,11 +272,27 @@ class StudentPortalService {
             ]
         });
 
+        // Serialize course structure with grouped media arrays
+        const courseStructureJson = courseStructure ? courseStructure.toJSON() : null;
+        if (courseStructureJson && courseStructureJson.modules) {
+            courseStructureJson.modules = courseStructureJson.modules.map(m => {
+                const mod = serializeWithMedia(m);
+                if (mod.lessons) {
+                    mod.lessons = mod.lessons.map(l => {
+                        const les = serializeWithMedia(l);
+                        if (les.topics) les.topics = les.topics.map(t => serializeWithMedia(t));
+                        return les;
+                    });
+                }
+                return mod;
+            });
+        }
+
         return {
             batch_id: batch.id,
             batch_name: batch.name,
             batch_status: batch.status,
-            course_structure: courseStructure
+            course_structure: courseStructureJson
         };
     }
 
@@ -602,17 +622,20 @@ class StudentPortalService {
                 {
                     model: Module,
                     as: 'modules',
-                    attributes: ['id', 'name', 'order_num', 'description'],
+                    attributes: ['id', 'name', 'order_num', 'description', 'image_url', 'video_url', 'pdf_url', 'url'],
                     include: [
+                        mediaInclude(),
                         {
                             model: Lesson,
                             as: 'lessons',
-                            attributes: ['id', 'name', 'order_num', 'type', 'content_text', 'video_url', 'image_url', 'duration_minutes', 'pdf_url'],
+                            attributes: ['id', 'name', 'order_num', 'type', 'content_text', 'video_url', 'image_url', 'duration_minutes', 'pdf_url', 'url'],
                             include: [
+                                mediaInclude(),
                                 {
                                     model: Topic,
                                     as: 'topics',
-                                    attributes: ['id', 'name', 'order_num', 'description', 'content_text', 'text', 'image_url', 'video_url', 'url', 'pdf_url']
+                                    attributes: ['id', 'name', 'order_num', 'description', 'content_text', 'text', 'image_url', 'video_url', 'url', 'pdf_url'],
+                                    include: [mediaInclude()]
                                 },
                                 { model: Quiz, as: 'quizzes', attributes: ['id', 'name'] },
                                 { model: Assignment, as: 'assignments', attributes: ['id', 'title'] }
@@ -659,13 +682,12 @@ class StudentPortalService {
                 }
 
                 const topics = (les.topics || []).map(top => {
-                    return {
-                        ...top.toJSON()
-                    };
+                    return serializeWithMedia(top.toJSON ? top.toJSON() : top);
                 });
 
+                const lesJson = serializeWithMedia(les.toJSON ? les.toJSON() : les);
                 return {
-                    ...les.toJSON(),
+                    ...lesJson,
                     isCompleted,
                     progressPct: progress ? parseFloat(progress.video_watch_pct || 0) : 0,
                     lastAccessed: progress ? progress.last_accessed : null,
@@ -679,8 +701,9 @@ class StudentPortalService {
             // Update prevModuleCompleted for the next module
             prevModuleCompleted = (progressPct === 100);
 
+            const modJson = serializeWithMedia(mod.toJSON ? mod.toJSON() : mod);
             return {
-                ...mod.toJSON(),
+                ...modJson,
                 progressPct,
                 isLocked,
                 isCompleted: progressPct === 100,

@@ -33,11 +33,26 @@ module.exports = (sequelize, DataTypes) => {
         tableName: 'topics',
         timestamps: true,
         createdAt: 'created_at',
-        updatedAt: false
+        updatedAt: false,
+        hooks: {
+            beforeDestroy: async (instance, options) => {
+                const { MediaAttachment } = require('../models');
+                await MediaAttachment.destroy({
+                    where: { entity_type: 'topic', entity_id: instance.id },
+                    transaction: options.transaction
+                });
+            }
+        }
     });
 
     Topic.associate = (models) => {
         Topic.belongsTo(models.Lesson, { foreignKey: 'lesson_id' });
+        Topic.hasMany(models.MediaAttachment, {
+            foreignKey: 'entity_id',
+            constraints: false,
+            scope: { entity_type: 'topic' },
+            as: 'attachments'
+        });
     };
 
     return Topic;

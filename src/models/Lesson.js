@@ -37,7 +37,16 @@ module.exports = (sequelize, DataTypes) => {
         tableName: 'lessons',
         timestamps: true,
         createdAt: 'created_at',
-        updatedAt: false
+        updatedAt: false,
+        hooks: {
+            beforeDestroy: async (instance, options) => {
+                const { MediaAttachment } = require('../models');
+                await MediaAttachment.destroy({
+                    where: { entity_type: 'lesson', entity_id: instance.id },
+                    transaction: options.transaction
+                });
+            }
+        }
     });
 
     Lesson.associate = (models) => {
@@ -46,6 +55,12 @@ module.exports = (sequelize, DataTypes) => {
         Lesson.hasMany(models.LessonProgress, { foreignKey: 'lesson_id' });
         Lesson.hasMany(models.Quiz, { foreignKey: 'lesson_id', as: 'quizzes' });
         Lesson.hasMany(models.Assignment, { foreignKey: 'lesson_id', as: 'assignments' });
+        Lesson.hasMany(models.MediaAttachment, {
+            foreignKey: 'entity_id',
+            constraints: false,
+            scope: { entity_type: 'lesson' },
+            as: 'attachments'
+        });
     };
 
     return Lesson;

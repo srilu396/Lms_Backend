@@ -65,7 +65,6 @@ class QuizService {
         const data = rows.map(quiz => ({
             id: quiz.id,
             quiz_title: quiz.name,
-            topic_id: quiz.topic_id,
             domain: quiz.domain || [],
             tags: quiz.tags || [],
             module: null, // As per requirements
@@ -84,6 +83,30 @@ class QuizService {
                 rowsPerPage: limit,
                 totalPages: Math.ceil(count / limit)
             }
+        };
+    }
+
+    async getQuizLookup(query = {}) {
+        const { search, limit = 10 } = query;
+        const parsedLimit = Math.min(parseInt(limit, 10) || 10, 50);
+
+        const where = {
+            status: 'published'
+        };
+
+        if (search) {
+            where.name = { [Op.iLike]: `%${search.trim()}%` };
+        }
+
+        const rows = await Quiz.findAll({
+            where,
+            limit: parsedLimit,
+            attributes: ['id', 'name'],
+            order: [['name', 'ASC']]
+        });
+
+        return {
+            data: rows
         };
     }
 
@@ -112,7 +135,6 @@ class QuizService {
 
         return {
             id: quiz.id,
-            topic_id: quiz.topic_id,
             quiz_title: quiz.name,
             instructions: quiz.instructions,
             max_attempts: quiz.max_attempts,
@@ -129,7 +151,7 @@ class QuizService {
     }
 
     async createQuiz(quizData) {
-        const { quiz_title, instructions, max_attempts, duration, total_marks, passing_score, domain, tags, questions, status, topic_id, is_published, shuffle_questions } = quizData;
+        const { quiz_title, instructions, max_attempts, duration, total_marks, passing_score, domain, tags, questions, status, is_published, shuffle_questions } = quizData;
 
         // Validate required fields
         if (!quiz_title) {
@@ -167,8 +189,7 @@ class QuizService {
                 tags: Array.isArray(tags) ? tags : (tags ? [tags] : []),
                 status: status || 'draft',
                 is_published: is_published || false,
-                shuffle_questions: shuffle_questions || false,
-                topic_id: topic_id || null
+                shuffle_questions: shuffle_questions || false
             });
 
             // Add questions if provided
@@ -197,7 +218,7 @@ class QuizService {
     }
 
     async updateQuiz(quizId, updateData) {
-        const { quiz_title, instructions, max_attempts, duration, total_marks, passing_score, domain, tags, questions, status, is_published, shuffle_questions, topic_id } = updateData;
+        const { quiz_title, instructions, max_attempts, duration, total_marks, passing_score, domain, tags, questions, status, is_published, shuffle_questions } = updateData;
 
         try {
             const quiz = await Quiz.findByPk(quizId);
@@ -220,7 +241,6 @@ class QuizService {
             if (status !== undefined) quiz.status = status;
             if (is_published !== undefined) quiz.is_published = is_published;
             if (shuffle_questions !== undefined) quiz.shuffle_questions = shuffle_questions;
-            if (topic_id !== undefined) quiz.topic_id = topic_id;
 
             await quiz.save();
 
@@ -273,6 +293,25 @@ class QuizService {
             throw {
                 statusCode: error.statusCode || 400,
                 message: error.message || 'Error deleting quiz'
+            };
+        }
+    }
+
+    async unlinkQuiz(quizId, updateField) {
+        try {
+            const quiz = await Quiz.findByPk(quizId);
+            if (!quiz) {
+                throw {
+                    statusCode: 404,
+                    message: 'Quiz not found'
+                };
+            }
+            await quiz.update(updateField);
+            return true;
+        } catch (error) {
+            throw {
+                statusCode: error.statusCode || 400,
+                message: error.message || 'Error unlinking quiz'
             };
         }
     }

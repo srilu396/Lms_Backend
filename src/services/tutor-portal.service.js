@@ -238,27 +238,48 @@ class TutorPortalService {
                     attributes: ['id', 'name', 'order_num', 'description'],
                     include: [
                         {
-                            model: Topic,
-                            as: 'topics',
-                            attributes: ['id', 'name', 'order_num'],
+                            model: Lesson,
+                            as: 'lessons',
+                            attributes: ['id', 'name', 'order_num', 'type', 'duration_minutes', 'content_text', 'video_url', 'url', 'pdf_url'],
                             include: [
                                 {
-                                    model: Lesson,
-                                    as: 'lessons',
-                                    attributes: ['id', 'name', 'order_num', 'type', 'duration_minutes', 'content_text', 'video_url', 'url']
+                                    model: Topic,
+                                    as: 'topics',
+                                    attributes: ['id', 'name', 'order_num', 'description', 'content_text', 'text', 'image_url', 'video_url', 'url', 'pdf_url']
                                 },
                                 {
                                     model: Quiz,
                                     as: 'quizzes',
                                     attributes: ['id', 'name'],
                                     required: false
+                                },
+                                {
+                                    model: Assignment,
+                                    as: 'assignments',
+                                    attributes: ['id', 'title'],
+                                    required: false
                                 }
-                            ],
-                            order: [['order_num', 'ASC']]
+                            ]
+                        },
+                        {
+                            model: Quiz,
+                            as: 'quizzes',
+                            attributes: ['id', 'name'],
+                            required: false
+                        },
+                        {
+                            model: Assignment,
+                            as: 'assignments',
+                            attributes: ['id', 'title'],
+                            required: false
                         }
-                    ],
-                    order: [['order_num', 'ASC']]
+                    ]
                 }
+            ],
+            order: [
+                [{ model: Module, as: 'modules' }, 'order_num', 'ASC'],
+                [{ model: Module, as: 'modules' }, { model: Lesson, as: 'lessons' }, 'order_num', 'ASC'],
+                [{ model: Module, as: 'modules' }, { model: Lesson, as: 'lessons' }, { model: Topic, as: 'topics' }, 'order_num', 'ASC']
             ]
         });
 
@@ -318,8 +339,8 @@ class TutorPortalService {
             const modules = await Module.findAll({ where: { course_id: { [Op.in]: courseIds } }, attributes: ['id'] });
             const moduleIds = modules.map(m => m.id);
             
-            const topics = await Topic.findAll({ where: { module_id: { [Op.in]: moduleIds } }, attributes: ['id'] });
-            const topicIds = topics.map(t => t.id);
+            const lessons = moduleIds.length > 0 ? await Lesson.findAll({ where: { module_id: { [Op.in]: moduleIds } }, attributes: ['id'] }) : [];
+            const lessonIds = lessons.map(l => l.id);
 
             const quizWhere = {
                 [Op.or]: [
@@ -329,8 +350,8 @@ class TutorPortalService {
             if (moduleIds.length > 0) {
                 quizWhere[Op.or].push({ module_id: { [Op.in]: moduleIds } });
             }
-            if (topicIds.length > 0) {
-                quizWhere[Op.or].push({ topic_id: { [Op.in]: topicIds } });
+            if (lessonIds.length > 0) {
+                quizWhere[Op.or].push({ lesson_id: { [Op.in]: lessonIds } });
             }
 
             total_quizzes = await Quiz.count({ where: quizWhere });
@@ -391,15 +412,15 @@ class TutorPortalService {
                  const modules = await Module.findAll({ where: { course_id: batch.course_id }, attributes: ['id'] });
                  const moduleIds = modules.map(m => m.id);
                  
-                 const topics = await Topic.findAll({ where: { module_id: { [Op.in]: moduleIds } }, attributes: ['id'] });
-                 const topicIds = topics.map(t => t.id);
+                 const lessons = moduleIds.length > 0 ? await Lesson.findAll({ where: { module_id: { [Op.in]: moduleIds } }, attributes: ['id'] }) : [];
+                 const lessonIds = lessons.map(l => l.id);
 
                  const quizzes = await Quiz.findAll({
                      where: {
                          [Op.or]: [
                              { course_id: batch.course_id },
                              { module_id: { [Op.in]: moduleIds } },
-                             { topic_id: { [Op.in]: topicIds } }
+                             { lesson_id: { [Op.in]: lessonIds } }
                          ]
                      },
                      order: [['created_at', 'DESC']]
@@ -494,15 +515,15 @@ class TutorPortalService {
         if (batch.course_id) {
             const modules = await Module.findAll({ where: { course_id: batch.course_id }, attributes: ['id'] });
             const moduleIds = modules.map(m => m.id);
-            const topics = await Topic.findAll({ where: { module_id: { [Op.in]: moduleIds } }, attributes: ['id'] });
-            const topicIds = topics.map(t => t.id);
+            const lessons = moduleIds.length > 0 ? await Lesson.findAll({ where: { module_id: { [Op.in]: moduleIds } }, attributes: ['id'] }) : [];
+            const lessonIds = lessons.map(l => l.id);
 
             quizzes = await Quiz.findAll({
                 where: {
                     [Op.or]: [
                         { course_id: batch.course_id },
                         { module_id: { [Op.in]: moduleIds } },
-                        { topic_id: { [Op.in]: topicIds } }
+                        { lesson_id: { [Op.in]: lessonIds } }
                     ]
                 }
             });

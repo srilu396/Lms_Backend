@@ -257,6 +257,17 @@ class AssignmentService {
             throw error;
         }
     }
+
+    async unlinkAssignment(id, updateField) {
+        const assignment = await db.Assignment.findByPk(id);
+        if (!assignment) {
+            const error = new Error('Assignment not found');
+            error.statusCode = 404;
+            throw error;
+        }
+        await assignment.update(updateField);
+        return true;
+    }
 }
 
 module.exports = new AssignmentService();

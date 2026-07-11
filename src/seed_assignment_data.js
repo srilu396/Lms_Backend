@@ -60,8 +60,7 @@ async function seedAssignmentData() {
                 submission_type: 'link',
                 max_score: 100,
                 status: 'active',
-                module_id: module1.id,
-                topic_id: topic1.id
+                module_id: module1.id
             }
         });
 
@@ -73,8 +72,7 @@ async function seedAssignmentData() {
                 submission_type: 'file',
                 max_score: 100,
                 status: 'active',
-                module_id: module1.id,
-                topic_id: topic1.id
+                module_id: module1.id
             }
         });
 

@@ -89,7 +89,6 @@ module.exports = (sequelize, DataTypes) => {
         Quiz.belongsTo(models.Course, { foreignKey: 'course_id', as: 'course' });
         Quiz.belongsTo(models.Module, { foreignKey: 'module_id', as: 'module' });
         Quiz.belongsTo(models.Lesson, { foreignKey: 'lesson_id', as: 'lesson' });
-        Quiz.belongsTo(models.Topic, { foreignKey: 'topic_id', as: 'topic' });
         Quiz.hasMany(models.QuizQuestion, { foreignKey: 'quiz_id' });
         Quiz.hasMany(models.QuizSubmission, { foreignKey: 'quiz_id' });
     };

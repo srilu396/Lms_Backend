@@ -40,6 +40,14 @@ router.get('/quiz/:quizId/review', studentPortalController.getQuizReview);
 // All courses enrolled by the student with progress and tutor details
 router.get('/enrolled-courses', studentPortalController.getEnrolledCourses);
 
+// GET /student-portal/course/:courseId/home
+// Overview of course details and learning statistics
+router.get('/course/:courseId/home', studentPortalController.getCourseHome);
+
+// GET /student-portal/course/:courseId/:contentType/activity
+// List items (modules, lessons, topics, quizzes, assignments) based on activity and lock status
+router.get('/course/:courseId/:contentType(modules|lessons|topics|quizzes|assignments)/activity', studentPortalController.getCompletedItems);
+
 // GET /student-portal/course/:courseId/view
 // Detailed course structure with completion status for the learning page
 router.get('/course/:courseId/view', studentPortalController.getCourseView);

@@ -25,21 +25,9 @@ function reorderLesson(lesson) {
             reordered[key] = lesson[key];
         }
     });
-    if ('topics' in lesson) {
-        reordered.topics = Array.isArray(lesson.topics)
-            ? [...lesson.topics]
-            : lesson.topics;
-    }
-    if ('quizzes' in lesson) {
-        reordered.quizzes = Array.isArray(lesson.quizzes)
-            ? [...lesson.quizzes]
-            : lesson.quizzes;
-    }
-    if ('assignments' in lesson) {
-        reordered.assignments = Array.isArray(lesson.assignments)
-            ? [...lesson.assignments]
-            : lesson.assignments;
-    }
+    reordered.topics = Array.isArray(lesson.topics) ? [...lesson.topics] : [];
+    reordered.quizzes = Array.isArray(lesson.quizzes) ? [...lesson.quizzes] : [];
+    reordered.assignments = Array.isArray(lesson.assignments) ? [...lesson.assignments] : [];
     return reordered;
 }
 
@@ -52,21 +40,15 @@ function reorderModule(module) {
             reordered[key] = module[key];
         }
     });
-    if ('lessons' in module) {
-        reordered.lessons = Array.isArray(module.lessons)
-            ? module.lessons.map(reorderLesson)
-            : module.lessons;
-    }
-    if ('quizzes' in module) {
-        reordered.quizzes = Array.isArray(module.quizzes)
-            ? [...module.quizzes]
-            : module.quizzes;
-    }
-    if ('assignments' in module) {
-        reordered.assignments = Array.isArray(module.assignments)
-            ? [...module.assignments]
-            : module.assignments;
-    }
+    reordered.lessons = Array.isArray(module.lessons)
+        ? module.lessons.map(reorderLesson)
+        : [];
+    reordered.quizzes = Array.isArray(module.quizzes)
+        ? [...module.quizzes]
+        : [];
+    reordered.assignments = Array.isArray(module.assignments)
+        ? [...module.assignments]
+        : [];
     return reordered;
 }
 
@@ -79,16 +61,12 @@ function reorderCourse(course) {
             reordered[key] = course[key];
         }
     });
-    if ('modules' in course) {
-        reordered.modules = Array.isArray(course.modules)
-            ? course.modules.map(reorderModule)
-            : course.modules;
-    }
-    if ('assignments' in course) {
-        reordered.assignments = Array.isArray(course.assignments)
-            ? course.assignments.map(reorderAssignment)
-            : course.assignments;
-    }
+    reordered.modules = Array.isArray(course.modules)
+        ? course.modules.map(reorderModule)
+        : [];
+    reordered.assignments = Array.isArray(course.assignments)
+        ? [...course.assignments]
+        : [];
     if ('stats' in course) {
         reordered.stats = course.stats;
     }
@@ -345,30 +323,27 @@ class CourseService {
         if (item.videos) item.videos = fixUrl(item.videos);
         if (item.content_blocks) fixBlocks(item.content_blocks);
 
-        if (item.modules) {
-            item.modules.forEach(m => {
-                if (m.images) m.images = fixUrl(m.images);
-                if (m.videos) m.videos = fixUrl(m.videos);
-                if (m.pdfs) m.pdfs = fixUrl(m.pdfs);
-                if (m.content_blocks) fixBlocks(m.content_blocks);
-                if (m.lessons) {
-                    m.lessons.forEach(l => {
-                        if (l.images) l.images = fixUrl(l.images);
-                        if (l.videos) l.videos = fixUrl(l.videos);
-                        if (l.pdfs) l.pdfs = fixUrl(l.pdfs);
-                        if (l.content_blocks) fixBlocks(l.content_blocks);
-                        if (l.topics) {
-                            l.topics.forEach(t => {
-                                if (t.images) t.images = fixUrl(t.images);
-                                if (t.videos) t.videos = fixUrl(t.videos);
-                                if (t.pdfs) t.pdfs = fixUrl(t.pdfs);
-                                if (t.content_blocks) fixBlocks(t.content_blocks);
-                            });
-                        }
-                    });
-                }
+        const modules = Array.isArray(item.modules) ? item.modules : [];
+        modules.forEach(m => {
+            if (m.images) m.images = fixUrl(m.images);
+            if (m.videos) m.videos = fixUrl(m.videos);
+            if (m.pdfs) m.pdfs = fixUrl(m.pdfs);
+            if (m.content_blocks) fixBlocks(m.content_blocks);
+            const lessons = Array.isArray(m.lessons) ? m.lessons : [];
+            lessons.forEach(l => {
+                if (l.images) l.images = fixUrl(l.images);
+                if (l.videos) l.videos = fixUrl(l.videos);
+                if (l.pdfs) l.pdfs = fixUrl(l.pdfs);
+                if (l.content_blocks) fixBlocks(l.content_blocks);
+                const topics = Array.isArray(l.topics) ? l.topics : [];
+                topics.forEach(t => {
+                    if (t.images) t.images = fixUrl(t.images);
+                    if (t.videos) t.videos = fixUrl(t.videos);
+                    if (t.pdfs) t.pdfs = fixUrl(t.pdfs);
+                    if (t.content_blocks) fixBlocks(t.content_blocks);
+                });
             });
-        }
+        });
     }
 
     async getCourseById(id, transaction = null) {
@@ -424,19 +399,20 @@ class CourseService {
         const courseJson = course.toJSON();
 
         // Calculate totals for stats
-        let totalModules = courseJson.modules.length;
+        const modules = Array.isArray(courseJson.modules) ? courseJson.modules : [];
+        let totalModules = modules.length;
         let totalLessons = 0;
         let totalTopics = 0;
         let totalDuration = 0;
 
-        courseJson.modules.forEach(m => {
-            if (m.lessons) {
-                totalLessons += m.lessons.length;
-                m.lessons.forEach(l => {
-                    totalDuration += (l.duration_minutes || 0);
-                    totalTopics += (l.topics ? l.topics.length : 0);
-                });
-            }
+        modules.forEach(m => {
+            const lessons = Array.isArray(m.lessons) ? m.lessons : [];
+            totalLessons += lessons.length;
+            lessons.forEach(l => {
+                totalDuration += (l.duration_minutes || 0);
+                const topics = Array.isArray(l.topics) ? l.topics : [];
+                totalTopics += topics.length;
+            });
         });
 
         courseJson.no_of_modules = totalModules;
@@ -444,15 +420,15 @@ class CourseService {
         courseJson.total_topics = totalTopics;
 
         // Serialize media into grouped arrays for each entity
-        courseJson.modules = courseJson.modules.map(m => {
+        courseJson.modules = modules.map(m => {
             const mod = serializeWithMedia(m);
-            if (mod.lessons) {
-                mod.lessons = mod.lessons.map(l => {
-                    const les = serializeWithMedia(l);
-                    if (les.topics) les.topics = les.topics.map(t => serializeWithMedia(t));
-                    return les;
-                });
-            }
+            const lessons = Array.isArray(mod.lessons) ? mod.lessons : [];
+            mod.lessons = lessons.map(l => {
+                const les = serializeWithMedia(l);
+                const topics = Array.isArray(les.topics) ? les.topics : [];
+                les.topics = topics.map(t => serializeWithMedia(t));
+                return les;
+            });
             return mod;
         });
 
@@ -724,16 +700,18 @@ class CourseService {
         }
 
         const courseJson = course.toJSON();
+        const rawModules = Array.isArray(courseJson.modules) ? courseJson.modules : [];
+
         // Serialize media into grouped arrays before building the response
-        const modulesJson = courseJson.modules.map(m => {
+        const modulesJson = rawModules.map(m => {
             const mod = serializeWithMedia(m);
-            if (mod.lessons) {
-                mod.lessons = mod.lessons.map(l => {
-                    const les = serializeWithMedia(l);
-                    if (les.topics) les.topics = les.topics.map(t => serializeWithMedia(t));
-                    return les;
-                });
-            }
+            const lessons = Array.isArray(mod.lessons) ? mod.lessons : [];
+            mod.lessons = lessons.map(l => {
+                const les = serializeWithMedia(l);
+                const topics = Array.isArray(les.topics) ? les.topics : [];
+                les.topics = topics.map(t => serializeWithMedia(t));
+                return les;
+            });
             return mod;
         });
 
@@ -754,13 +732,12 @@ class CourseService {
             let totalLessonsCount = 0;
             let completedLessonsCount = 0;
             
-            if (mod.lessons) {
-                totalLessonsCount = mod.lessons.length;
-                mod.lessons.forEach(l => {
-                    const progress = lessonProgressRecords.find(p => p.lesson_id === l.id && p.is_completed);
-                    if (progress) completedLessonsCount++; 
-                });
-            }
+            const lessons = Array.isArray(mod.lessons) ? mod.lessons : [];
+            totalLessonsCount = lessons.length;
+            lessons.forEach(l => {
+                const progress = lessonProgressRecords.find(p => p.lesson_id === l.id && p.is_completed);
+                if (progress) completedLessonsCount++; 
+            });
 
             mod.total_lessons_count = totalLessonsCount;
             mod.completed_lessons_count = completedLessonsCount;

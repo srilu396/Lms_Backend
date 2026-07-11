@@ -1,81 +1,95 @@
-const { Lesson, Topic, Module, StudentProgress, LessonProgress, Enrollment, Assignment, Quiz } = require('../models');
+const { Lesson, Topic, Module, StudentProgress, LessonProgress, Enrollment, Assignment, Quiz, sequelize } = require('../models');
+const { handleContentSync, prepareEntityDbData, mediaInclude, serializeWithMedia } = require('../utils/media');
 
 class LessonService {
     async createLesson(moduleId, data) {
-        if (data.quiz_ids !== undefined && data.quizzes === undefined) {
-            data.quizzes = data.quiz_ids;
-        }
-        const { assignment_ids, quizzes, ...lessonData } = data;
-        const mod = await Module.findByPk(moduleId);
-        if (!mod) {
-            const error = new Error('Module not found');
-            error.statusCode = 404;
-            throw error;
-        }
-        const lesson = await Lesson.create({ ...lessonData, module_id: moduleId });
+        return await sequelize.transaction(async (transaction) => {
+            if (data.quiz_ids !== undefined && data.quizzes === undefined) {
+                data.quizzes = data.quiz_ids;
+            }
+            const { assignment_ids, quizzes, ...lessonData } = data;
+            const mod = await Module.findByPk(moduleId, { transaction });
+            if (!mod) {
+                const error = new Error('Module not found');
+                error.statusCode = 404;
+                throw error;
+            }
 
-        if (assignment_ids && Array.isArray(assignment_ids)) {
-            await Assignment.update(
-                { lesson_id: lesson.id, module_id: moduleId, course_id: mod.course_id },
-                { where: { id: assignment_ids } }
-            );
-        }
-        if (quizzes && Array.isArray(quizzes)) {
-            await Quiz.update(
-                { lesson_id: lesson.id, module_id: moduleId, course_id: mod.course_id },
-                { where: { id: quizzes } }
-            );
-        }
+            // Prepare DB data and sync legacy columns from content_blocks
+            const dbData = prepareEntityDbData(lessonData);
 
-        return await lesson.reload({
-            include: [
-                { model: Topic, as: 'topics' },
-                { model: Assignment, as: 'assignments' },
-                { model: Quiz, as: 'quizzes' }
-            ]
+            const lesson = await Lesson.create({ ...dbData, module_id: moduleId }, { transaction });
+
+            // Sync content blocks / media attachments
+            await handleContentSync('lesson', lesson.id, data, transaction);
+
+            if (assignment_ids && Array.isArray(assignment_ids)) {
+                await Assignment.update(
+                    { lesson_id: lesson.id, module_id: moduleId, course_id: mod.course_id },
+                    { where: { id: assignment_ids }, transaction }
+                );
+            }
+            if (quizzes && Array.isArray(quizzes)) {
+                await Quiz.update(
+                    { lesson_id: lesson.id, module_id: moduleId, course_id: mod.course_id },
+                    { where: { id: quizzes }, transaction }
+                );
+            }
+
+            return await this._reloadLesson(lesson, transaction);
         });
     }
 
     async updateLesson(lessonId, data) {
-        if (data.quiz_ids !== undefined && data.quizzes === undefined) {
-            data.quizzes = data.quiz_ids;
-        }
-        const { assignment_ids, quizzes, ...lessonData } = data;
-        const lesson = await Lesson.findByPk(lessonId, {
-            include: [{ model: Module }]
-        });
-        if (!lesson) {
-            const error = new Error('Lesson not found');
-            error.statusCode = 404;
-            throw error;
-        }
-        await lesson.update(lessonData);
+        return await sequelize.transaction(async (transaction) => {
+            if (data.quiz_ids !== undefined && data.quizzes === undefined) {
+                data.quizzes = data.quiz_ids;
+            }
+            const { assignment_ids, quizzes, ...lessonData } = data;
+            const lesson = await Lesson.findByPk(lessonId, {
+                include: [{ model: Module }],
+                transaction
+            });
+            if (!lesson) {
+                const error = new Error('Lesson not found');
+                error.statusCode = 404;
+                throw error;
+            }
 
-        if (assignment_ids !== undefined) {
-            await Assignment.update({ lesson_id: null, module_id: null, course_id: null }, { where: { lesson_id: lesson.id } });
-            if (Array.isArray(assignment_ids) && assignment_ids.length > 0) {
+            // Prepare DB data and sync legacy columns from content_blocks
+            const dbData = prepareEntityDbData(lessonData);
+
+            await lesson.update(dbData, { transaction });
+
+            // Sync content blocks / media attachments
+            await handleContentSync('lesson', lesson.id, data, transaction);
+
+            if (assignment_ids !== undefined) {
                 await Assignment.update(
-                    { lesson_id: lesson.id, module_id: lesson.module_id, course_id: lesson.Module ? lesson.Module.course_id : null },
-                    { where: { id: assignment_ids } }
+                    { lesson_id: null, module_id: null, course_id: null },
+                    { where: { lesson_id: lesson.id }, transaction }
                 );
+                if (Array.isArray(assignment_ids) && assignment_ids.length > 0) {
+                    await Assignment.update(
+                        { lesson_id: lesson.id, module_id: lesson.module_id, course_id: lesson.Module ? lesson.Module.course_id : null },
+                        { where: { id: assignment_ids }, transaction }
+                    );
+                }
             }
-        }
-        if (quizzes !== undefined) {
-            await Quiz.update({ lesson_id: null, module_id: null, course_id: null }, { where: { lesson_id: lesson.id } });
-            if (Array.isArray(quizzes) && quizzes.length > 0) {
+            if (quizzes !== undefined) {
                 await Quiz.update(
-                    { lesson_id: lesson.id, module_id: lesson.module_id, course_id: lesson.Module ? lesson.Module.course_id : null },
-                    { where: { id: quizzes } }
+                    { lesson_id: null, module_id: null, course_id: null },
+                    { where: { lesson_id: lesson.id }, transaction }
                 );
+                if (Array.isArray(quizzes) && quizzes.length > 0) {
+                    await Quiz.update(
+                        { lesson_id: lesson.id, module_id: lesson.module_id, course_id: lesson.Module ? lesson.Module.course_id : null },
+                        { where: { id: quizzes }, transaction }
+                    );
+                }
             }
-        }
 
-        return await lesson.reload({
-            include: [
-                { model: Topic, as: 'topics' },
-                { model: Assignment, as: 'assignments' },
-                { model: Quiz, as: 'quizzes' }
-            ]
+            return await this._reloadLesson(lesson, transaction);
         });
     }
 
@@ -156,6 +170,24 @@ class LessonService {
             module_completed: moduleCompleted,
             next_module_unlocked: moduleCompleted
         };
+    }
+
+    async _reloadLesson(lesson, transaction = null) {
+        const reloaded = await lesson.reload({
+            include: [
+                { model: Topic, as: 'topics', include: [mediaInclude()] },
+                { model: Assignment, as: 'assignments' },
+                { model: Quiz, as: 'quizzes' },
+                mediaInclude()
+            ],
+            transaction
+        });
+        const json = reloaded.toJSON();
+        const result = serializeWithMedia(json);
+        if (result.topics) {
+            result.topics = result.topics.map(t => serializeWithMedia(t));
+        }
+        return result;
     }
 }
 

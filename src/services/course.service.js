@@ -1,5 +1,6 @@
-const { Course, Module, Topic, Lesson, StudentProgress, LessonProgress, Assignment, Quiz, sequelize } = require('../models');
+const { Course, Module, Topic, Lesson, StudentProgress, LessonProgress, Assignment, Quiz, MediaAttachment, sequelize } = require('../models');
 const { Op } = require('sequelize');
+const { handleContentSync, prepareEntityDbData, mediaInclude, serializeWithMedia } = require('../utils/media');
 
 function mapQuizIdsToQuizzes(obj, isRoot = false) {
     if (obj && typeof obj === 'object') {
@@ -15,21 +16,6 @@ function mapQuizIdsToQuizzes(obj, isRoot = false) {
     }
 }
 
-function reorderAssignment(assignment) {
-    if (!assignment || typeof assignment !== 'object') return assignment;
-    return { ...assignment };
-}
-
-function reorderQuiz(quiz) {
-    if (!quiz || typeof quiz !== 'object') return quiz;
-    return { ...quiz };
-}
-
-function reorderTopic(topic) {
-    if (!topic || typeof topic !== 'object') return topic;
-    return { ...topic };
-}
-
 function reorderLesson(lesson) {
     if (!lesson || typeof lesson !== 'object') return lesson;
     const excludeKeys = ['topics', 'quizzes', 'assignments'];
@@ -41,17 +27,17 @@ function reorderLesson(lesson) {
     });
     if ('topics' in lesson) {
         reordered.topics = Array.isArray(lesson.topics)
-            ? lesson.topics.map(reorderTopic)
+            ? [...lesson.topics]
             : lesson.topics;
     }
     if ('quizzes' in lesson) {
         reordered.quizzes = Array.isArray(lesson.quizzes)
-            ? lesson.quizzes.map(reorderQuiz)
+            ? [...lesson.quizzes]
             : lesson.quizzes;
     }
     if ('assignments' in lesson) {
         reordered.assignments = Array.isArray(lesson.assignments)
-            ? lesson.assignments.map(reorderAssignment)
+            ? [...lesson.assignments]
             : lesson.assignments;
     }
     return reordered;
@@ -73,12 +59,12 @@ function reorderModule(module) {
     }
     if ('quizzes' in module) {
         reordered.quizzes = Array.isArray(module.quizzes)
-            ? module.quizzes.map(reorderQuiz)
+            ? [...module.quizzes]
             : module.quizzes;
     }
     if ('assignments' in module) {
         reordered.assignments = Array.isArray(module.assignments)
-            ? module.assignments.map(reorderAssignment)
+            ? [...module.assignments]
             : module.assignments;
     }
     return reordered;
@@ -111,101 +97,118 @@ function reorderCourse(course) {
 
 class CourseService {
     async createCourse(data) {
-        const courseData = JSON.parse(JSON.stringify(data));
-        mapQuizIdsToQuizzes(courseData, true);
-        
-        // Handle mapped status 'published' -> 'active'
-        if (courseData.status === 'published') {
-            courseData.status = 'active';
-        }
+        return await sequelize.transaction(async (transaction) => {
+            const courseData = JSON.parse(JSON.stringify(data));
+            mapQuizIdsToQuizzes(courseData, true);
+            
+            // Handle mapped status 'published' -> 'active'
+            if (courseData.status === 'published') {
+                courseData.status = 'active';
+            }
 
-        const courseAssignmentIds = courseData.assignment_ids || [];
-        delete courseData.assignment_ids;
-        delete courseData.quizzes;
-        delete courseData.quiz_ids;
+            const courseAssignmentIds = courseData.assignment_ids || [];
+            delete courseData.assignment_ids;
+            delete courseData.quizzes;
+            delete courseData.quiz_ids;
 
-        if (courseData.modules) {
-            courseData.modules.forEach(m => {
-                delete m.assignment_ids;
-                delete m.quizzes;
+            if (courseData.modules) {
+                courseData.modules.forEach(m => {
+                    const cleanM = prepareEntityDbData(m);
+                    Object.assign(m, cleanM);
+                    delete m.assignment_ids;
+                    delete m.quizzes;
 
-                if (m.lessons) {
-                    m.lessons.forEach(l => {
-                        delete l.assignment_ids;
-                        delete l.quizzes;
+                    if (m.lessons) {
+                        m.lessons.forEach(l => {
+                            const cleanL = prepareEntityDbData(l);
+                            Object.assign(l, cleanL);
+                            delete l.assignment_ids;
+                            delete l.quizzes;
 
-                        if (l.topics) {
-                            l.topics.forEach(t => {
-                                delete t.assignment_ids;
-                                delete t.quizzes;
-                            });
-                        }
-                    });
-                }
+                            if (l.topics) {
+                                l.topics.forEach(t => {
+                                    const cleanT = prepareEntityDbData(t);
+                                    Object.assign(t, cleanT);
+                                    delete t.assignment_ids;
+                                    delete t.quizzes;
+                                });
+                            }
+                        });
+                    }
+                });
+            }
+
+            const course = await Course.create(courseData, {
+                include: [
+                    {
+                        model: Module,
+                        as: 'modules',
+                        include: [
+                            {
+                                model: Lesson,
+                                as: 'lessons',
+                                include: [
+                                    { 
+                                        model: Topic, 
+                                        as: 'topics'
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ],
+                transaction
             });
-        }
 
-        const course = await Course.create(courseData, {
-            include: [
-                {
-                    model: Module,
-                    as: 'modules',
-                    include: [
-                        {
-                            model: Lesson,
-                            as: 'lessons',
-                            include: [
-                                { 
-                                    model: Topic, 
-                                    as: 'topics'
+            if (courseAssignmentIds.length > 0) {
+                await Assignment.update({ course_id: course.id }, { where: { id: courseAssignmentIds }, transaction });
+            }
+
+            if (data.modules && course.modules) {
+                for (let mIdx = 0; mIdx < data.modules.length; mIdx++) {
+                    const origModule = data.modules[mIdx];
+                    const createdModule = course.modules[mIdx];
+
+                    if (origModule.assignment_ids && origModule.assignment_ids.length > 0) {
+                        await Assignment.update({ module_id: createdModule.id, course_id: course.id }, { where: { id: origModule.assignment_ids }, transaction });
+                    }
+                    if (origModule.quizzes && origModule.quizzes.length > 0) {
+                        await Quiz.update({ module_id: createdModule.id, course_id: course.id }, { where: { id: origModule.quizzes }, transaction });
+                    }
+
+                    // Sync module content blocks / media attachments
+                    await handleContentSync('module', createdModule.id, origModule, transaction);
+
+                    if (origModule.lessons && createdModule.lessons) {
+                        for (let lIdx = 0; lIdx < origModule.lessons.length; lIdx++) {
+                            const origLesson = origModule.lessons[lIdx];
+                            const createdLesson = createdModule.lessons[lIdx];
+
+                            if (origLesson.assignment_ids && origLesson.assignment_ids.length > 0) {
+                                await Assignment.update({ lesson_id: createdLesson.id, module_id: createdModule.id, course_id: course.id }, { where: { id: origLesson.assignment_ids }, transaction });
+                            }
+                            if (origLesson.quizzes && origLesson.quizzes.length > 0) {
+                                await Quiz.update({ lesson_id: createdLesson.id, module_id: createdModule.id, course_id: course.id }, { where: { id: origLesson.quizzes }, transaction });
+                            }
+
+                            // Sync lesson content blocks / media attachments
+                            await handleContentSync('lesson', createdLesson.id, origLesson, transaction);
+
+                            if (origLesson.topics && createdLesson.topics) {
+                                for (let tIdx = 0; tIdx < origLesson.topics.length; tIdx++) {
+                                    const origTopic = origLesson.topics[tIdx];
+                                    const createdTopic = createdLesson.topics[tIdx];
+                                    // Sync topic content blocks / media attachments
+                                    await handleContentSync('topic', createdTopic.id, origTopic, transaction);
                                 }
-                            ]
-                        }
-                    ]
-                }
-            ]
-        });
-
-        if (courseAssignmentIds.length > 0) {
-            await Assignment.update({ course_id: course.id }, { where: { id: courseAssignmentIds } });
-        }
-
-        if (data.modules && course.modules) {
-            for (let mIdx = 0; mIdx < data.modules.length; mIdx++) {
-                const origModule = data.modules[mIdx];
-                const createdModule = course.modules[mIdx];
-
-                if (origModule.assignment_ids && origModule.assignment_ids.length > 0) {
-                    await Assignment.update({ module_id: createdModule.id, course_id: course.id }, { where: { id: origModule.assignment_ids } });
-                }
-                if (origModule.quizzes && origModule.quizzes.length > 0) {
-                    await Quiz.update({ module_id: createdModule.id, course_id: course.id }, { where: { id: origModule.quizzes } });
-                }
-
-                if (origModule.lessons && createdModule.lessons) {
-                    for (let lIdx = 0; lIdx < origModule.lessons.length; lIdx++) {
-                        const origLesson = origModule.lessons[lIdx];
-                        const createdLesson = createdModule.lessons[lIdx];
-
-                        if (origLesson.assignment_ids && origLesson.assignment_ids.length > 0) {
-                            await Assignment.update({ lesson_id: createdLesson.id, module_id: createdModule.id, course_id: course.id }, { where: { id: origLesson.assignment_ids } });
-                        }
-                        if (origLesson.quizzes && origLesson.quizzes.length > 0) {
-                            await Quiz.update({ lesson_id: createdLesson.id, module_id: createdModule.id, course_id: course.id }, { where: { id: origLesson.quizzes } });
-                        }
-
-                        // Topics do not contain assignments or quizzes
-                        if (origLesson.topics && createdLesson.topics) {
-                            for (let tIdx = 0; tIdx < origLesson.topics.length; tIdx++) {
-                                // Topics only contain content details
                             }
                         }
                     }
                 }
             }
-        }
 
-        return await this.getCourseById(course.id);
+            return await this.getCourseById(course.id, transaction);
+        });
     }
 
     async getCourses(query = {}) {
@@ -321,31 +324,45 @@ class CourseService {
         if (!item) return;
         const fixUrl = (url) => {
             if (!url) return url;
+            if (Array.isArray(url)) return url.map(u => fixUrl(u));
             if (url.startsWith('blob:')) url = url.replace(/^blob:/, '');
             if (url.startsWith('http')) return url;
             const baseUrl = process.env.BASE_URL || 'http://localhost:5000';
             return `${baseUrl.replace(/\/$/, '')}/${url.replace(/^\//, '')}`;
         };
 
+        const fixBlocks = (blocks) => {
+            if (!blocks || !Array.isArray(blocks)) return;
+            blocks.forEach(block => {
+                if (block.type !== 'text' && block.value) {
+                    block.value = fixUrl(block.value);
+                }
+            });
+        };
+
         if (item.thumbnail_url) item.thumbnail_url = fixUrl(item.thumbnail_url);
-        if (item.image_url) item.image_url = fixUrl(item.image_url);
-        if (item.video_url) item.video_url = fixUrl(item.video_url);
+        if (item.images) item.images = fixUrl(item.images);
+        if (item.videos) item.videos = fixUrl(item.videos);
+        if (item.content_blocks) fixBlocks(item.content_blocks);
 
         if (item.modules) {
             item.modules.forEach(m => {
-                if (m.image_url) m.image_url = fixUrl(m.image_url);
-                if (m.video_url) m.video_url = fixUrl(m.video_url);
-                if (m.pdf_url) m.pdf_url = fixUrl(m.pdf_url);
+                if (m.images) m.images = fixUrl(m.images);
+                if (m.videos) m.videos = fixUrl(m.videos);
+                if (m.pdfs) m.pdfs = fixUrl(m.pdfs);
+                if (m.content_blocks) fixBlocks(m.content_blocks);
                 if (m.lessons) {
                     m.lessons.forEach(l => {
-                        if (l.image_url) l.image_url = fixUrl(l.image_url);
-                        if (l.video_url) l.video_url = fixUrl(l.video_url);
-                        if (l.pdf_url) l.pdf_url = fixUrl(l.pdf_url);
+                        if (l.images) l.images = fixUrl(l.images);
+                        if (l.videos) l.videos = fixUrl(l.videos);
+                        if (l.pdfs) l.pdfs = fixUrl(l.pdfs);
+                        if (l.content_blocks) fixBlocks(l.content_blocks);
                         if (l.topics) {
                             l.topics.forEach(t => {
-                                if (t.image_url) t.image_url = fixUrl(t.image_url);
-                                if (t.video_url) t.video_url = fixUrl(t.video_url);
-                                if (t.pdf_url) t.pdf_url = fixUrl(t.pdf_url);
+                                if (t.images) t.images = fixUrl(t.images);
+                                if (t.videos) t.videos = fixUrl(t.videos);
+                                if (t.pdfs) t.pdfs = fixUrl(t.pdfs);
+                                if (t.content_blocks) fixBlocks(t.content_blocks);
                             });
                         }
                     });
@@ -354,7 +371,7 @@ class CourseService {
         }
     }
 
-    async getCourseById(id) {
+    async getCourseById(id, transaction = null) {
         const course = await Course.findByPk(id, {
             include: [
                 { 
@@ -373,15 +390,18 @@ class CourseService {
                     include: [
                         { model: Assignment, as: 'assignments' },
                         { model: Quiz, as: 'quizzes' },
+                        mediaInclude(),
                         {
                             model: Lesson,
                             as: 'lessons',
                             include: [
                                 { model: Assignment, as: 'assignments' },
                                 { model: Quiz, as: 'quizzes' },
+                                mediaInclude(),
                                 { 
                                     model: Topic, 
-                                    as: 'topics'
+                                    as: 'topics',
+                                    include: [mediaInclude()]
                                 }
                             ]
                         }
@@ -392,7 +412,8 @@ class CourseService {
                 [{ model: Module, as: 'modules' }, 'order_num', 'ASC'],
                 [{ model: Module, as: 'modules' }, { model: Lesson, as: 'lessons' }, 'order_num', 'ASC'],
                 [{ model: Module, as: 'modules' }, { model: Lesson, as: 'lessons' }, { model: Topic, as: 'topics' }, 'order_num', 'ASC']
-            ]
+            ],
+            transaction
         });
         if (!course) {
             const error = new Error('Course not found');
@@ -421,6 +442,19 @@ class CourseService {
         courseJson.no_of_modules = totalModules;
         courseJson.total_lessons = totalLessons;
         courseJson.total_topics = totalTopics;
+
+        // Serialize media into grouped arrays for each entity
+        courseJson.modules = courseJson.modules.map(m => {
+            const mod = serializeWithMedia(m);
+            if (mod.lessons) {
+                mod.lessons = mod.lessons.map(l => {
+                    const les = serializeWithMedia(l);
+                    if (les.topics) les.topics = les.topics.map(t => serializeWithMedia(t));
+                    return les;
+                });
+            }
+            return mod;
+        });
 
         this.formatMediaUrls(courseJson);
 
@@ -498,17 +532,20 @@ class CourseService {
                 for (const mData of inputModules) {
                     let mod;
                     const { lessons: inputLessons, assignment_ids: mAssignmentIds, quizzes: mQuizzes, ...moduleFields } = mData;
+                    const moduleDbData = prepareEntityDbData(moduleFields);
                     
                     if (mData.id) {
                         mod = existingModules.find(m => m.id === mData.id);
                         if (mod) {
-                            await mod.update(moduleFields, { transaction });
+                            await mod.update(moduleDbData, { transaction });
                         } else {
-                            mod = await Module.create({ ...moduleFields, course_id: course.id }, { transaction });
+                            mod = await Module.create({ ...moduleDbData, course_id: course.id }, { transaction });
                         }
                     } else {
-                        mod = await Module.create({ ...moduleFields, course_id: course.id }, { transaction });
+                        mod = await Module.create({ ...moduleDbData, course_id: course.id }, { transaction });
                     }
+                    // Sync module content blocks / media attachments
+                    await handleContentSync('module', mod.id, mData, transaction);
 
                     // Link module-level assessments
                     if (mAssignmentIds !== undefined) {
@@ -551,17 +588,20 @@ class CourseService {
                         for (const lData of inputLessons) {
                             let les;
                             const { topics: inputTopics, assignment_ids: lAssignmentIds, quizzes: lQuizzes, ...lessonFields } = lData;
+                            const lessonDbData = prepareEntityDbData(lessonFields);
 
                             if (lData.id) {
                                 les = existingLessons.find(l => l.id === lData.id);
                                 if (les) {
-                                    await les.update(lessonFields, { transaction });
+                                    await les.update(lessonDbData, { transaction });
                                 } else {
-                                    les = await Lesson.create({ ...lessonFields, module_id: mod.id }, { transaction });
+                                    les = await Lesson.create({ ...lessonDbData, module_id: mod.id }, { transaction });
                                 }
                             } else {
-                                les = await Lesson.create({ ...lessonFields, module_id: mod.id }, { transaction });
+                                les = await Lesson.create({ ...lessonDbData, module_id: mod.id }, { transaction });
                             }
+                            // Sync lesson content blocks / media attachments
+                            await handleContentSync('lesson', les.id, lData, transaction);
 
                             // Link lesson-level assessments
                             if (lAssignmentIds !== undefined) {
@@ -597,18 +637,20 @@ class CourseService {
                                 // Create or Update topics
                                 for (const tData of inputTopics) {
                                     let top;
-                                    const { ...topicFields } = tData;
+                                    const topicDbData = prepareEntityDbData(tData);
 
                                     if (tData.id) {
                                         top = existingTopics.find(t => t.id === tData.id);
                                         if (top) {
-                                            await top.update(topicFields, { transaction });
+                                            await top.update(topicDbData, { transaction });
                                         } else {
-                                            top = await Topic.create({ ...topicFields, lesson_id: les.id }, { transaction });
+                                            top = await Topic.create({ ...topicDbData, lesson_id: les.id }, { transaction });
                                         }
                                     } else {
-                                        top = await Topic.create({ ...topicFields, lesson_id: les.id }, { transaction });
+                                        top = await Topic.create({ ...topicDbData, lesson_id: les.id }, { transaction });
                                     }
+                                    // Sync topic content blocks / media attachments
+                                    await handleContentSync('topic', top.id, tData, transaction);
                                 }
                             }
                         }
@@ -650,15 +692,18 @@ class CourseService {
                     include: [
                         { model: Assignment, as: 'assignments' },
                         { model: Quiz, as: 'quizzes' },
+                        mediaInclude(),
                         {
                             model: Lesson,
                             as: 'lessons',
                             include: [
                                 { model: Assignment, as: 'assignments' },
                                 { model: Quiz, as: 'quizzes' },
+                                mediaInclude(),
                                 { 
                                     model: Topic, 
-                                    as: 'topics'
+                                    as: 'topics',
+                                    include: [mediaInclude()]
                                 }
                             ]
                         }
@@ -679,7 +724,18 @@ class CourseService {
         }
 
         const courseJson = course.toJSON();
-        const modulesJson = courseJson.modules.map(m => m);
+        // Serialize media into grouped arrays before building the response
+        const modulesJson = courseJson.modules.map(m => {
+            const mod = serializeWithMedia(m);
+            if (mod.lessons) {
+                mod.lessons = mod.lessons.map(l => {
+                    const les = serializeWithMedia(l);
+                    if (les.topics) les.topics = les.topics.map(t => serializeWithMedia(t));
+                    return les;
+                });
+            }
+            return mod;
+        });
 
         let progressRecords = [];
         let lessonProgressRecords = [];

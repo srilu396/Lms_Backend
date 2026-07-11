@@ -377,8 +377,8 @@ const generateReportPdf = async (institutionId, reportType) => {
         const moduleIds = modules.map(m => m.id);
         
         let lessons = [];
-        try {
-            // Try refactored hierarchy (lessons table has module_id)
+        if (moduleIds.length > 0) {
+            // New hierarchy: lessons belong directly to modules via module_id
             const dbLessons = await sequelize.query(
                 'SELECT id, name, module_id FROM lessons WHERE module_id IN (:moduleIds)',
                 {
@@ -393,39 +393,8 @@ const generateReportPdf = async (institutionId, reportType) => {
                 module_id: l.module_id,
                 course_id: l.module_id ? moduleCourseMap.get(l.module_id) : null
             }));
-        } catch (err) {
-            // Fallback to old hierarchy (lessons -> topics -> modules)
-            const dbTopics = await sequelize.query(
-                'SELECT id, module_id FROM topics WHERE module_id IN (:moduleIds)',
-                {
-                    replacements: { moduleIds },
-                    type: sequelize.QueryTypes.SELECT
-                }
-            );
-            const topicIds = dbTopics.map(t => t.id);
-            const topicModuleMap = new Map(dbTopics.map(t => [t.id, t.module_id]));
-            const moduleCourseMap = new Map(modules.map(m => [m.id, m.course_id]));
-
-            if (topicIds.length > 0) {
-                const dbLessons = await sequelize.query(
-                    'SELECT id, name, topic_id FROM lessons WHERE topic_id IN (:topicIds)',
-                    {
-                        replacements: { topicIds },
-                        type: sequelize.QueryTypes.SELECT
-                    }
-                );
-                lessons = dbLessons.map(l => {
-                    const mId = topicModuleMap.get(l.topic_id);
-                    return {
-                        id: l.id,
-                        name: l.name,
-                        topic_id: l.topic_id,
-                        module_id: mId || null,
-                        course_id: mId ? moduleCourseMap.get(mId) : null
-                    };
-                });
-            }
         }
+
         
         const lessonProgresses = await LessonProgress.findAll({
             where: { enrollment_id: enrollmentIds }

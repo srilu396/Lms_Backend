@@ -11,7 +11,7 @@ module.exports = (sequelize, DataTypes) => {
             allowNull: false
         },
         description: DataTypes.TEXT,
-        thumbnail_url: DataTypes.STRING,
+        thumbnail_url: DataTypes.TEXT,
         institution_id: {
             type: DataTypes.BIGINT,
             allowNull: true,

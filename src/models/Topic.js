@@ -21,10 +21,10 @@ module.exports = (sequelize, DataTypes) => {
         description: DataTypes.TEXT,
         content_text: DataTypes.TEXT,
         text: DataTypes.TEXT,
-        image_url: DataTypes.STRING,
-        video_url: DataTypes.STRING,
-        url: DataTypes.STRING,
-        pdf_url: DataTypes.STRING,
+        image_url: DataTypes.TEXT,
+        video_url: DataTypes.TEXT,
+        url: DataTypes.TEXT,
+        pdf_url: DataTypes.TEXT,
         order_num: {
             type: DataTypes.INTEGER,
             allowNull: false

@@ -363,8 +363,8 @@ class CourseService {
                     model: Module,
                     as: 'modules',
                     include: [
-                        { model: Assignment, as: 'assignments' },
-                        { model: Quiz, as: 'quizzes' },
+                        { model: Assignment, as: 'assignments', where: { lesson_id: null }, required: false },
+                        { model: Quiz, as: 'quizzes', where: { lesson_id: null }, required: false },
                         mediaInclude(),
                         {
                             model: Lesson,
@@ -666,8 +666,8 @@ class CourseService {
                     model: Module,
                     as: 'modules',
                     include: [
-                        { model: Assignment, as: 'assignments' },
-                        { model: Quiz, as: 'quizzes' },
+                        { model: Assignment, as: 'assignments', where: { lesson_id: null }, required: false },
+                        { model: Quiz, as: 'quizzes', where: { lesson_id: null }, required: false },
                         mediaInclude(),
                         {
                             model: Lesson,

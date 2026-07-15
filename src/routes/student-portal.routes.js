@@ -64,6 +64,18 @@ router.post('/lesson/:lessonId/read', studentPortalController.markAsRead);
 // Lightweight structure for the learning page sidebar
 router.get('/course/:courseId/sidebar', studentPortalController.getCourseSidebar);
 
+// GET /student-portal/course/:courseId/module/:moduleId
+// Specific module details (Lazy loading)
+router.get('/course/:courseId/module/:moduleId', studentPortalController.getCourseModule);
+
+// GET /student-portal/course/:courseId/lesson/:lessonId
+// Specific lesson details (Lazy loading)
+router.get('/course/:courseId/lesson/:lessonId', studentPortalController.getCourseLesson);
+
+// GET /student-portal/course/:courseId/topic/:topicId
+// Specific topic details (Lazy loading)
+router.get('/course/:courseId/topic/:topicId', studentPortalController.getCourseTopic);
+
 // Notes API
 router.get('/notes/lesson/:lessonId', studentPortalController.getNote);
 router.put('/notes/lesson/:lessonId', studentPortalController.saveNote);

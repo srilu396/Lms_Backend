@@ -62,6 +62,18 @@ class TopicService {
         return true;
     }
 
+    async getTopic(topicId) {
+        const topic = await Topic.findByPk(topicId, {
+            include: [mediaInclude()]
+        });
+        if (!topic) {
+            const error = new Error('Topic not found');
+            error.statusCode = 404;
+            throw error;
+        }
+        return serializeWithMedia(topic.toJSON());
+    }
+
     async _reloadTopic(topic, transaction = null) {
         const reloaded = await topic.reload({
             include: [mediaInclude()],

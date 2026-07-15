@@ -37,6 +37,22 @@ class LessonController {
         }
     }
 
+    async getLesson(req, res) {
+        try {
+            const lesson = await lessonService.getLesson(req.params.lessonId);
+            res.status(200).json({
+                success: true,
+                message: 'Lesson retrieved successfully',
+                data: lesson
+            });
+        } catch (error) {
+            res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || 'Server error retrieving lesson'
+            });
+        }
+    }
+
     async deleteLesson(req, res) {
         try {
             await lessonService.deleteLesson(req.params.lessonId);

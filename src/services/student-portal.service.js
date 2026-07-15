@@ -986,9 +986,13 @@ class StudentPortalService {
                                     model: Topic,
                                     as: 'topics',
                                     attributes: ['id', 'name', 'order_num']
-                                }
+                                },
+                                { model: Quiz, as: 'quizzes', attributes: ['id', 'name'] },
+                                { model: Assignment, as: 'assignments', attributes: ['id', 'title'] }
                             ]
-                        }
+                        },
+                        { model: Quiz, as: 'quizzes', attributes: ['id', 'name'] },
+                        { model: Assignment, as: 'assignments', attributes: ['id', 'title'] }
                     ]
                 }
             ],
@@ -1022,15 +1026,37 @@ class StudentPortalService {
                     id: top.id,
                     name: top.name
                 }));
+                
+                const quizzes = (les.quizzes || []).map(q => ({
+                    id: q.id,
+                    name: q.name
+                }));
+
+                const assignments = (les.assignments || []).map(a => ({
+                    id: a.id,
+                    title: a.title
+                }));
 
                 return {
                     id: les.id,
                     name: les.name,
                     type: les.type,
                     isCompleted,
-                    topics
+                    topics,
+                    quizzes,
+                    assignments
                 };
             });
+            
+            const moduleQuizzes = (mod.quizzes || []).map(q => ({
+                id: q.id,
+                name: q.name
+            }));
+
+            const moduleAssignments = (mod.assignments || []).map(a => ({
+                id: a.id,
+                title: a.title
+            }));
 
             const progressPct = totalLessonsInMod > 0 ? Math.round((completedLessonsInMod / totalLessonsInMod) * 100) : 0;
             const isLocked = !prevModuleCompleted;
@@ -1043,7 +1069,9 @@ class StudentPortalService {
                 name: mod.name,
                 progressPct,
                 isLocked,
-                lessons
+                lessons,
+                quizzes: moduleQuizzes,
+                assignments: moduleAssignments
             });
         }
 
@@ -1052,6 +1080,94 @@ class StudentPortalService {
             courseName: course.name,
             sidebar: sidebarData
         };
+    }
+
+    async getCourseModule(userId, courseId, moduleId) {
+        const student = await this._getStudentByUserId(userId);
+
+        const enrollment = await Enrollment.findOne({
+            include: [{ model: Batch, where: { course_id: courseId }, required: true }],
+            where: { student_id: student.id, status: 'active' }
+        });
+        if (!enrollment) throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
+
+        const mod = await Module.findOne({
+            where: { id: moduleId, course_id: courseId },
+            include: [mediaInclude()]
+        });
+
+        if (!mod) {
+            throw { statusCode: 404, message: 'Module not found or does not belong to this course.' };
+        }
+
+        const modData = serializeWithMedia(mod.toJSON());
+        return modData;
+    }
+
+    async getCourseLesson(userId, courseId, lessonId) {
+        const student = await this._getStudentByUserId(userId);
+
+        const enrollment = await Enrollment.findOne({
+            include: [{ model: Batch, where: { course_id: courseId }, required: true }],
+            where: { student_id: student.id, status: 'active' }
+        });
+        if (!enrollment) throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
+
+        const lesson = await Lesson.findByPk(lessonId, {
+            include: [
+                mediaInclude(),
+                {
+                    model: Module,
+                    where: { course_id: courseId },
+                    attributes: ['id', 'name']
+                }
+            ]
+        });
+
+        if (!lesson) {
+            throw { statusCode: 404, message: 'Lesson not found or does not belong to this course.' };
+        }
+
+        const lessonProgress = await LessonProgress.findOne({
+            where: { enrollment_id: enrollment.id, lesson_id: lessonId }
+        });
+
+        const lessonData = serializeWithMedia(lesson.toJSON());
+        return {
+            ...lessonData,
+            isCompleted: lessonProgress ? lessonProgress.is_completed : false,
+            progressPct: lessonProgress ? parseFloat(lessonProgress.video_watch_pct || 0) : 0,
+            lastAccessed: lessonProgress ? lessonProgress.last_accessed : null
+        };
+    }
+
+    async getCourseTopic(userId, courseId, topicId) {
+        const student = await this._getStudentByUserId(userId);
+
+        const enrollment = await Enrollment.findOne({
+            include: [{ model: Batch, where: { course_id: courseId }, required: true }],
+            where: { student_id: student.id, status: 'active' }
+        });
+        if (!enrollment) throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
+
+        const topic = await Topic.findByPk(topicId, {
+            include: [
+                mediaInclude(),
+                {
+                    model: Lesson,
+                    include: [{ model: Module, where: { course_id: courseId }, attributes: ['id', 'name'] }]
+                }
+            ]
+        });
+
+        if (!topic || !topic.Lesson || !topic.Lesson.Module) {
+            throw { statusCode: 404, message: 'Topic not found or does not belong to this course.' };
+        }
+
+        const topicData = serializeWithMedia(topic.toJSON());
+        delete topicData.Lesson; 
+        
+        return topicData;
     }
 
     // ─── 14. Simplified Notes API ──────────────────────────────────────────────

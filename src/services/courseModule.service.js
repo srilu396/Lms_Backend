@@ -102,6 +102,22 @@ class ModuleService {
         });
     }
 
+    async getModule(moduleId) {
+        const mod = await Module.findByPk(moduleId, {
+            include: [
+                mediaInclude()
+            ]
+        });
+
+        if (!mod) {
+            const error = new Error('Module not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        return serializeModuleWithMedia(mod.toJSON());
+    }
+
     async deleteModule(moduleId) {
         const mod = await Module.findByPk(moduleId);
         if (!mod) {

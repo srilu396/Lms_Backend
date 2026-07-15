@@ -37,6 +37,22 @@ class TopicController {
         }
     }
 
+    async getTopic(req, res) {
+        try {
+            const topic = await topicService.getTopic(req.params.topicId);
+            res.status(200).json({
+                success: true,
+                message: 'Topic retrieved successfully',
+                data: topic
+            });
+        } catch (error) {
+            res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || 'Server error retrieving topic'
+            });
+        }
+    }
+
     async deleteTopic(req, res) {
         try {
             await topicService.deleteTopic(req.params.topicId);

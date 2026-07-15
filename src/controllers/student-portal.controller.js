@@ -273,6 +273,51 @@ class StudentPortalController {
         }
     }
 
+    // GET /student-portal/course/:courseId/module/:moduleId
+    async getCourseModule(req, res, next) {
+        try {
+            const { courseId, moduleId } = req.params;
+            const moduleData = await studentPortalService.getCourseModule(req.user.id, courseId, moduleId);
+            res.status(200).json({
+                success: true,
+                message: 'Course module retrieved successfully',
+                data: moduleData
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // GET /student-portal/course/:courseId/lesson/:lessonId
+    async getCourseLesson(req, res, next) {
+        try {
+            const { courseId, lessonId } = req.params;
+            const lessonData = await studentPortalService.getCourseLesson(req.user.id, courseId, lessonId);
+            res.status(200).json({
+                success: true,
+                message: 'Course lesson retrieved successfully',
+                data: lessonData
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // GET /student-portal/course/:courseId/topic/:topicId
+    async getCourseTopic(req, res, next) {
+        try {
+            const { courseId, topicId } = req.params;
+            const topicData = await studentPortalService.getCourseTopic(req.user.id, courseId, topicId);
+            res.status(200).json({
+                success: true,
+                message: 'Course topic retrieved successfully',
+                data: topicData
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
     // GET /student-portal/notes/lesson/:lessonId
     async getNote(req, res, next) {
         try {

@@ -11,6 +11,7 @@ const adminAndTutor = roleMiddleware('admin', 'tutor');
 
 router.use(authMiddleware);
 
+router.get('/:lessonId', adminAndTutor, lessonController.getLesson);
 router.put('/:lessonId', adminAndTutor, validate(updateLessonSchema), lessonController.updateLesson);
 router.delete('/:lessonId', adminAndTutor, lessonController.deleteLesson);
 router.post('/:lessonId/complete', lessonController.completeLesson);

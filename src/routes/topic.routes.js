@@ -10,6 +10,7 @@ const adminAndTutor = roleMiddleware('admin', 'tutor');
 
 router.use(authMiddleware);
 
+router.get('/:topicId', adminAndTutor, topicController.getTopic);
 router.put('/:topicId', adminAndTutor, validate(updateTopicSchema), topicController.updateTopic);
 router.delete('/:topicId', adminAndTutor, topicController.deleteTopic);
 

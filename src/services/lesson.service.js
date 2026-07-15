@@ -93,6 +93,26 @@ class LessonService {
         });
     }
 
+    async getLesson(lessonId) {
+        const lesson = await Lesson.findByPk(lessonId, {
+            include: [
+                mediaInclude()
+            ]
+        });
+
+        if (!lesson) {
+            const error = new Error('Lesson not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        const json = lesson.toJSON();
+        const result = serializeWithMedia(json);
+        const topics = Array.isArray(result.topics) ? result.topics : [];
+        result.topics = topics.map(t => serializeWithMedia(t));
+        return result;
+    }
+
     async deleteLesson(lessonId) {
         const lesson = await Lesson.findByPk(lessonId);
         if (!lesson) {

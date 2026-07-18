@@ -1171,30 +1171,7 @@ class StudentPortalService {
     }
 
     // ─── 14. Simplified Notes API ──────────────────────────────────────────────
-    async getLessonNote(userId, lessonId) {
-        return await Note.findOne({
-            where: { student_id: userId, lesson_id: lessonId }
-        });
-    }
 
-    async saveLessonNote(userId, lessonId, data) {
-        const { courseId, content } = data;
-        
-        // Find if note exists, if so update it, otherwise create it
-        const [note, created] = await Note.findOrCreate({
-            where: { student_id: userId, lesson_id: lessonId },
-            defaults: {
-                course_id: courseId,
-                content: content || ''
-            }
-        });
-
-        if (!created) {
-            await note.update({ content });
-        }
-
-        return note;
-    }
 
     // ─── 15. Course Completion ──────────────────────────────────────────────────
     async completeCourse(userId, courseId) {

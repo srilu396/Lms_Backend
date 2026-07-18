@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const studentPortalController = require('../controllers/student-portal.controller');
+const noteController = require('../controllers/note.controller');
 const authMiddleware = require('../middlewares/auth.middleware');
 const roleMiddleware = require('../middlewares/role.middleware');
 // All student portal routes require authentication + student role
@@ -76,9 +77,29 @@ router.get('/course/:courseId/lesson/:lessonId', studentPortalController.getCour
 // Specific topic details (Lazy loading)
 router.get('/course/:courseId/topic/:topicId', studentPortalController.getCourseTopic);
 
-// Notes API
-router.get('/notes/lesson/:lessonId', studentPortalController.getNote);
-router.put('/notes/lesson/:lessonId', studentPortalController.saveNote);
+// ---------------------------------------------------------
+// NEW NOTES API
+// ---------------------------------------------------------
+// Course Notes
+router.get('/course/:courseId/notes', noteController.getCourseNotes);
+router.post('/course/:courseId/notes', noteController.createCourseNote);
+router.put('/course/:courseId/notes', noteController.updateCourseNote);
+
+// Module Notes
+router.get('/course/:courseId/module/:moduleId/notes', noteController.getModuleNotes);
+router.post('/course/:courseId/module/:moduleId/notes', noteController.createModuleNote);
+router.put('/course/:courseId/module/:moduleId/notes', noteController.updateModuleNote);
+
+// Lesson Notes
+router.get('/course/:courseId/lesson/:lessonId/notes', noteController.getLessonNotes);
+router.post('/course/:courseId/lesson/:lessonId/notes', noteController.createLessonNote);
+router.put('/course/:courseId/lesson/:lessonId/notes', noteController.updateLessonNote);
+
+// Topic Notes
+router.get('/course/:courseId/topic/:topicId/notes', noteController.getTopicNotes);
+router.post('/course/:courseId/topic/:topicId/notes', noteController.createTopicNote);
+router.put('/course/:courseId/topic/:topicId/notes', noteController.updateTopicNote);
+// ---------------------------------------------------------
 
 // Course Completion
 router.post('/course/:courseId/complete', studentPortalController.completeCourse);

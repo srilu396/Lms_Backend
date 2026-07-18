@@ -155,6 +155,13 @@ const enrollStudentSchema = Joi.object({
     batch_id: Joi.number().integer().required()
 });
 
+const createNoteSchema = Joi.object({
+    title: Joi.string().max(255).allow('', null),
+    content: Joi.string().required(),
+    timestamp: Joi.string().allow('', null),
+    type: Joi.string().valid('general', 'timestamped').default('general')
+});
+
 module.exports = {
     createCourseSchema,
     updateCourseSchema,
@@ -164,5 +171,6 @@ module.exports = {
     updateTopicSchema,
     createLessonSchema,
     updateLessonSchema,
-    enrollStudentSchema
+    enrollStudentSchema,
+    createNoteSchema
 };

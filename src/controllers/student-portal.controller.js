@@ -318,35 +318,7 @@ class StudentPortalController {
         }
     }
 
-    // GET /student-portal/notes/lesson/:lessonId
-    async getNote(req, res, next) {
-        try {
-            const { lessonId } = req.params;
-            const note = await studentPortalService.getLessonNote(req.user.id, lessonId);
-            res.status(200).json({
-                success: true,
-                message: 'Note retrieved successfully',
-                data: note
-            });
-        } catch (error) {
-            next(error);
-        }
-    }
 
-    // PUT /student-portal/notes/lesson/:lessonId
-    async saveNote(req, res, next) {
-        try {
-            const { lessonId } = req.params;
-            const note = await studentPortalService.saveLessonNote(req.user.id, lessonId, req.body);
-            res.status(200).json({
-                success: true,
-                message: 'Note saved successfully',
-                data: note
-            });
-        } catch (error) {
-            next(error);
-        }
-    }
 
     // POST /student-portal/course/:courseId/complete
     async completeCourse(req, res, next) {

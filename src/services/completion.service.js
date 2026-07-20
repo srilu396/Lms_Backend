@@ -88,6 +88,19 @@ class CompletionService {
         const lesProgressMap = new Map();
         lessonProgresses.forEach(lp => lesProgressMap.set(lp.lesson_id, lp));
 
+        const allTopicIds = [];
+        course.modules.forEach(m => {
+            if (m.lessons) m.lessons.forEach(l => {
+                if (l.topics) l.topics.forEach(t => allTopicIds.push(t.id));
+            });
+        });
+
+        const topicProgresses = await models.TopicProgress.findAll({
+            where: { enrollment_id: enrollment.id, topic_id: { [Op.in]: allTopicIds } }
+        });
+        const topProgressMap = new Map();
+        topicProgresses.forEach(tp => topProgressMap.set(tp.topic_id, tp));
+
         const quizIds = [];
         const assignmentIds = [];
         course.modules.forEach(m => {
@@ -124,20 +137,30 @@ class CompletionService {
             
             // Check if this module is fully completed to unlock the next one
             let modComplete = false;
-            let totalLes = 0;
-            let compLes = 0;
+            let totalItems = 0;
+            let compItems = 0;
             if (mod.lessons) {
                 mod.lessons.forEach(les => {
-                    totalLes++;
-                    if (lesProgressMap.has(les.id) && lesProgressMap.get(les.id).is_completed) {
-                        compLes++;
+                    if (les.topics && les.topics.length > 0) {
+                        les.topics.forEach(top => {
+                            totalItems++;
+                            const tp = topProgressMap.get(top.id);
+                            if (tp && tp.is_completed) {
+                                compItems++;
+                            }
+                        });
+                    } else {
+                        totalItems++;
+                        if (lesProgressMap.has(les.id) && lesProgressMap.get(les.id).is_completed) {
+                            compItems++;
+                        }
                     }
                 });
             }
             
-            if (totalLes > 0 && compLes === totalLes) {
+            if (totalItems > 0 && compItems === totalItems) {
                 modComplete = true;
-            } else if (totalLes === 0) {
+            } else if (totalItems === 0) {
                 const sp = modProgressMap.get(mod.id);
                 if (sp && sp.is_completed) modComplete = true;
                 else modComplete = true;
@@ -152,18 +175,31 @@ class CompletionService {
         course.modules.forEach(mod => {
             if (!unlockedModuleIds.has(mod.id)) return; // Locked
 
-            let modTotalLes = 0;
-            let modCompLes = 0;
+            let modTotalItems = 0;
+            let modCompItems = 0;
             if (mod.lessons) {
                 mod.lessons.forEach(les => {
-                    modTotalLes++;
-                    if (lesProgressMap.has(les.id) && lesProgressMap.get(les.id).is_completed) {
-                        modCompLes++;
+                    if (les.topics && les.topics.length > 0) {
+                        les.topics.forEach(top => {
+                            modTotalItems++;
+                            const tp = topProgressMap.get(top.id);
+                            if (tp && tp.is_completed) {
+                                modCompItems++;
+                            }
+                        });
+                    } else {
+                        modTotalItems++;
+                        if (lesProgressMap.has(les.id) && lesProgressMap.get(les.id).is_completed) {
+                            modCompItems++;
+                        }
                     }
                 });
             }
-            let modProgressPct = modTotalLes > 0 ? Math.round((modCompLes / modTotalLes) * 100) : 0;
-            let modCompleted = modTotalLes > 0 ? (modProgressPct === 100) : (modProgressMap.has(mod.id) && modProgressMap.get(mod.id).is_completed);
+            let modProgressPct = modTotalItems > 0 ? Math.round((modCompItems / modTotalItems) * 100) : 0;
+            let modCompleted = modTotalItems > 0 ? (modProgressPct === 100) : (modProgressMap.has(mod.id) && modProgressMap.get(mod.id).is_completed);
+            if (modCompleted && modTotalItems === 0) {
+                modProgressPct = 100;
+            }
             let modUpdatedAt = modProgressMap.has(mod.id) ? modProgressMap.get(mod.id).updated_at : new Date(0);
 
             if (contentType === 'modules') {
@@ -195,16 +231,16 @@ class CompletionService {
 
                     if (contentType === 'topics' && les.topics) {
                         les.topics.forEach(top => {
-                            // Topic progress logic is derived from its parent lesson in this hierarchy
-                            let topCompleted = lesCompleted;
-                            let topProgressPct = lesProgressPct;
+                            const tp = topProgressMap.get(top.id);
+                            let topCompleted = tp ? tp.is_completed : false;
+                            let topProgressPct = topCompleted ? 100 : (tp ? 50 : 0);
                             
                             rawData.push({
                                 id: top.id,
                                 name: top.name,
                                 progress: topProgressPct,
                                 status: topCompleted ? 'completed' : 'in_progress',
-                                updated_at: lesUpdatedAt
+                                updated_at: tp && tp.updated_at ? tp.updated_at : new Date(0)
                             });
                         });
                     }

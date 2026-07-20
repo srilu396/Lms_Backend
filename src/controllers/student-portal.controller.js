@@ -239,7 +239,7 @@ class StudentPortalController {
         }
     }
 
-    // POST /student-portal/lesson/:lessonId/read
+    // POST /student-portal/lesson/:lessonId/read (Legacy)
     async markAsRead(req, res, next) {
         try {
             const { lessonId } = req.params;
@@ -251,6 +251,61 @@ class StudentPortalController {
             res.status(200).json({
                 success: true,
                 message: 'Lesson marked as read',
+                data: progress
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // PATCH /student-portal/modules/:moduleId/read
+    async markModuleAsRead(req, res, next) {
+        try {
+            const { moduleId } = req.params;
+            const progress = await studentPortalService.completeModule(req.user.id, moduleId, {
+                is_completed: true
+            });
+
+            res.status(200).json({
+                success: true,
+                message: 'Module marked as read',
+                data: progress
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // PATCH /student-portal/lessons/:lessonId/read
+    async markLessonAsRead(req, res, next) {
+        try {
+            const { lessonId } = req.params;
+            const progress = await studentPortalService.completeLesson(req.user.id, lessonId, {
+                is_completed: true,
+                video_watch_pct: 100
+            });
+
+            res.status(200).json({
+                success: true,
+                message: 'Lesson marked as read',
+                data: progress
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // PATCH /student-portal/topics/:topicId/read
+    async markTopicAsRead(req, res, next) {
+        try {
+            const { topicId } = req.params;
+            const progress = await studentPortalService.completeTopic(req.user.id, topicId, {
+                is_completed: true
+            });
+
+            res.status(200).json({
+                success: true,
+                message: 'Topic marked as read',
                 data: progress
             });
         } catch (error) {

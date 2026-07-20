@@ -47,6 +47,7 @@ module.exports = (sequelize, DataTypes) => {
 
     Topic.associate = (models) => {
         Topic.belongsTo(models.Lesson, { foreignKey: 'lesson_id' });
+        Topic.hasMany(models.TopicProgress, { foreignKey: 'topic_id' });
         Topic.hasMany(models.MediaAttachment, {
             foreignKey: 'entity_id',
             constraints: false,

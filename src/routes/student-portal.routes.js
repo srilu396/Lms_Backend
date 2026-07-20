@@ -57,9 +57,18 @@ router.get('/course/:courseId/view', studentPortalController.getCourseView);
 // Marks a lesson as completed and updates progress
 router.post('/lesson/:lessonId/complete', studentPortalController.completeLesson);
 
-// POST /student-portal/lesson/:lessonId/read
+// POST /student-portal/lesson/:lessonId/read (Legacy support)
 // Marks a lesson as read (typically for text-based lessons)
 router.post('/lesson/:lessonId/read', studentPortalController.markAsRead);
+
+// PATCH /student-portal/modules/:moduleId/read
+router.patch('/modules/:moduleId/read', studentPortalController.markModuleAsRead);
+
+// PATCH /student-portal/lessons/:lessonId/read
+router.patch('/lessons/:lessonId/read', studentPortalController.markLessonAsRead);
+
+// PATCH /student-portal/topics/:topicId/read
+router.patch('/topics/:topicId/read', studentPortalController.markTopicAsRead);
 
 // GET /student-portal/course/:courseId/sidebar
 // Lightweight structure for the learning page sidebar

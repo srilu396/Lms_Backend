@@ -13,6 +13,8 @@ const {
     StudentAttendance,
     AttendanceSession,
     LessonProgress,
+    StudentProgress,
+    TopicProgress,
     User,
     Assignment,
     QuizAnswer,
@@ -620,43 +622,78 @@ class StudentPortalService {
                 let lastModule = { module_id: modules[modules.length - 1].id, module_name: modules[modules.length - 1].name };
                 
                 let allCompletedCount = 0;
-                let allLessonsCount = 0;
+                let allTotalCount = 0;
                 
-                const lessonProgress = progressByEnrollment[enrollment.id] || [];
-                const progressMap = new Map();
-                lessonProgress.forEach(lp => progressMap.set(lp.lesson_id, lp.is_completed));
+                const lessonProgress = await LessonProgress.findAll({
+                    where: { enrollment_id: enrollment.id },
+                    attributes: ['lesson_id', 'is_completed']
+                });
+                const lesProgressMap = new Map();
+                lessonProgress.forEach(lp => lesProgressMap.set(lp.lesson_id, lp.is_completed));
+
+                const topicProgress = await TopicProgress.findAll({
+                    where: { enrollment_id: enrollment.id },
+                    attributes: ['topic_id', 'is_completed']
+                });
+                const topProgressMap = new Map();
+                topicProgress.forEach(tp => topProgressMap.set(tp.topic_id, tp.is_completed));
+
+                const studentProgress = await StudentProgress.findAll({
+                    where: { enrollment_id: enrollment.id }
+                });
+                const modProgressMap = new Map();
+                studentProgress.forEach(sp => modProgressMap.set(sp.module_id, sp.is_completed));
                 
                 let foundCurrent = false;
 
                 for (const m of modules) {
-                    let modLessons = 0;
+                    let modTotal = 0;
                     let modCompleted = 0;
                     
-                    if (m.lessons) {
+                    if (m.lessons && m.lessons.length > 0) {
                         m.lessons.forEach(l => {
-                            modLessons++;
-                            allLessonsCount++;
-                            if (progressMap.get(l.id)) {
-                                modCompleted++;
-                                allCompletedCount++;
+                            if (l.topics && l.topics.length > 0) {
+                                l.topics.forEach(t => {
+                                    modTotal++;
+                                    allTotalCount++;
+                                    if (topProgressMap.get(t.id)) {
+                                        modCompleted++;
+                                        allCompletedCount++;
+                                    }
+                                });
+                            } else {
+                                modTotal++;
+                                allTotalCount++;
+                                if (lesProgressMap.get(l.id)) {
+                                    modCompleted++;
+                                    allCompletedCount++;
+                                }
                             }
                         });
+                    } else {
+                        // If module is empty, treat the module itself as 1 item
+                        modTotal++;
+                        allTotalCount++;
+                        if (modProgressMap.get(m.id)) {
+                            modCompleted++;
+                            allCompletedCount++;
+                        }
                     }
                     
                     if (!foundCurrent) {
-                        if (modLessons > 0 && modCompleted < modLessons) {
+                        if (modTotal > 0 && modCompleted < modTotal) {
                             currentModule = { module_id: m.id, module_name: m.name };
                             foundCurrent = true;
                         }
                     }
                 }
                 
-                if (allLessonsCount > 0) {
-                    completionProgress = Math.round((allCompletedCount / allLessonsCount) * 100);
+                if (allTotalCount > 0) {
+                    completionProgress = Math.round((allCompletedCount / allTotalCount) * 100);
                 }
                 
                 if (!currentModule) {
-                    if (allCompletedCount === allLessonsCount && allLessonsCount > 0) {
+                    if (allCompletedCount === allTotalCount && allTotalCount > 0) {
                         currentModule = lastModule;
                     } else {
                         currentModule = firstModule;
@@ -888,16 +925,21 @@ class StudentPortalService {
             ]
         });
 
-        // 3. Fetch lesson progress for this enrollment if available
+        // 3. Fetch all progress for this enrollment
+        const [lessonProgress, moduleProgress, topicProgress] = await Promise.all([
+            enrollment ? LessonProgress.findAll({ where: { enrollment_id: enrollment.id } }) : Promise.resolve([]),
+            enrollment ? StudentProgress.findAll({ where: { enrollment_id: enrollment.id } }) : Promise.resolve([]),
+            enrollment ? TopicProgress.findAll({ where: { enrollment_id: enrollment.id } }) : Promise.resolve([])
+        ]);
+        
         const progressMap = {};
-        if (enrollment) {
-            const lessonProgress = await LessonProgress.findAll({
-                where: { enrollment_id: enrollment.id }
-            });
-            lessonProgress.forEach(lp => {
-                progressMap[lp.lesson_id] = lp;
-            });
-        }
+        lessonProgress.forEach(lp => progressMap[lp.lesson_id] = lp);
+        
+        const moduleProgressMap = {};
+        moduleProgress.forEach(mp => moduleProgressMap[mp.module_id] = mp);
+        
+        const topicProgressMap = {};
+        topicProgress.forEach(tp => topicProgressMap[tp.topic_id] = tp);
 
         // 4. Transform data and calculate module-level locking
         let totalLessonsInCourse = 0;
@@ -905,21 +947,26 @@ class StudentPortalService {
         let prevModuleCompleted = true; // First module is always unlocked
 
         const modules = course.modules.map((mod, modIdx) => {
-            let totalLessonsInMod = 0;
-            let completedLessonsInMod = 0;
+            const modProg = moduleProgressMap[mod.id];
+            const isModCompleted = modProg ? modProg.is_completed : false;
+            const progressPct = modProg ? parseFloat(modProg.progress_pct || 0) : 0;
 
             const lessons = mod.lessons.map(les => {
-                totalLessonsInMod++;
                 totalLessonsInCourse++;
                 const progress = progressMap[les.id];
                 const isCompleted = progress ? progress.is_completed : false;
                 if (isCompleted) {
-                    completedLessonsInMod++;
                     completedLessonsInCourse++;
                 }
 
                 const topics = (les.topics || []).map(top => {
-                    return serializeWithMedia(top.toJSON ? top.toJSON() : top);
+                    const topProg = topicProgressMap[top.id];
+                    const isTopCompleted = topProg ? topProg.is_completed : false;
+                    return {
+                        ...serializeWithMedia(top.toJSON ? top.toJSON() : top),
+                        isCompleted: isTopCompleted,
+                        lastAccessed: topProg ? topProg.last_accessed : null
+                    };
                 });
 
                 const lesJson = serializeWithMedia(les.toJSON ? les.toJSON() : les);
@@ -932,18 +979,17 @@ class StudentPortalService {
                 };
             });
 
-            const progressPct = totalLessonsInMod > 0 ? Math.round((completedLessonsInMod / totalLessonsInMod) * 100) : 0;
             const isLocked = !prevModuleCompleted && enrollment; // Only lock if we have an enrollment (i.e., student)
             
             // Update prevModuleCompleted for the next module
-            prevModuleCompleted = !enrollment || (progressPct === 100); // For admin/tutor, modules are always unlocked
+            prevModuleCompleted = !enrollment || isModCompleted; // For admin/tutor, modules are always unlocked
 
             const modJson = serializeWithMedia(mod.toJSON ? mod.toJSON() : mod);
             return {
                 ...modJson,
                 progressPct,
                 isLocked,
-                isCompleted: progressPct === 100,
+                isCompleted: isModCompleted,
                 lessons
             };
         });
@@ -979,6 +1025,58 @@ class StudentPortalService {
         return await progressService.updateLessonProgress(userId, enrollment.id, lessonId, {
             is_completed: data.is_completed !== undefined ? data.is_completed : true,
             video_watch_pct: data.video_watch_pct || 100
+        });
+    }
+
+    async completeModule(userId, moduleId, data = {}) {
+        const student = await this._getStudentByUserId(userId);
+        
+        const module = await Module.findByPk(moduleId);
+        if (!module) throw { statusCode: 404, message: 'Module not found' };
+
+        const enrollment = await Enrollment.findOne({
+            include: [{
+                model: Batch,
+                where: { course_id: module.course_id },
+                required: true
+            }],
+            where: { student_id: student.id, status: 'active' }
+        });
+
+        if (!enrollment) throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
+
+        const progressService = require('./progress.service');
+        return await progressService.updateModuleProgress(userId, enrollment.id, moduleId, {
+            is_completed: data.is_completed !== undefined ? data.is_completed : true
+        });
+    }
+
+    async completeTopic(userId, topicId, data = {}) {
+        const student = await this._getStudentByUserId(userId);
+        
+        const topic = await Topic.findByPk(topicId, {
+            include: [{
+                model: Lesson,
+                include: [{ model: Module }]
+            }]
+        });
+        if (!topic) throw { statusCode: 404, message: 'Topic not found' };
+        if (!topic.Lesson || !topic.Lesson.Module) throw { statusCode: 404, message: 'Lesson or Module not found for this topic' };
+
+        const enrollment = await Enrollment.findOne({
+            include: [{
+                model: Batch,
+                where: { course_id: topic.Lesson.Module.course_id },
+                required: true
+            }],
+            where: { student_id: student.id, status: 'active' }
+        });
+
+        if (!enrollment) throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
+
+        const progressService = require('./progress.service');
+        return await progressService.updateTopicProgress(userId, enrollment.id, topicId, {
+            is_completed: data.is_completed !== undefined ? data.is_completed : true
         });
     }
 
@@ -1020,26 +1118,32 @@ class StudentPortalService {
             ]
         });
 
-        const progressMap = {};
-        if (enrollment) {
-            const lessonProgress = await LessonProgress.findAll({
+        const [lessonProgress, moduleProgress] = await Promise.all([
+            enrollment ? LessonProgress.findAll({
                 where: { enrollment_id: enrollment.id },
                 attributes: ['lesson_id', 'is_completed']
-            });
-            lessonProgress.forEach(lp => progressMap[lp.lesson_id] = lp.is_completed);
-        }
+            }) : Promise.resolve([]),
+            enrollment ? StudentProgress.findAll({
+                where: { enrollment_id: enrollment.id },
+                attributes: ['module_id', 'progress_pct', 'is_completed']
+            }) : Promise.resolve([])
+        ]);
+        const progressMap = {};
+        lessonProgress.forEach(lp => progressMap[lp.lesson_id] = lp.is_completed);
+
+        const moduleProgressMap = {};
+        moduleProgress.forEach(mp => moduleProgressMap[mp.module_id] = mp);
 
         const sidebarData = [];
         let prevModuleCompleted = true; // Module 1 is never locked
 
         for (const mod of course.modules) {
-            let totalLessonsInMod = 0;
-            let completedLessonsInMod = 0;
+            const modProg = moduleProgressMap[mod.id];
+            const isModCompleted = modProg ? modProg.is_completed : false;
+            const progressPct = modProg ? parseFloat(modProg.progress_pct || 0) : 0;
 
             const lessons = mod.lessons.map(les => {
-                totalLessonsInMod++;
                 const isCompleted = progressMap[les.id] || false;
-                if (isCompleted) completedLessonsInMod++;
 
                 const topics = (les.topics || []).map(top => ({
                     id: top.id,
@@ -1077,11 +1181,10 @@ class StudentPortalService {
                 title: a.title
             }));
 
-            const progressPct = totalLessonsInMod > 0 ? Math.round((completedLessonsInMod / totalLessonsInMod) * 100) : 0;
             const isLocked = !prevModuleCompleted && enrollment; // Only lock if we have an enrollment (i.e., student)
             
             // Update for next iteration
-            prevModuleCompleted = !enrollment || (progressPct === 100); // For admin/tutor, modules are always unlocked
+            prevModuleCompleted = !enrollment || isModCompleted; // For admin/tutor, modules are always unlocked
 
             sidebarData.push({
                 id: mod.id,

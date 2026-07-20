@@ -596,7 +596,7 @@ class StudentPortalService {
             });
         }
 
-        const formattedData = enrollments.map((enrollment) => {
+        const formattedDataRaw = await Promise.all(enrollments.map(async (enrollment) => {
             if (enrollment.Batch.domain_id && enrollment.Batch.Domain) {
                 const domain = enrollment.Batch.Domain;
                 return {
@@ -723,10 +723,10 @@ class StudentPortalService {
                 completionProgress,
                 lastOpened
             };
-        });
+        }));
 
         return {
-            data: formattedData.filter(Boolean),
+            data: formattedDataRaw.filter(Boolean),
             pagination: {
                 currentPage: parsedPage,
                 totalPages: Math.ceil(count / parsedLimit),

@@ -15,9 +15,6 @@ const getRecentReports = async (institutionId, search) => {
 
     const institutionName = institution.name;
     const now = new Date();
-    // Format: May 20, 2026 • 10:30 AM
-    const options = { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true };
-    const dateGenerated = new Intl.DateTimeFormat('en-US', options).format(now).replace(', ', ' • ').replace(' AM', ' AM').replace(' PM', ' PM');
     // Note: To match "May 20, 2026 • 10:30 AM" we can do:
     const month = now.toLocaleString('en-US', { month: 'long' });
     const day = now.getDate();

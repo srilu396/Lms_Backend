@@ -228,17 +228,32 @@ class TutorService {
         const date = new Date();
         const firstDayOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
 
-        const [totalTutors, activeTutors, newlyAddedTutors] = await Promise.all([
-            Tutor.count(),
-            Tutor.count({ where: { status: 'active' } }),
-            Tutor.count({
-                where: {
-                    created_at: {
-                        [Op.gte]: firstDayOfMonth
-                    }
+        const statusStats = await Tutor.findAll({
+            attributes: [
+                'status',
+                [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+            ],
+            group: ['status'],
+            raw: true
+        });
+
+        let totalTutors = 0;
+        let activeTutors = 0;
+        statusStats.forEach(item => {
+            const count = parseInt(item.count, 10) || 0;
+            totalTutors += count;
+            if (item.status === 'active') {
+                activeTutors = count;
+            }
+        });
+
+        const newlyAddedTutors = await Tutor.count({
+            where: {
+                created_at: {
+                    [Op.gte]: firstDayOfMonth
                 }
-            })
-        ]);
+            }
+        });
 
         return {
             totalTutors,

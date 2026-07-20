@@ -68,7 +68,8 @@ class CourseController {
 
     async getCourseById(req, res) {
         try {
-            const course = await courseService.getCourseById(req.params.id);
+            const includeHierarchy = ['1', 'true', 'yes', 'full', 'curriculum'].includes(String(req.query.includeHierarchy || req.query.include || req.query.view || '').toLowerCase());
+            const course = await courseService.getCourseById(req.params.id, null, { includeHierarchy });
             res.status(200).json({
                 success: true,
                 message: 'Course retrieved successfully',

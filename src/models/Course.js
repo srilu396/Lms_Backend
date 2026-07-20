@@ -12,6 +12,18 @@ module.exports = (sequelize, DataTypes) => {
         },
         description: DataTypes.TEXT,
         thumbnail_url: DataTypes.TEXT,
+        tags: {
+            type: DataTypes.ARRAY(DataTypes.STRING),
+            defaultValue: []
+        },
+        final_assessment_id: {
+            type: DataTypes.INTEGER,
+            allowNull: true
+        },
+        final_assessment_type: {
+            type: DataTypes.ENUM('assignment', 'quiz'),
+            allowNull: true
+        },
         institution_id: {
             type: DataTypes.BIGINT,
             allowNull: true,
@@ -61,6 +73,8 @@ module.exports = (sequelize, DataTypes) => {
         Course.hasMany(models.Module, { foreignKey: 'course_id', as: 'modules' });
         Course.hasMany(models.Batch, { foreignKey: 'course_id', as: 'batches' });
         Course.hasMany(models.Assignment, { foreignKey: 'course_id', as: 'assignments' });
+        Course.belongsTo(models.Assignment, { foreignKey: 'final_assessment_id', as: 'final_assignment', constraints: false });
+        Course.belongsTo(models.Quiz, { foreignKey: 'final_assessment_id', as: 'final_quiz', constraints: false });
     };
 
     return Course;

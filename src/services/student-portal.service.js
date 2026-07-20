@@ -36,6 +36,29 @@ class StudentPortalService {
         return student;
     }
 
+    async _getEnrollment(studentId, courseId) {
+        const enrollment = await Enrollment.findOne({
+            include: [{ model: Batch, where: { course_id: courseId }, required: true }],
+            where: { student_id: studentId, status: 'active' }
+        });
+        if (!enrollment) {
+            throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
+        }
+        return enrollment;
+    }
+
+    async _verifyCourseAccess(userId, courseId) {
+        const user = await User.findByPk(userId, { attributes: ['id', 'role'] });
+        if (!user) throw { statusCode: 401, message: 'User not found' };
+
+        let enrollment = null;
+        if (user.role !== 'admin' && user.role !== 'tutor') {
+            const student = await this._getStudentByUserId(userId);
+            enrollment = await this._getEnrollment(student.id, courseId);
+        }
+        return { user, enrollment };
+    }
+
     // ─── 1. Profile ─────────────────────────────────────────────────────────────
     async getProfile(userId) {
         const student = await this._getStudentByUserId(userId);
@@ -531,7 +554,47 @@ class StudentPortalService {
         });
 
         // 2. Process each enrollment to calculate progress and format response
-        const formattedData = await Promise.all(enrollments.map(async (enrollment) => {
+        const courseIds = enrollments.map(e => e.Batch.course_id).filter(Boolean);
+        const enrollmentIds = enrollments.map(e => e.id);
+
+        const modulesByCourse = {};
+        if (courseIds.length > 0) {
+            const allModules = await models.Module.findAll({
+                where: { course_id: { [Op.in]: courseIds } },
+                order: [['order_num', 'ASC']],
+                include: [{
+                    model: models.Lesson,
+                    as: 'lessons',
+                    order: [['order_num', 'ASC']],
+                    include: [{ model: models.Topic, as: 'topics', attributes: ['id', 'order_num'] }]
+                }]
+            });
+            allModules.forEach(m => {
+                if (!modulesByCourse[m.course_id]) {
+                    modulesByCourse[m.course_id] = [];
+                }
+                if (m.lessons) {
+                    m.lessons.sort((a, b) => a.order_num - b.order_num);
+                }
+                modulesByCourse[m.course_id].push(m);
+            });
+        }
+
+        const progressByEnrollment = {};
+        if (enrollmentIds.length > 0) {
+            const allLessonProgress = await LessonProgress.findAll({
+                where: { enrollment_id: { [Op.in]: enrollmentIds } },
+                attributes: ['enrollment_id', 'lesson_id', 'is_completed']
+            });
+            allLessonProgress.forEach(lp => {
+                if (!progressByEnrollment[lp.enrollment_id]) {
+                    progressByEnrollment[lp.enrollment_id] = [];
+                }
+                progressByEnrollment[lp.enrollment_id].push(lp);
+            });
+        }
+
+        const formattedData = enrollments.map((enrollment) => {
             if (enrollment.Batch.domain_id && enrollment.Batch.Domain) {
                 const domain = enrollment.Batch.Domain;
                 return {
@@ -546,17 +609,7 @@ class StudentPortalService {
             const course = enrollment.Batch.Course;
             if (!course) return null;
             
-            // Calculate progress and current module
-            const modules = await models.Module.findAll({
-                where: { course_id: course.id },
-                order: [['order_num', 'ASC']],
-                include: [{
-                    model: models.Lesson,
-                    as: 'lessons',
-                    order: [['order_num', 'ASC']],
-                    include: [{ model: models.Topic, as: 'topics', attributes: ['id', 'order_num'] }]
-                }]
-            });
+            const modules = modulesByCourse[course.id] || [];
 
             let completionProgress = 0;
             let lastOpened = course.updated_at || null;
@@ -569,10 +622,7 @@ class StudentPortalService {
                 let allCompletedCount = 0;
                 let allLessonsCount = 0;
                 
-                const lessonProgress = await LessonProgress.findAll({
-                    where: { enrollment_id: enrollment.id },
-                    attributes: ['lesson_id', 'is_completed']
-                });
+                const lessonProgress = progressByEnrollment[enrollment.id] || [];
                 const progressMap = new Map();
                 lessonProgress.forEach(lp => progressMap.set(lp.lesson_id, lp.is_completed));
                 
@@ -636,7 +686,7 @@ class StudentPortalService {
                 completionProgress,
                 lastOpened
             };
-        }));
+        });
 
         return {
             data: formattedData.filter(Boolean),
@@ -651,20 +701,7 @@ class StudentPortalService {
 
     // ─── 11. Course Home (Overview & Stats) ─────────────────────────────────────
     async getCourseHome(userId, courseId) {
-        const student = await this._getStudentByUserId(userId);
-
-        const enrollment = await Enrollment.findOne({
-            include: [{
-                model: Batch,
-                where: { course_id: courseId },
-                required: true
-            }],
-            where: { student_id: student.id, status: 'active' }
-        });
-
-        if (!enrollment) {
-            throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
-        }
+        const { enrollment } = await this._verifyCourseAccess(userId, courseId);
 
         const course = await Course.findByPk(courseId, {
             attributes: ['id', 'name', 'description', 'thumbnail_url'],
@@ -736,35 +773,42 @@ class StudentPortalService {
         totalQuizzes = quizIds.length;
         totalAssignments = assignmentIds.length;
 
-        const completedModules = moduleIds.length > 0 ? await models.StudentProgress.count({
-            where: { enrollment_id: enrollment.id, module_id: { [Op.in]: moduleIds }, is_completed: true }
-        }) : 0;
-
-        const completedLessonRecords = lessonIds.length > 0 ? await LessonProgress.findAll({
-            where: { enrollment_id: enrollment.id, lesson_id: { [Op.in]: lessonIds }, is_completed: true },
-            attributes: ['lesson_id']
-        }) : [];
-        const completedLessons = completedLessonRecords.length;
-        const completedLessonIds = new Set(completedLessonRecords.map(r => r.lesson_id));
-
+        let completedModules = 0;
+        let completedLessons = 0;
         let completedTopics = 0;
-        topicsMap.forEach((topLessonIds) => {
-            if (topLessonIds.length > 0 && topLessonIds.every(id => completedLessonIds.has(id))) {
-                completedTopics++;
-            }
-        });
+        let completedQuizzes = 0;
+        let completedAssignments = 0;
 
-        const completedQuizzes = quizIds.length > 0 ? await QuizSubmission.count({
-            where: { student_id: userId, quiz_id: { [Op.in]: quizIds } },
-            distinct: true,
-            col: 'quiz_id'
-        }) : 0;
+        if (enrollment) {
+            completedModules = moduleIds.length > 0 ? await models.StudentProgress.count({
+                where: { enrollment_id: enrollment.id, module_id: { [Op.in]: moduleIds }, is_completed: true }
+            }) : 0;
 
-        const completedAssignments = assignmentIds.length > 0 ? await AssignmentSubmission.count({
-            where: { student_id: userId, assignment_id: { [Op.in]: assignmentIds } },
-            distinct: true,
-            col: 'assignment_id'
-        }) : 0;
+            const completedLessonRecords = lessonIds.length > 0 ? await LessonProgress.findAll({
+                where: { enrollment_id: enrollment.id, lesson_id: { [Op.in]: lessonIds }, is_completed: true },
+                attributes: ['lesson_id']
+            }) : [];
+            completedLessons = completedLessonRecords.length;
+            const completedLessonIds = new Set(completedLessonRecords.map(r => r.lesson_id));
+
+            topicsMap.forEach((topLessonIds) => {
+                if (topLessonIds.length > 0 && topLessonIds.every(id => completedLessonIds.has(id))) {
+                    completedTopics++;
+                }
+            });
+
+            completedQuizzes = quizIds.length > 0 ? await QuizSubmission.count({
+                where: { student_id: userId, quiz_id: { [Op.in]: quizIds } },
+                distinct: true,
+                col: 'quiz_id'
+            }) : 0;
+
+            completedAssignments = assignmentIds.length > 0 ? await AssignmentSubmission.count({
+                where: { student_id: userId, assignment_id: { [Op.in]: assignmentIds } },
+                distinct: true,
+                col: 'assignment_id'
+            }) : 0;
+        }
 
         const calcPct = (completed, total) => total > 0 ? Math.round((completed / total) * 100) : 0;
 
@@ -804,21 +848,7 @@ class StudentPortalService {
 
     // ─── 12. Inside Course View (Learning Page) ─────────────────────────────────
     async getCourseView(userId, courseId) {
-        const student = await this._getStudentByUserId(userId);
-
-        // 1. Find the active enrollment for this student and course
-        const enrollment = await Enrollment.findOne({
-            include: [{
-                model: Batch,
-                where: { course_id: courseId },
-                required: true
-            }],
-            where: { student_id: student.id, status: 'active' }
-        });
-
-        if (!enrollment) {
-            throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
-        }
+        const { enrollment } = await this._verifyCourseAccess(userId, courseId);
 
         // 2. Fetch full course structure with content
         const course = await Course.findByPk(courseId, {
@@ -858,14 +888,16 @@ class StudentPortalService {
             ]
         });
 
-        // 3. Fetch lesson progress for this enrollment
-        const lessonProgress = await LessonProgress.findAll({
-            where: { enrollment_id: enrollment.id }
-        });
+        // 3. Fetch lesson progress for this enrollment if available
         const progressMap = {};
-        lessonProgress.forEach(lp => {
-            progressMap[lp.lesson_id] = lp;
-        });
+        if (enrollment) {
+            const lessonProgress = await LessonProgress.findAll({
+                where: { enrollment_id: enrollment.id }
+            });
+            lessonProgress.forEach(lp => {
+                progressMap[lp.lesson_id] = lp;
+            });
+        }
 
         // 4. Transform data and calculate module-level locking
         let totalLessonsInCourse = 0;
@@ -901,10 +933,10 @@ class StudentPortalService {
             });
 
             const progressPct = totalLessonsInMod > 0 ? Math.round((completedLessonsInMod / totalLessonsInMod) * 100) : 0;
-            const isLocked = !prevModuleCompleted;
+            const isLocked = !prevModuleCompleted && enrollment; // Only lock if we have an enrollment (i.e., student)
             
             // Update prevModuleCompleted for the next module
-            prevModuleCompleted = (progressPct === 100);
+            prevModuleCompleted = !enrollment || (progressPct === 100); // For admin/tutor, modules are always unlocked
 
             const modJson = serializeWithMedia(mod.toJSON ? mod.toJSON() : mod);
             return {
@@ -923,7 +955,7 @@ class StudentPortalService {
                 description: course.description,
                 thumbnail: course.thumbnail_url,
                 totalProgress: totalLessonsInCourse > 0 ? Math.round((completedLessonsInCourse / totalLessonsInCourse) * 100) : 0,
-                enrollmentId: enrollment.id,
+                enrollmentId: enrollment ? enrollment.id : null,
                 modules
             }
         };
@@ -940,16 +972,7 @@ class StudentPortalService {
         if (!lesson) throw { statusCode: 404, message: 'Lesson not found' };
         if (!lesson.Module) throw { statusCode: 404, message: 'Module not found for this lesson' };
 
-        const enrollment = await Enrollment.findOne({
-            include: [{
-                model: Batch,
-                where: { course_id: lesson.Module.course_id },
-                required: true
-            }],
-            where: { student_id: student.id, status: 'active' }
-        });
-
-        if (!enrollment) throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
+        const enrollment = await this._getEnrollment(student.id, lesson.Module.course_id);
 
         // Use the existing ProgressService logic
         const progressService = require('./progress.service');
@@ -961,13 +984,7 @@ class StudentPortalService {
 
     // ─── 13. Course Sidebar API (Lightweight Structure) ────────────────────────
     async getCourseSidebar(userId, courseId) {
-        const student = await this._getStudentByUserId(userId);
-
-        const enrollment = await Enrollment.findOne({
-            include: [{ model: Batch, where: { course_id: courseId }, required: true }],
-            where: { student_id: student.id, status: 'active' }
-        });
-        if (!enrollment) throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
+        const { enrollment } = await this._verifyCourseAccess(userId, courseId);
 
         const course = await Course.findByPk(courseId, {
             attributes: ['id', 'name'],
@@ -1003,12 +1020,14 @@ class StudentPortalService {
             ]
         });
 
-        const lessonProgress = await LessonProgress.findAll({
-            where: { enrollment_id: enrollment.id },
-            attributes: ['lesson_id', 'is_completed']
-        });
         const progressMap = {};
-        lessonProgress.forEach(lp => progressMap[lp.lesson_id] = lp.is_completed);
+        if (enrollment) {
+            const lessonProgress = await LessonProgress.findAll({
+                where: { enrollment_id: enrollment.id },
+                attributes: ['lesson_id', 'is_completed']
+            });
+            lessonProgress.forEach(lp => progressMap[lp.lesson_id] = lp.is_completed);
+        }
 
         const sidebarData = [];
         let prevModuleCompleted = true; // Module 1 is never locked
@@ -1059,10 +1078,10 @@ class StudentPortalService {
             }));
 
             const progressPct = totalLessonsInMod > 0 ? Math.round((completedLessonsInMod / totalLessonsInMod) * 100) : 0;
-            const isLocked = !prevModuleCompleted;
+            const isLocked = !prevModuleCompleted && enrollment; // Only lock if we have an enrollment (i.e., student)
             
             // Update for next iteration
-            prevModuleCompleted = (progressPct === 100);
+            prevModuleCompleted = !enrollment || (progressPct === 100); // For admin/tutor, modules are always unlocked
 
             sidebarData.push({
                 id: mod.id,
@@ -1083,13 +1102,7 @@ class StudentPortalService {
     }
 
     async getCourseModule(userId, courseId, moduleId) {
-        const student = await this._getStudentByUserId(userId);
-
-        const enrollment = await Enrollment.findOne({
-            include: [{ model: Batch, where: { course_id: courseId }, required: true }],
-            where: { student_id: student.id, status: 'active' }
-        });
-        if (!enrollment) throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
+        await this._verifyCourseAccess(userId, courseId);
 
         const mod = await Module.findOne({
             where: { id: moduleId, course_id: courseId },
@@ -1105,13 +1118,7 @@ class StudentPortalService {
     }
 
     async getCourseLesson(userId, courseId, lessonId) {
-        const student = await this._getStudentByUserId(userId);
-
-        const enrollment = await Enrollment.findOne({
-            include: [{ model: Batch, where: { course_id: courseId }, required: true }],
-            where: { student_id: student.id, status: 'active' }
-        });
-        if (!enrollment) throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
+        const { enrollment } = await this._verifyCourseAccess(userId, courseId);
 
         const lesson = await Lesson.findByPk(lessonId, {
             include: [
@@ -1128,9 +1135,12 @@ class StudentPortalService {
             throw { statusCode: 404, message: 'Lesson not found or does not belong to this course.' };
         }
 
-        const lessonProgress = await LessonProgress.findOne({
-            where: { enrollment_id: enrollment.id, lesson_id: lessonId }
-        });
+        let lessonProgress = null;
+        if (enrollment) {
+            lessonProgress = await LessonProgress.findOne({
+                where: { enrollment_id: enrollment.id, lesson_id: lessonId }
+            });
+        }
 
         const lessonData = serializeWithMedia(lesson.toJSON());
         return {
@@ -1142,13 +1152,7 @@ class StudentPortalService {
     }
 
     async getCourseTopic(userId, courseId, topicId) {
-        const student = await this._getStudentByUserId(userId);
-
-        const enrollment = await Enrollment.findOne({
-            include: [{ model: Batch, where: { course_id: courseId }, required: true }],
-            where: { student_id: student.id, status: 'active' }
-        });
-        if (!enrollment) throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
+        await this._verifyCourseAccess(userId, courseId);
 
         const topic = await Topic.findByPk(topicId, {
             include: [
@@ -1305,16 +1309,7 @@ class StudentPortalService {
     // ─── 16. Student Quiz APIs ──────────────────────────────────────────────────
     
     async getCourseQuiz(userId, courseId, quizId) {
-        const student = await this._getStudentByUserId(userId);
-
-        // 1. Verify student is enrolled in this course
-        const enrollment = await Enrollment.findOne({
-            include: [{ model: Batch, where: { course_id: courseId }, required: true }],
-            where: { student_id: student.id, status: 'active' }
-        });
-        if (!enrollment) {
-            throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
-        }
+        await this._verifyCourseAccess(userId, courseId);
 
         // 2. Fetch quiz
         const quiz = await Quiz.findByPk(quizId, {
@@ -1362,15 +1357,7 @@ class StudentPortalService {
             throw { statusCode: 400, message: 'No answers provided' };
         }
 
-        // Verify student is enrolled in this course
-        const enrollment = await Enrollment.findOne({
-            include: [{ model: Batch, where: { course_id: courseId }, required: true }],
-            where: { student_id: student.id, status: 'active' }
-        });
-        
-        if (!enrollment) {
-            throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
-        }
+        const enrollment = await this._getEnrollment(student.id, courseId);
 
         // 3. Prevent duplicate final submissions
         const existingSubmission = await QuizSubmission.findOne({
@@ -1562,15 +1549,7 @@ class StudentPortalService {
     // ─── 17. Student Assignment Completion APIs ────────────────────────────────
     
     async getCourseAssignment(userId, courseId, assignmentId) {
-        const student = await this._getStudentByUserId(userId);
-
-        const enrollment = await Enrollment.findOne({
-            include: [{ model: Batch, where: { course_id: courseId }, required: true }],
-            where: { student_id: student.id, status: 'active' }
-        });
-        if (!enrollment) {
-            throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
-        }
+        const { enrollment } = await this._verifyCourseAccess(userId, courseId);
 
         const assignment = await Assignment.findByPk(assignmentId, {
             include: [{ model: Module, attributes: ['id', 'name'] }]
@@ -1579,13 +1558,17 @@ class StudentPortalService {
             throw { statusCode: 404, message: 'Assignment not found or does not belong to this course' };
         }
 
-        const submission = await AssignmentSubmission.findOne({
-            where: { student_id: userId, assignment_id: assignmentId, enrollment_id: enrollment.id }
-        });
+        let submission = null;
+        let batchAssignment = null;
+        if (enrollment) {
+            submission = await AssignmentSubmission.findOne({
+                where: { student_id: userId, assignment_id: assignmentId, enrollment_id: enrollment.id }
+            });
 
-        const batchAssignment = await models.BatchAssignment.findOne({
-            where: { batch_id: enrollment.batch_id, assignment_id: assignmentId }
-        });
+            batchAssignment = await models.BatchAssignment.findOne({
+                where: { batch_id: enrollment.batch_id, assignment_id: assignmentId }
+            });
+        }
 
         let uploadedFiles = [];
         let draftContent = null;
@@ -1622,15 +1605,7 @@ class StudentPortalService {
 
     async submitCourseAssignment(userId, courseId, assignmentId, data) {
         const student = await this._getStudentByUserId(userId);
-
-        const enrollment = await Enrollment.findOne({
-            include: [{ model: Batch, where: { course_id: courseId }, required: true }],
-            where: { student_id: student.id, status: 'active' }
-        });
-        
-        if (!enrollment) {
-            throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
-        }
+        const enrollment = await this._getEnrollment(student.id, courseId);
 
         const assignment = await Assignment.findByPk(assignmentId);
         if (!assignment || assignment.course_id !== parseInt(courseId, 10)) {
@@ -1691,15 +1666,7 @@ class StudentPortalService {
 
     async getCourseAssignmentResult(userId, courseId, assignmentId) {
         const student = await this._getStudentByUserId(userId);
-
-        const enrollment = await Enrollment.findOne({
-            include: [{ model: Batch, where: { course_id: courseId }, required: true }],
-            where: { student_id: student.id, status: 'active' }
-        });
-        
-        if (!enrollment) {
-            throw { statusCode: 403, message: 'Access denied. You are not enrolled in this course.' };
-        }
+        const enrollment = await this._getEnrollment(student.id, courseId);
 
         const submission = await AssignmentSubmission.findOne({
             where: { student_id: userId, assignment_id: assignmentId, enrollment_id: enrollment.id }

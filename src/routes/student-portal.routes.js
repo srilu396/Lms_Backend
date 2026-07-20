@@ -4,9 +4,9 @@ const studentPortalController = require('../controllers/student-portal.controlle
 const noteController = require('../controllers/note.controller');
 const authMiddleware = require('../middlewares/auth.middleware');
 const roleMiddleware = require('../middlewares/role.middleware');
-// All student portal routes require authentication + student role
+// All student portal routes require authentication + student, admin, tutor roles
 router.use(authMiddleware);
-router.use(roleMiddleware('student'));
+router.use(roleMiddleware('student', 'admin', 'tutor'));
 
 
 // GET /student-portal/stats

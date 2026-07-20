@@ -16,7 +16,8 @@ const {
     BatchAssignment,
     AssignmentSubmission,
     Student,
-    Tutor
+    Tutor,
+    sequelize
 } = require('../models');
 const { Op } = require('sequelize');
 const { mediaInclude, serializeWithMedia } = require('../utils/media');
@@ -144,46 +145,60 @@ class TutorPortalService {
         });
 
         // Step 4: Enrich each batch with student count
-        const batchData = await Promise.all(
-            batches.map(async (batch) => {
-                const studentCount = await Enrollment.count({
-                    where: {
-                        batch_id: batch.id,
-                        status: 'active'
-                    }
-                });
-
-                let type = null;
-                let course = null;
-                let domain = null;
-                
-                if (batch.course_id) {
-                    type = 'course';
-                    course = batch.Course ? { id: batch.Course.id, name: batch.Course.name } : null;
-                } else if (batch.domain_id) {
-                    type = 'domain';
-                    domain = batch.Domain ? { id: batch.Domain.id, name: batch.Domain.name } : null;
-                }
-
-                return {
-                    id: batch.id,
-                    batch_name: batch.name,
-                    status: batch.status,
-                    start_date: batch.start_date,
-                    end_date: batch.end_date,
-                    type,
-                    course,
-                    domain,
-                    total_students: studentCount,
-                    progress_percentage: batch.BatchPerformance
-                        ? parseFloat(batch.BatchPerformance.overall_progress)
-                        : 0,
-                    completion_percentage: batch.BatchPerformance
-                        ? parseFloat(batch.BatchPerformance.completion_rate)
-                        : 0
-                };
+        const batchIds = batches.map(b => b.id);
+        const studentCounts = batchIds.length > 0
+            ? await Enrollment.findAll({
+                where: {
+                    batch_id: { [Op.in]: batchIds },
+                    status: 'active'
+                },
+                attributes: [
+                    'batch_id',
+                    [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+                ],
+                group: ['batch_id'],
+                raw: true
             })
-        );
+            : [];
+
+        const studentCountMap = {};
+        studentCounts.forEach(c => {
+            studentCountMap[c.batch_id] = parseInt(c.count, 10);
+        });
+
+        const batchData = batches.map((batch) => {
+            const studentCount = studentCountMap[batch.id] || 0;
+
+            let type = null;
+            let course = null;
+            let domain = null;
+            
+            if (batch.course_id) {
+                type = 'course';
+                course = batch.Course ? { id: batch.Course.id, name: batch.Course.name } : null;
+            } else if (batch.domain_id) {
+                type = 'domain';
+                domain = batch.Domain ? { id: batch.Domain.id, name: batch.Domain.name } : null;
+            }
+
+            return {
+                id: batch.id,
+                batch_name: batch.name,
+                status: batch.status,
+                start_date: batch.start_date,
+                end_date: batch.end_date,
+                type,
+                course,
+                domain,
+                total_students: studentCount,
+                progress_percentage: batch.BatchPerformance
+                    ? parseFloat(batch.BatchPerformance.overall_progress)
+                    : 0,
+                completion_percentage: batch.BatchPerformance
+                    ? parseFloat(batch.BatchPerformance.completion_rate)
+                    : 0
+            };
+        });
 
         return {
             total_items: count,

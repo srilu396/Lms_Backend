@@ -83,24 +83,32 @@ const createCourseSchema = Joi.object({
     name: Joi.string().required(),
     description: Joi.string().allow('', null),
     thumbnail_url: Joi.string().allow('', null),
+    domain_id: Joi.number().integer().allow(null),
+    institution_id: Joi.number().integer().allow(null),
+    tags: Joi.array().items(Joi.string()).allow(null),
+    final_assessment_id: Joi.number().integer().allow(null),
+    final_assessment_type: Joi.string().valid('assignment', 'quiz').allow(null),
     status: Joi.string().valid('active', 'inactive', 'archived', 'draft', 'published'),
     modules: Joi.array().items(createModuleSchema),
     assignment_ids: Joi.array().items(Joi.number().integer()).max(1).allow(null),
-    // Course does not support quizzes — only Final Assignment is allowed
-    quiz_ids: Joi.forbidden(),
-    quizzes: Joi.forbidden()
+    quiz_ids: Joi.array().items(Joi.number().integer()).max(1).allow(null),
+    quizzes: Joi.array().items(Joi.alternatives().try(Joi.number().integer(), Joi.object().unknown(true))).allow(null)
 });
 
 const updateCourseSchema = Joi.object({
     name: Joi.string(),
     description: Joi.string().allow('', null),
     thumbnail_url: Joi.string().allow('', null),
+    domain_id: Joi.number().integer().allow(null),
+    institution_id: Joi.number().integer().allow(null),
+    tags: Joi.array().items(Joi.string()).allow(null),
+    final_assessment_id: Joi.number().integer().allow(null),
+    final_assessment_type: Joi.string().valid('assignment', 'quiz').allow(null),
     status: Joi.string().valid('active', 'inactive', 'archived', 'draft', 'published'),
     assignment_ids: Joi.array().items(Joi.number().integer()).max(1).allow(null),
+    quiz_ids: Joi.array().items(Joi.number().integer()).max(1).allow(null),
     modules: Joi.array().items(createModuleSchema),
-    // Course does not support quizzes — only Final Assignment is allowed
-    quiz_ids: Joi.forbidden(),
-    quizzes: Joi.forbidden()
+    quizzes: Joi.array().items(Joi.alternatives().try(Joi.number().integer(), Joi.object().unknown(true))).allow(null)
 }).min(1);
 
 const updateModuleSchema = Joi.object({

@@ -387,8 +387,24 @@ class DomainService {
     }
 
     async getDomainStats() {
-        const total = await Domain.count();
-        const active = await Domain.count({ where: { status: 'active' } });
+        const stats = await Domain.findAll({
+            attributes: [
+                'status',
+                [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+            ],
+            group: ['status'],
+            raw: true
+        });
+
+        let total = 0;
+        let active = 0;
+        stats.forEach(item => {
+            const count = parseInt(item.count, 10) || 0;
+            total += count;
+            if (item.status === 'active') {
+                active = count;
+            }
+        });
 
         return {
             total_domains: total,

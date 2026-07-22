@@ -45,6 +45,11 @@ module.exports = (sequelize, DataTypes) => {
             type: DataTypes.STRING,
             allowNull: true,
             defaultValue: null
+        },
+        unique_code: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            unique: true
         }
     }, {
         tableName: 'tutors',
@@ -55,6 +60,10 @@ module.exports = (sequelize, DataTypes) => {
         deletedAt: 'deleted_at',
         hooks: {
             beforeCreate: async (tutor) => {
+                if (!tutor.unique_code) {
+                    const crypto = require('crypto');
+                    tutor.unique_code = `TUT-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+                }
                 if (tutor.password) {
                     const salt = await bcrypt.genSalt(10);
                     tutor.password = await bcrypt.hash(tutor.password, salt);

@@ -22,6 +22,14 @@ module.exports = (sequelize, DataTypes) => {
                 key: 'id'
             }
         },
+        module_id: {
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            references: {
+                model: 'modules',
+                key: 'id'
+            }
+        },
         lesson_id: {
             type: DataTypes.INTEGER,
             allowNull: true,
@@ -29,6 +37,18 @@ module.exports = (sequelize, DataTypes) => {
                 model: 'lessons',
                 key: 'id'
             }
+        },
+        topic_id: {
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            references: {
+                model: 'topics',
+                key: 'id'
+            }
+        },
+        title: {
+            type: DataTypes.STRING(255),
+            allowNull: true
         },
         content: {
             type: DataTypes.TEXT,
@@ -52,7 +72,9 @@ module.exports = (sequelize, DataTypes) => {
     Note.associate = (models) => {
         Note.belongsTo(models.User, { foreignKey: 'student_id' });
         Note.belongsTo(models.Course, { foreignKey: 'course_id' });
+        Note.belongsTo(models.Module, { foreignKey: 'module_id' });
         Note.belongsTo(models.Lesson, { foreignKey: 'lesson_id' });
+        Note.belongsTo(models.Topic, { foreignKey: 'topic_id' });
     };
 
     return Note;

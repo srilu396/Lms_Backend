@@ -37,6 +37,22 @@ class ModuleController {
         }
     }
 
+    async getModule(req, res) {
+        try {
+            const mod = await moduleService.getModule(req.params.moduleId);
+            res.status(200).json({
+                success: true,
+                message: 'Module retrieved successfully',
+                data: mod
+            });
+        } catch (error) {
+            res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || 'Server error retrieving module'
+            });
+        }
+    }
+
     async deleteModule(req, res) {
         try {
             await moduleService.deleteModule(req.params.moduleId);

@@ -63,6 +63,33 @@ const deleteAssignment = async (req, res) => {
     }
 };
 
+const unlinkAssignment = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { level } = req.body;
+        
+        const updateField = {};
+        if (level === 'course') updateField.course_id = null;
+        else if (level === 'module') updateField.module_id = null;
+        else if (level === 'lesson') updateField.lesson_id = null;
+        else {
+            return res.status(400).json({ success: false, message: 'Invalid level for unlinking' });
+        }
+
+        await AssignmentService.unlinkAssignment(id, updateField);
+
+        res.status(200).json({
+            success: true,
+            message: 'Assignment unlinked successfully'
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Server error unlinking assignment'
+        });
+    }
+};
+
 module.exports = {
     getAssignmentStats,
     createAssignment,
@@ -70,5 +97,6 @@ module.exports = {
     getAllAssignments,
     getAssignmentById,
     updateAssignment,
-    deleteAssignment
+    deleteAssignment,
+    unlinkAssignment
 };

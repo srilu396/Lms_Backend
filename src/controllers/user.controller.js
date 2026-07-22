@@ -76,7 +76,13 @@ class UserController {
     // PUT /users/:id
     async updateUser(req, res) {
         try {
-            const user = await userService.updateUser(req.params.id, req.body);
+            const updateData = { ...req.body };
+            if (updateData.status) {
+                updateData.is_active = (updateData.status === 'active');
+                delete updateData.status;
+            }
+
+            const user = await userService.updateUser(req.params.id, updateData);
             res.status(200).json({
                 success: true,
                 message: 'User updated successfully',

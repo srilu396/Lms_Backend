@@ -21,9 +21,10 @@ module.exports = (sequelize, DataTypes) => {
         description: DataTypes.TEXT,
         content_text: DataTypes.TEXT,
         text: DataTypes.TEXT,
-        image_url: DataTypes.STRING,
-        video_url: DataTypes.STRING,
-        url: DataTypes.STRING,
+        image_url: DataTypes.TEXT,
+        video_url: DataTypes.TEXT,
+        url: DataTypes.TEXT,
+        pdf_url: DataTypes.TEXT,
         order_num: {
             type: DataTypes.INTEGER,
             allowNull: false
@@ -36,15 +37,30 @@ module.exports = (sequelize, DataTypes) => {
         tableName: 'modules',
         timestamps: true,
         createdAt: 'created_at',
-        updatedAt: false
+        updatedAt: false,
+        hooks: {
+            beforeDestroy: async (instance, options) => {
+                const { MediaAttachment } = require('../models');
+                await MediaAttachment.destroy({
+                    where: { entity_type: 'module', entity_id: instance.id },
+                    transaction: options.transaction
+                });
+            }
+        }
     });
 
     Module.associate = (models) => {
         Module.belongsTo(models.Course, { foreignKey: 'course_id' });
-        Module.hasMany(models.Topic, { foreignKey: 'module_id', as: 'topics' });
+        Module.hasMany(models.Lesson, { foreignKey: 'module_id', as: 'lessons' });
         Module.hasMany(models.Assignment, { foreignKey: 'module_id', as: 'assignments' });
         Module.hasMany(models.Quiz, { foreignKey: 'module_id', as: 'quizzes' });
         Module.hasMany(models.StudentProgress, { foreignKey: 'module_id' });
+        Module.hasMany(models.MediaAttachment, {
+            foreignKey: 'entity_id',
+            constraints: false,
+            scope: { entity_type: 'module' },
+            as: 'attachments'
+        });
     };
 
     return Module;

@@ -3,11 +3,11 @@ const topicService = require('../services/topic.service');
 class TopicController {
     async addTopic(req, res) {
         try {
-            const moduleId = req.params.moduleId || req.body.module_id;
-            if (!moduleId) {
-                return res.status(400).json({ success: false, message: 'module_id is required' });
+            const lessonId = req.params.lessonId || req.body.lesson_id;
+            if (!lessonId) {
+                return res.status(400).json({ success: false, message: 'lesson_id is required' });
             }
-            const topic = await topicService.createTopic(moduleId, req.body);
+            const topic = await topicService.createTopic(lessonId, req.body);
             res.status(201).json({
                 success: true,
                 message: 'Topic added successfully',
@@ -33,6 +33,22 @@ class TopicController {
             res.status(error.statusCode || 500).json({
                 success: false,
                 message: error.message || 'Server error updating topic'
+            });
+        }
+    }
+
+    async getTopic(req, res) {
+        try {
+            const topic = await topicService.getTopic(req.params.topicId);
+            res.status(200).json({
+                success: true,
+                message: 'Topic retrieved successfully',
+                data: topic
+            });
+        } catch (error) {
+            res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || 'Server error retrieving topic'
             });
         }
     }

@@ -23,6 +23,11 @@ module.exports = (sequelize, DataTypes) => {
         is_active: {
             type: DataTypes.BOOLEAN,
             defaultValue: true
+        },
+        unique_code: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            unique: true
         }
     }, {
         tableName: 'institutions',
@@ -30,7 +35,15 @@ module.exports = (sequelize, DataTypes) => {
         timestamps: true,
         createdAt: 'created_at',
         updatedAt: 'updated_at',
-        deletedAt: 'deleted_at'
+        deletedAt: 'deleted_at',
+        hooks: {
+            beforeCreate: (institution) => {
+                if (!institution.unique_code) {
+                    const crypto = require('crypto');
+                    institution.unique_code = `INS-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+                }
+            }
+        }
     });
 
     Institution.associate = (models) => {

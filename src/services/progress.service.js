@@ -1,27 +1,20 @@
-const { LessonProgress, StudentProgress, Lesson, Topic, Module, Course, Enrollment, Batch, sequelize } = require('../models');
+const { LessonProgress, StudentProgress, TopicProgress, Lesson, Topic, Module, Course, Enrollment, Batch, sequelize } = require('../models');
 
 class ProgressService {
     /**
-     * Update progress for a specific lesson
+     * Update progress for a specific module
      */
-    async updateLessonProgress(studentId, enrollmentId, lessonId, data) {
-        // Find if the lesson exists
-        const lesson = await Lesson.findByPk(lessonId, {
-            include: [{
-                model: Topic,
-                include: [{ model: Module }]
-            }]
-        });
-
-        if (!lesson) {
-            const error = new Error('Lesson not found');
+    async updateModuleProgress(studentId, enrollmentId, moduleId, data) {
+        // Find if the module exists
+        const module = await Module.findByPk(moduleId);
+        if (!module) {
+            const error = new Error('Module not found');
             error.statusCode = 404;
             throw error;
         }
 
-        // Verify enrollment by matching the logged-in User's email to the Student record
+        // Verify enrollment
         const user = await require('../models').User.findByPk(studentId);
-        
         const enrollment = await Enrollment.findOne({
             where: { id: enrollmentId },
             include: [{
@@ -37,9 +30,64 @@ class ProgressService {
             throw error;
         }
 
-        const moduleId = lesson.Topic.module_id;
+        // Upsert module progress
+        const result = await sequelize.transaction(async (t) => {
+            let [studentProgress, created] = await StudentProgress.findOrCreate({
+                where: { student_id: studentId, module_id: moduleId, enrollment_id: enrollmentId },
+                defaults: {
+                    progress_pct: data.is_completed ? 100 : 0,
+                    is_completed: data.is_completed || false,
+                    last_accessed: new Date()
+                },
+                transaction: t
+            });
 
-        // Upsert lesson progress using a transaction
+            if (!created) {
+                studentProgress.progress_pct = data.is_completed ? 100 : studentProgress.progress_pct;
+                studentProgress.is_completed = data.is_completed !== undefined ? data.is_completed : studentProgress.is_completed;
+                studentProgress.last_accessed = new Date();
+                await studentProgress.save({ transaction: t });
+            }
+
+            return studentProgress;
+        });
+
+        return result;
+    }
+
+    /**
+     * Update progress for a specific lesson
+     */
+    async updateLessonProgress(studentId, enrollmentId, lessonId, data) {
+        // Find if the lesson exists
+        const lesson = await Lesson.findByPk(lessonId, {
+            include: [{ model: Module }]
+        });
+
+        if (!lesson) {
+            const error = new Error('Lesson not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        // Verify enrollment
+        const user = await require('../models').User.findByPk(studentId);
+        const enrollment = await Enrollment.findOne({
+            where: { id: enrollmentId },
+            include: [{
+                model: require('../models').Student,
+                as: 'student',
+                where: { email: user.email }
+            }]
+        });
+
+        if (!enrollment) {
+            const error = new Error('Enrollment not found or unauthorized');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        // Upsert lesson progress
         const result = await sequelize.transaction(async (t) => {
             let [lessonProgress, created] = await LessonProgress.findOrCreate({
                 where: { student_id: studentId, lesson_id: lessonId, enrollment_id: enrollmentId },
@@ -66,9 +114,6 @@ class ProgressService {
                 await lessonProgress.save({ transaction: t });
             }
 
-            // Recalculate module progress
-            await this.recalculateModuleProgress(studentId, enrollmentId, moduleId, t);
-
             return lessonProgress;
         });
 
@@ -76,56 +121,63 @@ class ProgressService {
     }
 
     /**
-     * Recalculate StudentProgress for a module
+     * Update progress for a specific topic
      */
-    async recalculateModuleProgress(studentId, enrollmentId, moduleId, t) {
-        // Get all lessons in the module
-        const moduleLessons = await Lesson.findAll({
-            include: [{
-                model: Topic,
-                where: { module_id: moduleId },
-                attributes: []
-            }],
-            transaction: t
-        });
-
-        const totalLessons = moduleLessons.length;
-
-        if (totalLessons === 0) return;
-
-        const lessonIds = moduleLessons.map(l => l.id);
-
-        // Get completed lessons for this student in this module
-        const completedLessonsCount = await LessonProgress.count({
-            where: {
-                student_id: studentId,
-                enrollment_id: enrollmentId,
-                lesson_id: lessonIds,
-                is_completed: true
-            },
-            transaction: t
-        });
-
-        const progressPct = (completedLessonsCount / totalLessons) * 100;
-        const isCompleted = completedLessonsCount === totalLessons;
-
-        // Upsert StudentProgress for the module
-        let [studentProgress, created] = await StudentProgress.findOrCreate({
-            where: { student_id: studentId, module_id: moduleId, enrollment_id: enrollmentId },
-            defaults: {
-                progress_pct: progressPct,
-                is_completed: isCompleted,
-                last_accessed: new Date()
-            },
-            transaction: t
-        });
-
-        if (!created) {
-            studentProgress.progress_pct = progressPct;
-            studentProgress.is_completed = isCompleted;
-            studentProgress.last_accessed = new Date();
-            await studentProgress.save({ transaction: t });
+    async updateTopicProgress(studentId, enrollmentId, topicId, data) {
+        // Find if the topic exists
+        const topic = await Topic.findByPk(topicId);
+        if (!topic) {
+            const error = new Error('Topic not found');
+            error.statusCode = 404;
+            throw error;
         }
+
+        // Verify enrollment
+        const user = await require('../models').User.findByPk(studentId);
+        const enrollment = await Enrollment.findOne({
+            where: { id: enrollmentId },
+            include: [{
+                model: require('../models').Student,
+                as: 'student',
+                where: { email: user.email }
+            }]
+        });
+
+        if (!enrollment) {
+            const error = new Error('Enrollment not found or unauthorized');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        // Upsert topic progress
+        const result = await sequelize.transaction(async (t) => {
+            let [topicProgress, created] = await TopicProgress.findOrCreate({
+                where: { student_id: studentId, topic_id: topicId, enrollment_id: enrollmentId },
+                defaults: {
+                    is_completed: data.is_completed || false,
+                    completed_at: data.is_completed ? new Date() : null,
+                    last_accessed: new Date()
+                },
+                transaction: t
+            });
+
+            if (!created) {
+                topicProgress.is_completed = data.is_completed !== undefined ? data.is_completed : topicProgress.is_completed;
+                topicProgress.last_accessed = new Date();
+                
+                if (topicProgress.is_completed && !topicProgress.completed_at) {
+                    topicProgress.completed_at = new Date();
+                } else if (!topicProgress.is_completed) {
+                    topicProgress.completed_at = null;
+                }
+
+                await topicProgress.save({ transaction: t });
+            }
+
+            return topicProgress;
+        });
+
+        return result;
     }
 
     /**

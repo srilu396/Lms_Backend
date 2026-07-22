@@ -1,6 +1,7 @@
 const {
     Batch,
     Course,
+    Domain,
     Enrollment,
     User,
     Module,
@@ -15,9 +16,11 @@ const {
     BatchAssignment,
     AssignmentSubmission,
     Student,
-    Tutor
+    Tutor,
+    sequelize
 } = require('../models');
 const { Op } = require('sequelize');
+const { mediaInclude, serializeWithMedia } = require('../utils/media');
 
 function formatDate(date) {
     if (!date) return '';
@@ -126,6 +129,10 @@ class TutorPortalService {
                     attributes: ['id', 'name']
                 },
                 {
+                    model: Domain,
+                    attributes: ['id', 'name']
+                },
+                {
                     model: BatchPerformance,
                     attributes: ['overall_progress', 'completion_rate'],
                     required: false
@@ -138,34 +145,60 @@ class TutorPortalService {
         });
 
         // Step 4: Enrich each batch with student count
-        const batchData = await Promise.all(
-            batches.map(async (batch) => {
-                const studentCount = await Enrollment.count({
-                    where: {
-                        batch_id: batch.id,
-                        status: 'active'
-                    }
-                });
-
-                return {
-                    id: batch.id,
-                    batch_name: batch.name,
-                    status: batch.status,
-                    start_date: batch.start_date,
-                    end_date: batch.end_date,
-                    course: batch.Course
-                        ? { id: batch.Course.id, name: batch.Course.name }
-                        : null,
-                    total_students: studentCount,
-                    progress_percentage: batch.BatchPerformance
-                        ? parseFloat(batch.BatchPerformance.overall_progress)
-                        : 0,
-                    completion_percentage: batch.BatchPerformance
-                        ? parseFloat(batch.BatchPerformance.completion_rate)
-                        : 0
-                };
+        const batchIds = batches.map(b => b.id);
+        const studentCounts = batchIds.length > 0
+            ? await Enrollment.findAll({
+                where: {
+                    batch_id: { [Op.in]: batchIds },
+                    status: 'active'
+                },
+                attributes: [
+                    'batch_id',
+                    [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+                ],
+                group: ['batch_id'],
+                raw: true
             })
-        );
+            : [];
+
+        const studentCountMap = {};
+        studentCounts.forEach(c => {
+            studentCountMap[c.batch_id] = parseInt(c.count, 10);
+        });
+
+        const batchData = batches.map((batch) => {
+            const studentCount = studentCountMap[batch.id] || 0;
+
+            let type = null;
+            let course = null;
+            let domain = null;
+            
+            if (batch.course_id) {
+                type = 'course';
+                course = batch.Course ? { id: batch.Course.id, name: batch.Course.name } : null;
+            } else if (batch.domain_id) {
+                type = 'domain';
+                domain = batch.Domain ? { id: batch.Domain.id, name: batch.Domain.name } : null;
+            }
+
+            return {
+                id: batch.id,
+                batch_name: batch.name,
+                status: batch.status,
+                start_date: batch.start_date,
+                end_date: batch.end_date,
+                type,
+                course,
+                domain,
+                total_students: studentCount,
+                progress_percentage: batch.BatchPerformance
+                    ? parseFloat(batch.BatchPerformance.overall_progress)
+                    : 0,
+                completion_percentage: batch.BatchPerformance
+                    ? parseFloat(batch.BatchPerformance.completion_rate)
+                    : 0
+            };
+        });
 
         return {
             total_items: count,
@@ -218,32 +251,72 @@ class TutorPortalService {
                 {
                     model: Module,
                     as: 'modules',
-                    attributes: ['id', 'name', 'order_num', 'description'],
+                    attributes: ['id', 'name', 'order_num', 'description', 'image_url', 'video_url', 'pdf_url', 'url'],
                     include: [
+                        mediaInclude(),
                         {
-                            model: Topic,
-                            as: 'topics',
-                            attributes: ['id', 'name', 'order_num'],
+                            model: Lesson,
+                            as: 'lessons',
+                            attributes: ['id', 'name', 'order_num', 'type', 'duration_minutes', 'content_text', 'image_url', 'video_url', 'url', 'pdf_url'],
                             include: [
+                                mediaInclude(),
                                 {
-                                    model: Lesson,
-                                    as: 'lessons',
-                                    attributes: ['id', 'name', 'order_num', 'type', 'duration_minutes', 'content_text', 'video_url', 'url']
+                                    model: Topic,
+                                    as: 'topics',
+                                    attributes: ['id', 'name', 'order_num', 'description', 'content_text', 'text', 'image_url', 'video_url', 'url', 'pdf_url'],
+                                    include: [mediaInclude()]
                                 },
                                 {
                                     model: Quiz,
                                     as: 'quizzes',
                                     attributes: ['id', 'name'],
                                     required: false
+                                },
+                                {
+                                    model: Assignment,
+                                    as: 'assignments',
+                                    attributes: ['id', 'title'],
+                                    required: false
                                 }
-                            ],
-                            order: [['order_num', 'ASC']]
+                            ]
+                        },
+                        {
+                            model: Quiz,
+                            as: 'quizzes',
+                            attributes: ['id', 'name'],
+                            required: false
+                        },
+                        {
+                            model: Assignment,
+                            as: 'assignments',
+                            attributes: ['id', 'title'],
+                            required: false
                         }
-                    ],
-                    order: [['order_num', 'ASC']]
+                    ]
                 }
+            ],
+            order: [
+                [{ model: Module, as: 'modules' }, 'order_num', 'ASC'],
+                [{ model: Module, as: 'modules' }, { model: Lesson, as: 'lessons' }, 'order_num', 'ASC'],
+                [{ model: Module, as: 'modules' }, { model: Lesson, as: 'lessons' }, { model: Topic, as: 'topics' }, 'order_num', 'ASC']
             ]
         });
+
+        // Serialize course structure with grouped media arrays
+        const courseJson = courseStructure ? courseStructure.toJSON() : null;
+        if (courseJson && courseJson.modules) {
+            courseJson.modules = courseJson.modules.map(m => {
+                const mod = serializeWithMedia(m);
+                if (mod.lessons) {
+                    mod.lessons = mod.lessons.map(l => {
+                        const les = serializeWithMedia(l);
+                        if (les.topics) les.topics = les.topics.map(t => serializeWithMedia(t));
+                        return les;
+                    });
+                }
+                return mod;
+            });
+        }
 
         return {
             batch_id: batch.id,
@@ -251,7 +324,7 @@ class TutorPortalService {
             batch_progress: batch.BatchPerformance
                 ? parseFloat(batch.BatchPerformance.overall_progress)
                 : 0,
-            course_structure: courseStructure
+            course_structure: courseJson
         };
     }
 
@@ -301,8 +374,8 @@ class TutorPortalService {
             const modules = await Module.findAll({ where: { course_id: { [Op.in]: courseIds } }, attributes: ['id'] });
             const moduleIds = modules.map(m => m.id);
             
-            const topics = await Topic.findAll({ where: { module_id: { [Op.in]: moduleIds } }, attributes: ['id'] });
-            const topicIds = topics.map(t => t.id);
+            const lessons = moduleIds.length > 0 ? await Lesson.findAll({ where: { module_id: { [Op.in]: moduleIds } }, attributes: ['id'] }) : [];
+            const lessonIds = lessons.map(l => l.id);
 
             const quizWhere = {
                 [Op.or]: [
@@ -312,8 +385,8 @@ class TutorPortalService {
             if (moduleIds.length > 0) {
                 quizWhere[Op.or].push({ module_id: { [Op.in]: moduleIds } });
             }
-            if (topicIds.length > 0) {
-                quizWhere[Op.or].push({ topic_id: { [Op.in]: topicIds } });
+            if (lessonIds.length > 0) {
+                quizWhere[Op.or].push({ lesson_id: { [Op.in]: lessonIds } });
             }
 
             total_quizzes = await Quiz.count({ where: quizWhere });
@@ -374,15 +447,15 @@ class TutorPortalService {
                  const modules = await Module.findAll({ where: { course_id: batch.course_id }, attributes: ['id'] });
                  const moduleIds = modules.map(m => m.id);
                  
-                 const topics = await Topic.findAll({ where: { module_id: { [Op.in]: moduleIds } }, attributes: ['id'] });
-                 const topicIds = topics.map(t => t.id);
+                 const lessons = moduleIds.length > 0 ? await Lesson.findAll({ where: { module_id: { [Op.in]: moduleIds } }, attributes: ['id'] }) : [];
+                 const lessonIds = lessons.map(l => l.id);
 
                  const quizzes = await Quiz.findAll({
                      where: {
                          [Op.or]: [
                              { course_id: batch.course_id },
                              { module_id: { [Op.in]: moduleIds } },
-                             { topic_id: { [Op.in]: topicIds } }
+                             { lesson_id: { [Op.in]: lessonIds } }
                          ]
                      },
                      order: [['created_at', 'DESC']]
@@ -477,15 +550,15 @@ class TutorPortalService {
         if (batch.course_id) {
             const modules = await Module.findAll({ where: { course_id: batch.course_id }, attributes: ['id'] });
             const moduleIds = modules.map(m => m.id);
-            const topics = await Topic.findAll({ where: { module_id: { [Op.in]: moduleIds } }, attributes: ['id'] });
-            const topicIds = topics.map(t => t.id);
+            const lessons = moduleIds.length > 0 ? await Lesson.findAll({ where: { module_id: { [Op.in]: moduleIds } }, attributes: ['id'] }) : [];
+            const lessonIds = lessons.map(l => l.id);
 
             quizzes = await Quiz.findAll({
                 where: {
                     [Op.or]: [
                         { course_id: batch.course_id },
                         { module_id: { [Op.in]: moduleIds } },
-                        { topic_id: { [Op.in]: topicIds } }
+                        { lesson_id: { [Op.in]: lessonIds } }
                     ]
                 }
             });

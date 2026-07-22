@@ -50,6 +50,11 @@ module.exports = (sequelize, DataTypes) => {
         profile_image: {
             type: DataTypes.STRING,
             allowNull: true
+        },
+        unique_code: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            unique: true
         }
     }, {
         tableName: 'students',
@@ -60,6 +65,10 @@ module.exports = (sequelize, DataTypes) => {
         deletedAt: 'deleted_at',
         hooks: {
             beforeCreate: async (student) => {
+                if (!student.unique_code) {
+                    const crypto = require('crypto');
+                    student.unique_code = `STU-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+                }
                 if (student.password) {
                     const salt = await bcrypt.genSalt(10);
                     student.password = await bcrypt.hash(student.password, salt);

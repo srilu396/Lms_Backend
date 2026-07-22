@@ -317,10 +317,23 @@ class StudentService {
     }
 
     async getStudentStats() {
-        const total_students = await Student.count();
+        const statusStats = await Student.findAll({
+            attributes: [
+                'status',
+                [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+            ],
+            group: ['status'],
+            raw: true
+        });
 
-        const active_students = await Student.count({
-            where: { status: 'active' }
+        let total_students = 0;
+        let active_students = 0;
+        statusStats.forEach(item => {
+            const count = parseInt(item.count, 10) || 0;
+            total_students += count;
+            if (item.status === 'active') {
+                active_students = count;
+            }
         });
 
         const studentsGrouped = await Student.findAll({

@@ -31,6 +31,7 @@ module.exports = (sequelize, DataTypes) => {
                 key: 'id'
             }
         },
+
         domain_id: {
             type: DataTypes.INTEGER,
             allowNull: true,

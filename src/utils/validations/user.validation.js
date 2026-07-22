@@ -17,7 +17,8 @@ const createUserSchema = Joi.object({
     }),
     institution_name: Joi.string().optional(),
     institution_id: Joi.alternatives().try(Joi.number(), Joi.string()).optional(),
-    is_active: Joi.boolean().optional()
+    is_active: Joi.boolean().optional(),
+    status: Joi.string().valid('active', 'inactive').optional()
 });
 
 const updateUserSchema = Joi.object({
@@ -27,7 +28,8 @@ const updateUserSchema = Joi.object({
     role: Joi.string().valid('admin', 'institution_representative').optional(),
     institution_name: Joi.string().optional(),
     institution_id: Joi.alternatives().try(Joi.number(), Joi.string()).optional(),
-    is_active: Joi.boolean().optional()
+    is_active: Joi.boolean().optional(),
+    status: Joi.string().valid('active', 'inactive').optional()
 });
 
 module.exports = {

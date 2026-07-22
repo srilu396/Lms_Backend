@@ -3,19 +3,7 @@ const attendanceReportExport = require('../utils/fileGenerators/attendanceReport
 
 class StudentPortalController {
 
-    // GET /student-portal/profile
-    async getProfile(req, res, next) {
-        try {
-            const profile = await studentPortalService.getProfile(req.user.id);
-            res.status(200).json({
-                success: true,
-                message: 'Student profile retrieved successfully',
-                data: profile
-            });
-        } catch (error) {
-            next(error);
-        }
-    }
+
 
     // GET /student-portal/stats
     async getStats(req, res, next) {
@@ -159,40 +147,55 @@ class StudentPortalController {
         }
     }
 
-    // PUT /student-portal/profile
-    async updateProfile(req, res, next) {
-        try {
-            const updateData = { ...req.body };
-            
-            // If there's a file uploaded, add its URL/path to updateData
-            if (req.file) {
-                // Assuming static serving of 'uploads' folder
-                updateData.profile_image = `/uploads/profiles/${req.file.filename}`;
-            }
 
-            const updatedProfile = await studentPortalService.updateProfile(req.user.id, updateData);
-            
-            res.status(200).json({
-                success: true,
-                message: 'Profile updated successfully',
-                data: updatedProfile
-            });
-        } catch (error) {
-            next(error);
-        }
-    }
-
-    // GET /student-portal/enrolled-courses?search=&page=1&limit=10
+    // GET /student-portal/enrolled-courses?search=&page=1&limit=10&filter=all
     async getEnrolledCourses(req, res, next) {
         try {
-            const { search, page, limit } = req.query;
-            const result = await studentPortalService.getEnrolledCourses(req.user.id, { search, page, limit });
+            const { search, page, limit, filter } = req.query;
+            const result = await studentPortalService.getEnrolledCourses(req.user.id, { search, page, limit, filter });
             
             res.status(200).json({
                 success: true,
                 message: 'Enrolled courses retrieved successfully',
                 data: result.data,
                 pagination: result.pagination
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // GET /student-portal/course/:courseId/home
+    async getCourseHome(req, res, next) {
+        try {
+            const { courseId } = req.params;
+            const homeData = await studentPortalService.getCourseHome(req.user.id, courseId);
+            
+            res.status(200).json({
+                success: true,
+                message: 'Course home retrieved successfully',
+                data: homeData
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // GET /student-portal/course/:courseId/:contentType/activity
+    async getCompletedItems(req, res, next) {
+        try {
+            const { courseId, contentType } = req.params;
+            const { page, limit, search, filter } = req.query;
+            
+            const completionService = require('../services/completion.service');
+            const data = await completionService.getCompletedContent(req.user.id, courseId, contentType, { page, limit, search, filter });
+            
+            res.status(200).json({
+                success: true,
+                message: `Activity for ${contentType} retrieved successfully`,
+                course_name: data.course_name,
+                data: data.data,
+                pagination: data.pagination
             });
         } catch (error) {
             next(error);
@@ -236,7 +239,7 @@ class StudentPortalController {
         }
     }
 
-    // POST /student-portal/lesson/:lessonId/read
+    // POST /student-portal/lesson/:lessonId/read (Legacy)
     async markAsRead(req, res, next) {
         try {
             const { lessonId } = req.params;
@@ -248,6 +251,61 @@ class StudentPortalController {
             res.status(200).json({
                 success: true,
                 message: 'Lesson marked as read',
+                data: progress
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // PATCH /student-portal/modules/:moduleId/read
+    async markModuleAsRead(req, res, next) {
+        try {
+            const { moduleId } = req.params;
+            const progress = await studentPortalService.completeModule(req.user.id, moduleId, {
+                is_completed: true
+            });
+
+            res.status(200).json({
+                success: true,
+                message: 'Module marked as read',
+                data: progress
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // PATCH /student-portal/lessons/:lessonId/read
+    async markLessonAsRead(req, res, next) {
+        try {
+            const { lessonId } = req.params;
+            const progress = await studentPortalService.completeLesson(req.user.id, lessonId, {
+                is_completed: true,
+                video_watch_pct: 100
+            });
+
+            res.status(200).json({
+                success: true,
+                message: 'Lesson marked as read',
+                data: progress
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // PATCH /student-portal/topics/:topicId/read
+    async markTopicAsRead(req, res, next) {
+        try {
+            const { topicId } = req.params;
+            const progress = await studentPortalService.completeTopic(req.user.id, topicId, {
+                is_completed: true
+            });
+
+            res.status(200).json({
+                success: true,
+                message: 'Topic marked as read',
                 data: progress
             });
         } catch (error) {
@@ -270,35 +328,52 @@ class StudentPortalController {
         }
     }
 
-    // GET /student-portal/notes/lesson/:lessonId
-    async getNote(req, res, next) {
+    // GET /student-portal/course/:courseId/module/:moduleId
+    async getCourseModule(req, res, next) {
         try {
-            const { lessonId } = req.params;
-            const note = await studentPortalService.getLessonNote(req.user.id, lessonId);
+            const { courseId, moduleId } = req.params;
+            const moduleData = await studentPortalService.getCourseModule(req.user.id, courseId, moduleId);
             res.status(200).json({
                 success: true,
-                message: 'Note retrieved successfully',
-                data: note
+                message: 'Course module retrieved successfully',
+                data: moduleData
             });
         } catch (error) {
             next(error);
         }
     }
 
-    // PUT /student-portal/notes/lesson/:lessonId
-    async saveNote(req, res, next) {
+    // GET /student-portal/course/:courseId/lesson/:lessonId
+    async getCourseLesson(req, res, next) {
         try {
-            const { lessonId } = req.params;
-            const note = await studentPortalService.saveLessonNote(req.user.id, lessonId, req.body);
+            const { courseId, lessonId } = req.params;
+            const lessonData = await studentPortalService.getCourseLesson(req.user.id, courseId, lessonId);
             res.status(200).json({
                 success: true,
-                message: 'Note saved successfully',
-                data: note
+                message: 'Course lesson retrieved successfully',
+                data: lessonData
             });
         } catch (error) {
             next(error);
         }
     }
+
+    // GET /student-portal/course/:courseId/topic/:topicId
+    async getCourseTopic(req, res, next) {
+        try {
+            const { courseId, topicId } = req.params;
+            const topicData = await studentPortalService.getCourseTopic(req.user.id, courseId, topicId);
+            res.status(200).json({
+                success: true,
+                message: 'Course topic retrieved successfully',
+                data: topicData
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+
 
     // POST /student-portal/course/:courseId/complete
     async completeCourse(req, res, next) {

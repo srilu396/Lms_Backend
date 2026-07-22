@@ -9,7 +9,8 @@ const rateLimit = require('express-rate-limit');
 const { connectDB, sequelize } = require('./db/connect');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = Number(process.env.PORT || 5000);
+const BODY_LIMIT = process.env.BODY_LIMIT || '100mb';
 
 // Trust proxy for rate limiting behind reverse proxies (Render, Heroku, etc.)
 app.set('trust proxy', 1);
@@ -41,8 +42,8 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-app.use(express.json({ limit: '10mb' })); // Used to parse JSON bodies, with limit
-app.use(express.urlencoded({ extended: true, limit: '10mb' })); // Parse URL-encoded bodies
+app.use(express.json({ limit: BODY_LIMIT, strict: false }));
+app.use(express.urlencoded({ extended: true, limit: BODY_LIMIT, parameterLimit: 100000 }));
 app.use(cookieParser());
 
 
@@ -59,19 +60,8 @@ app.get('/', (req, res) => {
 app.use('/auth', require('./routes/auth.routes'));
 app.use('/api/v1/admin', require('./routes/admin.routes'));
 
-// Example Protected Route
-const authMiddleware = require('./middlewares/auth.middleware');
-app.get('/profile', authMiddleware, (req, res) => {
-    res.json({
-        success: true,
-        user: {
-            id: req.user.id,
-            email: req.user.email,
-            role: req.user.role,
-            full_name: req.user.full_name
-        }
-    });
-});
+// Unified Profile Routes
+app.use('/api/v1/profile', require('./routes/profile.routes'));
 
 app.use('/api/v1/users', require('./routes/user.routes'));
 app.use('/api/v1/institutions', require('./routes/institution.routes'));
@@ -92,7 +82,6 @@ app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/expo
 app.use('/api/v1/institution-rep/batches', require('./routes/institutionRep/attendance-calendar.routes'));
 app.use('/api/v1/institution-rep/reports', require('./routes/institutionRep/reports.routes'));
 app.use('/api/v1/institution-rep/dashboard', require('./routes/institutionRep/dashboard.routes'));
-app.use('/api/v1/institution-rep/profile', require('./routes/institutionRep/profile.routes'));
 app.use('/api/v1/institution-rep/student-performance', require('./routes/institutionRep/student-performance.routes'));
 app.use('/api/v1/contact-requests', require('./routes/contact.routes'));
 app.use('/api/v1/enrollments', require('./routes/enrollment.routes'));
@@ -114,8 +103,35 @@ app.use(errorHandler);
 const startServer = async () => {
     try {
         await connectDB();
-        const server = app.listen(PORT, () => {
-        });
+
+        const listenWithFallback = async (port) => {
+            return await new Promise((resolve, reject) => {
+                const server = app.listen(port, () => resolve(server));
+                server.on('error', (error) => {
+                    if (error.code === 'EADDRINUSE') {
+                        reject(error);
+                    } else {
+                        reject(error);
+                    }
+                });
+            });
+        };
+
+        let server;
+        try {
+            server = await listenWithFallback(PORT);
+        } catch (error) {
+            if (error.code === 'EADDRINUSE') {
+                console.warn(`Port ${PORT} is busy. Falling back to an available port.`);
+                server = await listenWithFallback(0);
+            } else {
+                throw error;
+            }
+        }
+
+        const address = server.address();
+        const actualPort = typeof address === 'object' && address ? address.port : PORT;
+        console.log(`Server listening on port ${actualPort}`);
 
         // Graceful shutdown handler
         const shutdown = async (signal) => {
@@ -137,6 +153,8 @@ const startServer = async () => {
         process.on('SIGTERM', () => shutdown('SIGTERM'));
 
     } catch (error) {
+        console.error('Failed to start server:', error);
+        process.exit(1);
     }
 };
 

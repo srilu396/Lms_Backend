@@ -6,11 +6,11 @@ module.exports = (sequelize, DataTypes) => {
             autoIncrement: true,
             allowNull: false
         },
-        module_id: {
+        lesson_id: {
             type: DataTypes.INTEGER,
             allowNull: false,
             references: {
-                model: 'modules',
+                model: 'lessons',
                 key: 'id'
             }
         },
@@ -21,9 +21,10 @@ module.exports = (sequelize, DataTypes) => {
         description: DataTypes.TEXT,
         content_text: DataTypes.TEXT,
         text: DataTypes.TEXT,
-        image_url: DataTypes.STRING,
-        video_url: DataTypes.STRING,
-        url: DataTypes.STRING,
+        image_url: DataTypes.TEXT,
+        video_url: DataTypes.TEXT,
+        url: DataTypes.TEXT,
+        pdf_url: DataTypes.TEXT,
         order_num: {
             type: DataTypes.INTEGER,
             allowNull: false
@@ -32,12 +33,27 @@ module.exports = (sequelize, DataTypes) => {
         tableName: 'topics',
         timestamps: true,
         createdAt: 'created_at',
-        updatedAt: false
+        updatedAt: false,
+        hooks: {
+            beforeDestroy: async (instance, options) => {
+                const { MediaAttachment } = require('../models');
+                await MediaAttachment.destroy({
+                    where: { entity_type: 'topic', entity_id: instance.id },
+                    transaction: options.transaction
+                });
+            }
+        }
     });
 
     Topic.associate = (models) => {
-        Topic.belongsTo(models.Module, { foreignKey: 'module_id' });
-        Topic.hasMany(models.Lesson, { foreignKey: 'topic_id', as: 'lessons' });
+        Topic.belongsTo(models.Lesson, { foreignKey: 'lesson_id' });
+        Topic.hasMany(models.TopicProgress, { foreignKey: 'topic_id' });
+        Topic.hasMany(models.MediaAttachment, {
+            foreignKey: 'entity_id',
+            constraints: false,
+            scope: { entity_type: 'topic' },
+            as: 'attachments'
+        });
     };
 
     return Topic;

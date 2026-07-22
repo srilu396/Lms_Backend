@@ -39,6 +39,22 @@ class QuizController {
         }
     }
 
+    async getQuizLookup(req, res) {
+        try {
+            const result = await quizService.getQuizLookup(req.query);
+            res.status(200).json({
+                success: true,
+                message: 'Quizzes lookup retrieved successfully',
+                data: result.data
+            });
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Server error retrieving quizzes lookup'
+            });
+        }
+    }
+
     async getQuizById(req, res) {
         try {
             const quiz = await quizService.getQuizById(req.params.id);
@@ -104,6 +120,33 @@ class QuizController {
             res.status(error.statusCode || 500).json({
                 success: false,
                 message: error.message || 'Server error deleting quiz'
+            });
+        }
+    }
+
+    async unlinkQuiz(req, res) {
+        try {
+            const { id } = req.params;
+            const { level } = req.body;
+            
+            const updateField = {};
+            if (level === 'course') updateField.course_id = null;
+            else if (level === 'module') updateField.module_id = null;
+            else if (level === 'lesson') updateField.lesson_id = null;
+            else {
+                return res.status(400).json({ success: false, message: 'Invalid level for unlinking' });
+            }
+
+            await quizService.unlinkQuiz(id, updateField);
+
+            res.status(200).json({
+                success: true,
+                message: 'Quiz unlinked successfully'
+            });
+        } catch (error) {
+            res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || 'Server error unlinking quiz'
             });
         }
     }

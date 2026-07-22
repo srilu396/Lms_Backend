@@ -6,11 +6,11 @@ module.exports = (sequelize, DataTypes) => {
             autoIncrement: true,
             allowNull: false
         },
-        topic_id: {
+        module_id: {
             type: DataTypes.INTEGER,
             allowNull: false,
             references: {
-                model: 'topics',
+                model: 'modules',
                 key: 'id'
             }
         },
@@ -24,9 +24,10 @@ module.exports = (sequelize, DataTypes) => {
         },
         content_text: DataTypes.TEXT,
         text: DataTypes.TEXT,
-        image_url: DataTypes.STRING,
-        video_url: DataTypes.STRING,
-        url: DataTypes.STRING,
+        image_url: DataTypes.TEXT,
+        video_url: DataTypes.TEXT,
+        url: DataTypes.TEXT,
+        pdf_url: DataTypes.TEXT,
         duration_minutes: DataTypes.INTEGER,
         order_num: {
             type: DataTypes.INTEGER,
@@ -36,14 +37,30 @@ module.exports = (sequelize, DataTypes) => {
         tableName: 'lessons',
         timestamps: true,
         createdAt: 'created_at',
-        updatedAt: false
+        updatedAt: false,
+        hooks: {
+            beforeDestroy: async (instance, options) => {
+                const { MediaAttachment } = require('../models');
+                await MediaAttachment.destroy({
+                    where: { entity_type: 'lesson', entity_id: instance.id },
+                    transaction: options.transaction
+                });
+            }
+        }
     });
 
     Lesson.associate = (models) => {
-        Lesson.belongsTo(models.Topic, { foreignKey: 'topic_id' });
+        Lesson.belongsTo(models.Module, { foreignKey: 'module_id' });
+        Lesson.hasMany(models.Topic, { foreignKey: 'lesson_id', as: 'topics' });
         Lesson.hasMany(models.LessonProgress, { foreignKey: 'lesson_id' });
         Lesson.hasMany(models.Quiz, { foreignKey: 'lesson_id', as: 'quizzes' });
         Lesson.hasMany(models.Assignment, { foreignKey: 'lesson_id', as: 'assignments' });
+        Lesson.hasMany(models.MediaAttachment, {
+            foreignKey: 'entity_id',
+            constraints: false,
+            scope: { entity_type: 'lesson' },
+            as: 'attachments'
+        });
     };
 
     return Lesson;

@@ -12,10 +12,7 @@ module.exports = (sequelize, DataTypes) => {
         },
         description: DataTypes.TEXT,
         thumbnail_url: DataTypes.TEXT,
-        tags: {
-            type: DataTypes.ARRAY(DataTypes.STRING),
-            defaultValue: []
-        },
+
         final_assessment_id: {
             type: DataTypes.INTEGER,
             allowNull: true

@@ -909,12 +909,12 @@ class StudentPortalService {
                                     attributes: ['id', 'name', 'order_num', 'description', 'content_text', 'text', 'image_url', 'video_url', 'url', 'pdf_url'],
                                     include: [mediaInclude()]
                                 },
-                                { model: Quiz, as: 'quizzes', attributes: ['id', 'name'] },
-                                { model: Assignment, as: 'assignments', attributes: ['id', 'title'] }
+                                { model: Quiz, as: 'quizzes', include: [{ model: QuizQuestion }] },
+                                { model: Assignment, as: 'assignments' }
                             ]
                         },
-                        { model: Quiz, as: 'quizzes', attributes: ['id', 'name'] },
-                        { model: Assignment, as: 'assignments', attributes: ['id', 'title'] }
+                        { model: Quiz, as: 'quizzes', include: [{ model: QuizQuestion }] },
+                        { model: Assignment, as: 'assignments' }
                     ]
                 }
             ],
@@ -1102,12 +1102,12 @@ class StudentPortalService {
                                     as: 'topics',
                                     attributes: ['id', 'name', 'order_num']
                                 },
-                                { model: Quiz, as: 'quizzes', attributes: ['id', 'name'] },
-                                { model: Assignment, as: 'assignments', attributes: ['id', 'title'] }
+                                { model: Quiz, as: 'quizzes', include: [{ model: QuizQuestion }] },
+                                { model: Assignment, as: 'assignments' }
                             ]
                         },
-                        { model: Quiz, as: 'quizzes', attributes: ['id', 'name'] },
-                        { model: Assignment, as: 'assignments', attributes: ['id', 'title'] }
+                        { model: Quiz, as: 'quizzes', include: [{ model: QuizQuestion }] },
+                        { model: Assignment, as: 'assignments' }
                     ]
                 }
             ],
@@ -1205,7 +1205,7 @@ class StudentPortalService {
     }
 
     async getCourseModule(userId, courseId, moduleId) {
-        await this._verifyCourseAccess(userId, courseId);
+        const { enrollment } = await this._verifyCourseAccess(userId, courseId);
 
         const mod = await Module.findOne({
             where: { id: moduleId, course_id: courseId },
@@ -1216,8 +1216,20 @@ class StudentPortalService {
             throw { statusCode: 404, message: 'Module not found or does not belong to this course.' };
         }
 
+        let moduleProgress = null;
+        if (enrollment) {
+            moduleProgress = await StudentProgress.findOne({
+                where: { enrollment_id: enrollment.id, module_id: moduleId }
+            });
+        }
+
         const modData = serializeWithMedia(mod.toJSON());
-        return modData;
+        return {
+            ...modData,
+            isCompleted: moduleProgress ? moduleProgress.is_completed : false,
+            progressPct: moduleProgress ? parseFloat(moduleProgress.progress_pct || 0) : 0,
+            lastAccessed: moduleProgress ? moduleProgress.last_accessed : null
+        };
     }
 
     async getCourseLesson(userId, courseId, lessonId) {
@@ -1255,7 +1267,7 @@ class StudentPortalService {
     }
 
     async getCourseTopic(userId, courseId, topicId) {
-        await this._verifyCourseAccess(userId, courseId);
+        const { enrollment } = await this._verifyCourseAccess(userId, courseId);
 
         const topic = await Topic.findByPk(topicId, {
             include: [
@@ -1271,10 +1283,21 @@ class StudentPortalService {
             throw { statusCode: 404, message: 'Topic not found or does not belong to this course.' };
         }
 
+        let topicProgress = null;
+        if (enrollment) {
+            topicProgress = await TopicProgress.findOne({
+                where: { enrollment_id: enrollment.id, topic_id: topicId }
+            });
+        }
+
         const topicData = serializeWithMedia(topic.toJSON());
         delete topicData.Lesson; 
         
-        return topicData;
+        return {
+            ...topicData,
+            isCompleted: topicProgress ? topicProgress.is_completed : false,
+            lastAccessed: topicProgress ? topicProgress.last_accessed : null
+        };
     }
 
     // ─── 14. Simplified Notes API ──────────────────────────────────────────────

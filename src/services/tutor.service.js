@@ -18,7 +18,7 @@ class TutorService {
             password: data.password,
             domains: Array.isArray(data.domains) ? data.domains : [],
             tags: Array.isArray(data.tags) ? data.tags : [],
-            status: data.status || 'active'
+            status: 'active'
         });
 
         const { User, PasswordResetToken } = require('../models');
@@ -31,7 +31,8 @@ class TutorService {
                 email: tutor.email,
                 username: tutor.email.split('@')[0] + Math.floor(Math.random() * 10000),
                 password_hash: tutor.password,
-                role: 'tutor'
+                role: 'tutor',
+                is_active: true
             }
         });
 
@@ -184,7 +185,6 @@ class TutorService {
         if (updateData.email || updateData['Email address']) mappedData.email = updateData.email || updateData['Email address'];
         if (updateData.mobile_number || updateData.mobileNumber || updateData.phone || updateData['tutor mobile number']) mappedData.mobile_number = updateData.mobile_number || updateData.mobileNumber || updateData.phone || updateData['tutor mobile number'];
         if (updateData.password) mappedData.password = updateData.password;
-        if (updateData.status) mappedData.status = updateData.status;
 
         if (updateData.domains) {
             mappedData.domains = Array.isArray(updateData.domains) ? updateData.domains : [updateData.domains];
@@ -194,6 +194,31 @@ class TutorService {
         }
 
         await tutor.update(mappedData);
+        return this.formatTutorOutput(tutor);
+    }
+
+    async updateTutorStatus(id, status) {
+        const tutor = await Tutor.findByPk(id);
+        if (!tutor) {
+            const error = new Error('Tutor not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        if (tutor.status !== status) {
+            await tutor.update({ status });
+        }
+
+        // Synchronize associated User account
+        const { User } = require('../models');
+        const user = await User.findOne({ where: { email: tutor.email } });
+        if (user) {
+            const targetActiveState = (status === 'active');
+            if (user.is_active !== targetActiveState) {
+                await user.update({ is_active: targetActiveState });
+            }
+        }
+
         return this.formatTutorOutput(tutor);
     }
 
@@ -264,6 +289,7 @@ class TutorService {
 
     formatTutorOutput(tutor, includeBatches = false) {
         const output = {
+            id: tutor.id,
             tutor_id: tutor.id,
             tutor_name: tutor.full_name,
             email: tutor.email,

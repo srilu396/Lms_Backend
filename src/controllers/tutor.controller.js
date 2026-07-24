@@ -104,6 +104,29 @@ class TutorController {
         }
     }
 
+    async updateTutorStatus(req, res) {
+        try {
+            const { status } = req.body;
+            if (!status || !['active', 'inactive'].includes(status)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Status must be either active or inactive'
+                });
+            }
+            const tutor = await tutorService.updateTutorStatus(req.params.id, status);
+            res.status(200).json({
+                success: true,
+                message: `Tutor status updated to ${status} successfully`,
+                data: tutor
+            });
+        } catch (error) {
+            res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || 'Server error updating tutor status'
+            });
+        }
+    }
+
     async deleteTutor(req, res) {
         try {
             await tutorService.deleteTutor(req.params.id);

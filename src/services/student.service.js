@@ -37,6 +37,7 @@ class StudentService {
             data.password = crypto.randomBytes(32).toString('hex');
         }
 
+        data.status = 'active';
         // Will trigger beforeCreate hook to hash password
         const student = await Student.create(data);
 
@@ -50,7 +51,8 @@ class StudentService {
                 email: student.email,
                 username: student.email.split('@')[0] + Math.floor(Math.random() * 10000),
                 password_hash: student.password, 
-                role: 'student'
+                role: 'student',
+                is_active: true
             }
         });
 
@@ -260,6 +262,8 @@ class StudentService {
     }
 
     async updateStudent(id, updateData) {
+        delete updateData.status;
+
         const student = await Student.findByPk(id);
         if (!student) {
             const error = new Error('Student not found');
@@ -268,6 +272,31 @@ class StudentService {
         }
 
         await student.update(updateData);
+
+        return await this.getStudentById(id);
+    }
+
+    async updateStudentStatus(id, status) {
+        const student = await Student.findByPk(id);
+        if (!student) {
+            const error = new Error('Student not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        if (student.status !== status) {
+            await student.update({ status });
+        }
+
+        // Synchronize associated User account
+        const { User } = require('../models');
+        const user = await User.findOne({ where: { email: student.email } });
+        if (user) {
+            const targetActiveState = (status === 'active');
+            if (user.is_active !== targetActiveState) {
+                await user.update({ is_active: targetActiveState });
+            }
+        }
 
         return await this.getStudentById(id);
     }

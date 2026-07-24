@@ -110,6 +110,23 @@ class StudentController {
         }
     }
 
+    async updateStudentStatus(req, res) {
+        try {
+            const { status } = req.body;
+            const student = await studentService.updateStudentStatus(req.params.id, status);
+            res.status(200).json({
+                success: true,
+                message: `Student status updated to ${status} successfully`,
+                data: student
+            });
+        } catch (error) {
+            res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || 'Server error updating student status'
+            });
+        }
+    }
+
     async deleteStudent(req, res) {
         try {
             await studentService.deleteStudent(req.params.id);

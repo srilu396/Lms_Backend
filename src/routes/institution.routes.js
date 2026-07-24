@@ -30,6 +30,9 @@ router.get('/:id', institutionController.getInstitutionById);
 // Update an institution completely (including contacts)
 router.put('/:id', adminAndRep, institutionController.updateInstitution);
 
+// Update institution status
+router.patch('/:id/status', adminAndRep, institutionController.updateInstitutionStatus);
+
 // Delete an institution
 router.delete('/:id', adminOnly, institutionController.deleteInstitution);
 

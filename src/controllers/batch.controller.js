@@ -106,6 +106,30 @@ class BatchController {
     }
 
     /**
+     * PATCH /batches/:id/status
+     */
+    async updateBatchStatus(req, res) {
+        try {
+            const { id } = req.params;
+            const { status } = req.body;
+            const updatedBatch = await batchService.updateBatchStatus(id, status);
+            res.status(200).json({
+                success: true,
+                message: `Batch status updated to ${status} successfully`,
+                data: updatedBatch
+            });
+        } catch (error) {
+            if (error.message === 'Batch not found') {
+                return res.status(404).json({ success: false, message: error.message });
+            }
+            res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || 'Internal server error'
+            });
+        }
+    }
+
+    /**
      * DELETE /batches/:id
      */
     async deleteBatch(req, res) {
@@ -119,6 +143,9 @@ class BatchController {
         } catch (error) {
             if (error.message === 'Batch not found') {
                 return res.status(404).json({ success: false, message: error.message });
+            }
+            if (error.statusCode === 400 || error.message.includes('Active batches cannot be deleted')) {
+                return res.status(400).json({ success: false, message: error.message });
             }
             res.status(500).json({
                 success: false,

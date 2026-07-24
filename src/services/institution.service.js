@@ -70,9 +70,7 @@ class InstitutionService {
     async createInstitution(data) {
         const { contacts, status, ...institutionData } = data;
 
-        if (status !== undefined) {
-            institutionData.is_active = (status === 'active' || status === true || status === 'true');
-        }
+        institutionData.is_active = true;
 
         if (institutionData.email) {
             const existingInstitution = await Institution.findOne({
@@ -219,10 +217,8 @@ class InstitutionService {
      */
     async updateInstitution(id, data) {
         const { contacts, status, ...institutionData } = data;
-
-        if (status !== undefined) {
-            institutionData.is_active = (status === 'active' || status === true || status === 'true');
-        }
+        delete institutionData.is_active;
+        delete institutionData.status;
 
         const institution = await Institution.findByPk(id);
         if (!institution) {
@@ -265,6 +261,23 @@ class InstitutionService {
             await transaction.rollback();
             throw error;
         }
+    }
+
+    /**
+     * Update institution status (active/inactive)
+     */
+    async updateInstitutionStatus(id, status) {
+        const institution = await Institution.findByPk(id);
+        if (!institution) {
+            throw new Error('Institution not found');
+        }
+
+        const targetActiveState = (status === 'active');
+        if (institution.is_active !== targetActiveState) {
+            await institution.update({ is_active: targetActiveState });
+        }
+
+        return await this.getInstitutionById(id);
     }
 
     /**

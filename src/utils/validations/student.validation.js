@@ -18,8 +18,7 @@ const createStudentSchema = Joi.object({
     }),
     notes: Joi.string().optional().allow(null, ''),
     course_id: Joi.number().integer().optional().allow(null),
-    institution_id: Joi.number().integer().optional().allow(null),
-    status: Joi.string().valid('active', 'inactive').optional()
+    institution_id: Joi.number().integer().optional().allow(null)
 });
 
 const updateStudentSchema = Joi.object({
@@ -30,11 +29,19 @@ const updateStudentSchema = Joi.object({
     password: Joi.string().min(6).optional(),
     notes: Joi.string().optional().allow(null, ''),
     course_id: Joi.number().integer().optional().allow(null),
-    institution_id: Joi.number().integer().optional().allow(null),
-    status: Joi.string().valid('active', 'inactive').optional()
+    institution_id: Joi.number().integer().optional().allow(null)
+});
+
+const updateStudentStatusSchema = Joi.object({
+    status: Joi.string().valid('active', 'inactive').required().messages({
+        'any.only': 'Status must be either active or inactive',
+        'any.required': 'Status is required'
+    })
 });
 
 module.exports = {
     createStudentSchema,
-    updateStudentSchema
+    updateStudentSchema,
+    updateStudentStatusSchema
 };
+

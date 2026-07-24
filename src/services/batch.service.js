@@ -9,6 +9,7 @@ class BatchService {
      */
     async createBatch(data) {
         const { enroll_students, tutor_id, tutors, ...batchData } = data;
+        batchData.status = 'active';
 
         if (batchData.name) {
             const existingBatch = await Batch.findOne({ where: { name: batchData.name } });
@@ -257,6 +258,8 @@ class BatchService {
      */
     async updateBatch(id, data) {
         const { enroll_students, tutor_id, tutors, ...batchData } = data;
+        delete batchData.status;
+
         const batch = await Batch.findByPk(id);
         if (!batch) {
             throw new Error('Batch not found');
@@ -361,12 +364,33 @@ class BatchService {
     }
 
     /**
+     * Update batch status (active/inactive)
+     */
+    async updateBatchStatus(id, status) {
+        const batch = await Batch.findByPk(id);
+        if (!batch) {
+            throw new Error('Batch not found');
+        }
+
+        if (batch.status !== status) {
+            await batch.update({ status });
+        }
+
+        return await this.getBatchById(id);
+    }
+
+    /**
      * Delete a batch
      */
     async deleteBatch(id) {
         const batch = await Batch.findByPk(id);
         if (!batch) {
             throw new Error('Batch not found');
+        }
+        if (batch.status === 'active') {
+            const error = new Error('Active batches cannot be deleted. Please set the status to inactive first.');
+            error.statusCode = 400;
+            throw error;
         }
         await batch.destroy();
         return { message: 'Batch deleted successfully' };

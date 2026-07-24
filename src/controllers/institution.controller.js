@@ -17,15 +17,16 @@ const createInstitutionSchema = z.object({
     phone: z.string().optional().nullable(),
     email: z.string().email('Invalid email address').optional().nullable(),
     logo_url: z.string().url('Invalid logo URL').optional().nullable(),
-    contacts: z.array(contactSchema).max(3, 'Maximum of 3 contacts allowed').optional(),
-    status: z.union([
-        z.enum(['active', 'inactive']),
-        z.boolean(),
-        z.enum(['true', 'false'])
-    ]).optional()
+    contacts: z.array(contactSchema).max(3, 'Maximum of 3 contacts allowed').optional()
 });
 
 const updateInstitutionSchema = createInstitutionSchema.partial();
+
+const updateInstitutionStatusSchema = z.object({
+    status: z.enum(['active', 'inactive'], {
+        errorMap: () => ({ message: 'Status must be either active or inactive' })
+    })
+});
 
 class InstitutionController {
     // GET /institutions/search
@@ -177,6 +178,39 @@ class InstitutionController {
             res.status(200).json({
                 success: true,
                 message: 'Institution updated successfully',
+                data: updatedInstitution
+            });
+        } catch (error) {
+            if (error instanceof z.ZodError) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Validation failed',
+                    errors: error.errors
+                });
+            }
+            if (error.message === 'Institution not found') {
+                return res.status(404).json({
+                    success: false,
+                    message: error.message
+                });
+            }
+            res.status(500).json({
+                success: false,
+                message: error.message || 'Internal server error'
+            });
+        }
+    }
+
+    async updateInstitutionStatus(req, res) {
+        try {
+            const { id } = req.params;
+            const validatedData = updateInstitutionStatusSchema.parse(req.body);
+
+            const updatedInstitution = await institutionService.updateInstitutionStatus(id, validatedData.status);
+
+            res.status(200).json({
+                success: true,
+                message: `Institution status updated to ${validatedData.status} successfully`,
                 data: updatedInstitution
             });
         } catch (error) {

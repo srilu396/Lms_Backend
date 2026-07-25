@@ -77,91 +77,68 @@ class AttendanceReportExport {
     /**
      * Generate PDF and stream it to response
      */
+    /**
+     * Generate PDF and stream it to response
+     */
     async generatePDF(data, res) {
-        const PDFDocument = require('pdfkit-table');
+        const pdfHelper = require('./pdfExportHelper');
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', 'attachment; filename="attendance_report.pdf"');
 
-        // Create a document
-        const doc = new PDFDocument({ margin: 40, size: 'A4' });
-
-        // Pipe its output to the response
+        // Create a document with bufferPages enabled
+        const doc = pdfHelper.createDocument({ margin: 40, size: 'A4' });
         doc.pipe(res);
 
-        // --- Brand Header ---
-        doc.rect(0, 0, doc.page.width, 100).fill('#1E40AF'); // Deep Blue Header
-        doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(24).text('LMS PLATFORM', 40, 35);
-        doc.fontSize(12).font('Helvetica').text('Student Attendance Report', 40, 65);
-        
-        // Date aligned to right in header
-        doc.fontSize(10).text(`Date: ${new Date().toLocaleDateString()}`, doc.page.width - 150, 45, { align: 'right', width: 110 });
+        const studentName = data.length > 0 ? (data[0].student_name || 'Student') : 'Student';
 
-        // Reset text position after header
-        doc.y = 130;
-        doc.x = 40;
+        pdfHelper.drawHeader(doc, {
+            title: 'Student Attendance Report',
+            organizationName: 'Transetu LMS',
+            batchName: studentName,
+            dateGenerated: new Date()
+        });
 
-        // --- Student Info Section ---
-        const studentName = data.length > 0 ? data[0].student_name : 'N/A';
         const studentEmail = data.length > 0 ? data[0].student_email : 'N/A';
         const totalSessions = data.length;
         const overallPercentage = data.length > 0 ? data[0].percentage : 0;
 
         // Box for student info
-        doc.rect(40, doc.y, doc.page.width - 80, 70).fillAndStroke('#F3F4F6', '#E5E7EB');
-        doc.fillColor('#111827').font('Helvetica-Bold').fontSize(14).text('Student Information', 55, doc.y + 15);
-        
-        doc.font('Helvetica').fontSize(10).fillColor('#374151');
-        doc.text(`Name: ${studentName}`, 55, doc.y + 10);
-        doc.text(`Email: ${studentEmail}`, 55, doc.y + 5);
-        
-        // Summary stats on the right side of the box
-        doc.font('Helvetica-Bold').text(`Total Sessions: ${totalSessions}`, doc.page.width / 2, doc.y - 15);
-        
-        // Colored percentage
-        let pctColor = overallPercentage >= 75 ? '#059669' : (overallPercentage >= 50 ? '#D97706' : '#DC2626');
-        doc.font('Helvetica-Bold').fillColor('#374151').text(`Overall Attendance: `, doc.page.width / 2, doc.y + 5, { continued: true })
-           .fillColor(pctColor).text(`${overallPercentage}%`);
+        doc.rect(30, doc.y, doc.page.width - 60, 50).fill(pdfHelper.colors.lightBg);
+        doc.fillColor(pdfHelper.colors.text).font('Helvetica-Bold').fontSize(10);
+        doc.text(`Student: ${studentName} (${studentEmail})`, 45, doc.y - 40);
+        doc.text(`Total Sessions: ${totalSessions}  |  Overall Attendance: ${overallPercentage}%`, 45, doc.y - 25);
 
-        doc.moveDown(3);
+        doc.y += 15;
 
         // --- Table Data ---
-        doc.x = 40; // Reset X
         const table = {
-            title: "Attendance Details",
+            title: "Attendance History",
             headers: [
-                { label: "Date", property: 'attendance_date', width: 90, headerColor: '#2563EB', headerOpacity: 1, color: '#ffffff' },
-                { label: "Batch", property: 'batch_name', width: 140, headerColor: '#2563EB', headerOpacity: 1, color: '#ffffff' },
-                { label: "Course", property: 'course_name', width: 180, headerColor: '#2563EB', headerOpacity: 1, color: '#ffffff' },
-                { label: "Status", property: 'status', width: 100, headerColor: '#2563EB', headerOpacity: 1, color: '#ffffff' }
+                { label: "Date", property: 'attendance_date', width: 90, headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                { label: "Batch", property: 'batch_name', width: 140, headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                { label: "Course", property: 'course_name', width: 185, headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                { label: "Status", property: 'status', width: 100, headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white }
             ],
             datas: data.length > 0 ? data.map(record => ({
                 attendance_date: record.attendance_date || 'N/A',
                 batch_name: record.batch_name || 'N/A',
                 course_name: record.course_name || 'N/A',
                 status: record.status ? record.status.charAt(0).toUpperCase() + record.status.slice(1) : 'N/A'
-            })) : [{ attendance_date: 'N/A', batch_name: 'No data', course_name: 'No data', status: 'N/A' }] // Empty state
+            })) : [{ attendance_date: 'N/A', batch_name: 'No data', course_name: 'No data', status: 'N/A' }]
         };
 
         await doc.table(table, {
-            prepareHeader: () => doc.font("Helvetica-Bold").fontSize(11).fillColor('#ffffff'),
-            prepareRow: (row, indexColumn, indexRow, rectRow, rectCell) => {
-                doc.font("Helvetica").fontSize(10).fillColor('#1F2937');
-                // Alternate row colors
-                if (indexColumn === 0) {
-                    doc.addBackground(rectRow, (indexRow % 2 ? '#F9FAFB' : '#FFFFFF'));
-                }
-                
-                // Color code the status
-                if (indexColumn === 3) {
-                    if (row.status === 'Present') doc.fillColor('#059669'); // Green
-                    else if (row.status === 'Absent') doc.fillColor('#DC2626'); // Red
-                    else if (row.status === 'Late') doc.fillColor('#D97706'); // Orange
+            prepareHeader: () => doc.font("Helvetica-Bold").fontSize(9),
+            prepareRow: (row, indexColumn, indexRow, rectRow) => {
+                doc.font("Helvetica").fontSize(9);
+                if (indexColumn === 0 && indexRow % 2 === 1) {
+                    doc.addBackground(rectRow, pdfHelper.colors.lightBg);
                 }
             }
         });
 
-        // Finalize the PDF and end the stream
+        pdfHelper.drawFooters(doc, 'Generated by LMS');
         doc.end();
     }
 }

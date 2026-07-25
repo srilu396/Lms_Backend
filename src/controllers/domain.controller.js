@@ -82,6 +82,22 @@ class DomainController {
         }
     }
 
+    async updateDomainStatus(req, res) {
+        try {
+            const domain = await domainService.updateDomainStatus(req.params.id, req.body.status);
+            res.status(200).json({
+                success: true,
+                message: 'Domain status updated successfully',
+                data: domain
+            });
+        } catch (error) {
+            res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || 'Server error updating domain status'
+            });
+        }
+    }
+
     async deleteDomain(req, res) {
         try {
             await domainService.deleteDomain(req.params.id);

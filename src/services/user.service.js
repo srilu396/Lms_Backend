@@ -4,7 +4,16 @@ const bcrypt = require('bcryptjs');
 
 class UserService {
     async createUser(data) {
-        const { full_name, email, password, role, institution_id, is_active } = data;
+        const { full_name, email, password, confirm_password, role, institution_id, is_active } = data;
+
+        if (password || confirm_password) {
+            if (password !== confirm_password) {
+                const error = new Error('Password and confirm password do not match');
+                error.statusCode = 400;
+                throw error;
+            }
+        }
+
         let institutionIdToAssign = null;
 
         // Validate institution requirements
@@ -205,10 +214,19 @@ class UserService {
             }
         }
 
+        if (updateData.password || updateData.confirm_password) {
+            if (updateData.password !== updateData.confirm_password) {
+                const error = new Error('Password and confirm password do not match');
+                error.statusCode = 400;
+                throw error;
+            }
+        }
+
         if (updateData.password) {
             const salt = await bcrypt.genSalt(10);
             updateData.password_hash = await bcrypt.hash(updateData.password, salt);
             delete updateData.password;
+            delete updateData.confirm_password;
         }
 
         await user.update(updateData);

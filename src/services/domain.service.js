@@ -1,56 +1,39 @@
-const { Domain, Assignment, BatchAssignment, Batch, Course, Student, Enrollment, Module, Topic, Lesson, LessonProgress, sequelize } = require('../models');
+const { Domain, Assignment, Batch, Course, Student, Enrollment, Module, Topic, Lesson, LessonProgress, sequelize } = require('../models');
 const { Op } = require('sequelize');
 
 class DomainService {
     async createDomain(data) {
-        // Prevent duplicate domains
-        const existingDomain = await Domain.findOne({
-            where: {
-                name: { [Op.iLike]: data.name.trim() },
-                status: 'active'
-            }
-        });
-
-        if (existingDomain) {
-            const error = new Error('A domain with this name already exists');
+        if (!data.name || !data.name.trim()) {
+            const error = new Error('Domain name is required');
             error.statusCode = 400;
             throw error;
         }
 
-        if (data.assignment_ids && data.assignment_ids.length > 0) {
-            const count = await Assignment.count({
-                where: { id: { [Op.in]: data.assignment_ids } }
-            });
-            if (count !== data.assignment_ids.length) {
-                const error = new Error(`One or more assignment IDs were not found`);
-                error.statusCode = 404;
-                throw error;
+        // Prevent duplicate domain names (case-insensitive)
+        const existingDomain = await Domain.findOne({
+            where: {
+                name: { [Op.iLike]: data.name.trim() }
             }
+        });
+
+        if (existingDomain) {
+            const error = new Error('Domain name must be unique');
+            error.statusCode = 400;
+            throw error;
         }
 
-        const domain = await Domain.create(data);
-
-        // Link courses to domain if provided
-        if (data.course_ids && data.course_ids.length > 0) {
-            await Course.update(
-                { domain_id: domain.id },
-                { where: { id: { [Op.in]: data.course_ids } } }
-            );
-        }
-
-        // Link assignments to domain if provided
-        if (data.assignment_ids && data.assignment_ids.length > 0) {
-            await Assignment.update(
-                { domain_id: domain.id },
-                { where: { id: { [Op.in]: data.assignment_ids } } }
-            );
-        }
+        // Auto-assign status = 'active'
+        const domain = await Domain.create({
+            name: data.name.trim(),
+            description: data.description ? data.description.trim() : null,
+            status: 'active'
+        });
 
         return await this.getDomainById(domain.id);
     }
 
     async getDomains(query = {}, user = null) {
-        const { search, status, page = 1, limit = 10 } = query;
+        const { search, status, page = 1, limit = 10, sortBy = 'created_at', sortOrder = 'DESC' } = query;
         const parsedLimit = Math.min(parseInt(limit, 10) || 10, 50);
         const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
         const offset = (parsedPage - 1) * parsedLimit;
@@ -63,76 +46,52 @@ class DomainService {
             where.name = { [Op.iLike]: `%${search.trim()}%` };
         }
 
+        // Allowed sort columns for security
+        const allowedSortFields = ['id', 'name', 'created_at', 'updated_at', 'status'];
+        const actualSortField = allowedSortFields.includes(sortBy) ? sortBy : 'created_at';
+        const actualSortOrder = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
         const { count, rows } = await Domain.findAndCountAll({
             where,
-            include: [
-                {
-                    model: Course,
-                    as: 'courses',
-                    attributes: {
-                        include: [
-                            [
-                                sequelize.literal(`(
-                                    SELECT COUNT(*)
-                                    FROM "modules"
-                                    WHERE "modules"."course_id" = "courses"."id"
-                                )`),
-                                'no_of_modules'
-                            ]
-                        ]
-                    }
-                }
-            ],
+            attributes: {
+                include: [
+                    [
+                        sequelize.literal(`(
+                            SELECT COUNT(*)::int
+                            FROM "courses"
+                            WHERE "courses"."domain_id" = "Domain"."id"
+                            AND "courses"."deleted_at" IS NULL
+                        )`),
+                        'total_courses'
+                    ]
+                ]
+            },
             limit: parsedLimit,
             offset: offset,
-            order: [['updated_at', 'DESC']],
+            order: [[actualSortField, actualSortOrder]],
             distinct: true
         });
 
-        const data = await Promise.all(rows.map(async (domain) => {
+        const data = rows.map((domain) => {
             const d = domain.toJSON();
-            let assignments = [];
-            
-            const populatedCourses = await this._populateProgressForCourses(user, d.courses || []);
-            d.courses = populatedCourses;
-            
-            let totalDomainProgress = 0;
-            let allCoursesCompleted = populatedCourses.length > 0;
-            
-            if (populatedCourses.length > 0) {
-                totalDomainProgress = Math.round(populatedCourses.reduce((sum, c) => sum + (c.progress || 0), 0) / populatedCourses.length);
-                allCoursesCompleted = populatedCourses.every(c => c.progress === 100);
-            } else {
-                allCoursesCompleted = false;
-            }
-
-            if (d.assignment_ids && d.assignment_ids.length > 0) {
-                assignments = await Assignment.findAll({
-                    where: { id: { [Op.in]: d.assignment_ids } },
-                    attributes: ['id', 'title']
-                });
-                assignments = assignments.map(a => ({
-                    ...a.toJSON(),
-                    is_locked: !allCoursesCompleted
-                }));
-            }
+            const totalCourses = parseInt(d.total_courses || 0, 10);
 
             return {
-                domain_id: d.id,
-                domain_image_url: d.image_url,
-                domain_name: d.name,
-                progress: totalDomainProgress,
-                tags: d.tags,
-                total_courses_count: d.courses ? d.courses.length : 0,
-                courses: d.courses || [],
-                last_updated_date: d.updated_at,
-                assignment_ids: d.assignment_ids,
-                assignments: assignments,
-                status: d.status,
+                id: d.id,
+                name: d.name,
                 description: d.description,
-                view: d.id
+                total_courses: totalCourses,
+                created_at: d.created_at,
+                created_date: d.created_at,
+                updated_at: d.updated_at,
+                status: d.status,
+                // Legacy response properties for backwards compatibility
+                domain_id: d.id,
+                domain_name: d.name,
+                total_courses_count: totalCourses,
+                last_updated_date: d.updated_at
             };
-        }));
+        });
 
         return {
             data,
@@ -170,7 +129,28 @@ class DomainService {
     }
 
     async getDomainById(id, query = {}, user = null) {
-        const domain = await Domain.findByPk(id);
+        const numericId = parseInt(id, 10);
+        if (isNaN(numericId)) {
+            const error = new Error('Invalid Domain ID');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        const domain = await Domain.findByPk(numericId, {
+            attributes: {
+                include: [
+                    [
+                        sequelize.literal(`(
+                            SELECT COUNT(*)::int
+                            FROM "courses"
+                            WHERE "courses"."domain_id" = "Domain"."id"
+                            AND "courses"."deleted_at" IS NULL
+                        )`),
+                        'total_courses'
+                    ]
+                ]
+            }
+        });
 
         if (!domain) {
             const error = new Error('Domain not found');
@@ -179,158 +159,140 @@ class DomainService {
         }
 
         const d = domain.toJSON();
-        
-        const { search, page = 1, limit = 10 } = query;
-        const parsedLimit = Math.min(parseInt(limit, 10) || 10, 50);
-        const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
-        const offset = (parsedPage - 1) * parsedLimit;
-
-        const courseWhere = { domain_id: id };
-        if (search) {
-            courseWhere.name = { [Op.iLike]: `%${search.trim()}%` };
-        }
-
-        const { count: courseCount, rows: courseRows } = await Course.findAndCountAll({
-            where: courseWhere,
-            attributes: {
-                include: [
-                    [
-                        sequelize.literal(`(
-                            SELECT COUNT(*)
-                            FROM "modules"
-                            WHERE "modules"."course_id" = "Course"."id"
-                        )`),
-                        'no_of_modules'
-                    ]
-                ]
-            },
-            limit: parsedLimit,
-            offset: offset,
-            order: [['created_at', 'ASC']],
-            distinct: true
-        });
-
-        // We also need ALL courses to calculate total domain progress correctly,
-        // or just calculate domain progress based on the paginated courses?
-        // Usually progress is overall, so let's fetch all courses for progress calc.
-        const allCourses = await Course.findAll({ where: { domain_id: id }, order: [['created_at', 'ASC']] });
-        const allPopulatedCourses = await this._populateProgressForCourses(user, allCourses);
-        
-        let totalDomainProgress = 0;
-        let allCoursesCompleted = allPopulatedCourses.length > 0;
-        
-        if (allPopulatedCourses.length > 0) {
-            totalDomainProgress = Math.round(allPopulatedCourses.reduce((sum, c) => sum + (c.progress || 0), 0) / allPopulatedCourses.length);
-            allCoursesCompleted = allPopulatedCourses.every(c => c.progress === 100);
-        } else {
-            allCoursesCompleted = false;
-        }
-
-        // Now map the paginated courses to include their progress
-        const paginatedCourseIds = courseRows.map(c => c.id);
-        const populatedCourses = allPopulatedCourses.filter(c => paginatedCourseIds.includes(c.id));
-
-        let assignments = [];
-        if (d.assignment_ids && d.assignment_ids.length > 0) {
-            assignments = await Assignment.findAll({
-                where: { id: { [Op.in]: d.assignment_ids } }
-            });
-            assignments = assignments.map(a => ({
-                ...a.toJSON(),
-                is_locked: !allCoursesCompleted
-            }));
-        }
+        const totalCourses = parseInt(d.total_courses || 0, 10);
 
         return {
-            domain_id: d.id,
-            domain_image_url: d.image_url,
-            domain_name: d.name,
-            progress: totalDomainProgress,
-            tags: d.tags,
-            total_courses_count: courseCount,
-            courses: {
-                data: populatedCourses,
-                pagination: {
-                    total: courseCount,
-                    page: parsedPage,
-                    limit: parsedLimit,
-                    totalPages: Math.ceil(courseCount / parsedLimit)
-                }
-            },
-            last_updated_date: d.updated_at,
-            assignment_ids: d.assignment_ids,
-            assignments: assignments,
-            status: d.status,
+            id: d.id,
+            name: d.name,
             description: d.description,
-            view: d.id
+            status: d.status,
+            total_courses: totalCourses,
+            created_at: d.created_at,
+            created_date: d.created_at,
+            updated_at: d.updated_at,
+            // Legacy fields for backwards compatibility
+            domain_id: d.id,
+            domain_name: d.name,
+            total_courses_count: totalCourses
         };
     }
 
     async updateDomain(id, data) {
-        const domain = await Domain.findByPk(id);
+        const numericId = parseInt(id, 10);
+        if (isNaN(numericId)) {
+            const error = new Error('Invalid Domain ID');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        const domain = await Domain.findByPk(numericId);
         if (!domain) {
             const error = new Error('Domain not found');
             error.statusCode = 404;
             throw error;
         }
 
-        // Validate assignments if provided
-        if (data.assignment_ids && data.assignment_ids.length > 0) {
-            const count = await Assignment.count({
-                where: { id: { [Op.in]: data.assignment_ids } }
-            });
-            if (count !== data.assignment_ids.length) {
-                const error = new Error(`One or more assignment IDs were not found`);
-                error.statusCode = 404;
-                throw error;
+        const updatePayload = {};
+
+        if (data.name !== undefined && data.name.trim() !== '') {
+            const trimmedName = data.name.trim();
+
+            // Validate uniqueness if name changed
+            if (trimmedName.toLowerCase() !== domain.name.toLowerCase()) {
+                const existingDomain = await Domain.findOne({
+                    where: {
+                        name: { [Op.iLike]: trimmedName },
+                        id: { [Op.ne]: numericId }
+                    }
+                });
+
+                if (existingDomain) {
+                    const error = new Error('Domain name must be unique');
+                    error.statusCode = 400;
+                    throw error;
+                }
             }
+
+            updatePayload.name = trimmedName;
         }
 
-        // Reset domain_id for old courses if course_ids changed
-        if (data.course_ids) {
-            await Course.update(
-                { domain_id: null },
-                { where: { domain_id: id } }
-            );
-            if (data.course_ids.length > 0) {
-                await Course.update(
-                    { domain_id: id },
-                    { where: { id: { [Op.in]: data.course_ids } } }
-                );
-            }
+        if (data.description !== undefined) {
+            updatePayload.description = data.description ? data.description.trim() : null;
         }
 
-        // Sync assignments domain_id
-        if (data.assignment_ids) {
-            await Assignment.update(
-                { domain_id: null },
-                { where: { domain_id: id } }
-            );
-            if (data.assignment_ids.length > 0) {
-                await Assignment.update(
-                    { domain_id: id },
-                    { where: { id: { [Op.in]: data.assignment_ids } } }
-                );
-            }
+        // Status cannot be updated via this endpoint
+        await domain.update(updatePayload);
+
+        return await this.getDomainById(numericId);
+    }
+
+    async updateDomainStatus(id, status) {
+        const numericId = parseInt(id, 10);
+        if (isNaN(numericId)) {
+            const error = new Error('Invalid Domain ID');
+            error.statusCode = 400;
+            throw error;
         }
 
-        await domain.update(data);
-        return await this.getDomainById(id);
+        const validStatuses = ['active', 'inactive'];
+        if (!status || !validStatuses.includes(status.toLowerCase())) {
+            const error = new Error('Invalid status. Status must be either active or inactive');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        const domain = await Domain.findByPk(numericId);
+        if (!domain) {
+            const error = new Error('Domain not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        await domain.update({ status: status.toLowerCase() });
+
+        return await this.getDomainById(numericId);
     }
 
     async deleteDomain(id) {
-        const domain = await Domain.findByPk(id);
+        const numericId = parseInt(id, 10);
+        if (isNaN(numericId)) {
+            const error = new Error('Invalid Domain ID');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        const domain = await Domain.findByPk(numericId);
         if (!domain) {
             const error = new Error('Domain not found');
             error.statusCode = 404;
             throw error;
         }
+
+        // Rule 1: Active domain cannot be deleted
+        if (domain.status === 'active') {
+            const error = new Error('Active domains cannot be deleted. Please set status to inactive first.');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // Rule 2: Cannot delete domain with associated courses
+        const associatedCourseCount = await Course.count({
+            where: { domain_id: numericId }
+        });
+
+        if (associatedCourseCount > 0) {
+            const error = new Error('Cannot delete domain with associated courses.');
+            error.statusCode = 400;
+            throw error;
+        }
+
         await domain.destroy();
         return true;
     }
 
     async getDomainBatches(domainId, query = {}) {
-        const domain = await Domain.findByPk(domainId);
+        const numericId = parseInt(domainId, 10);
+        const domain = await Domain.findByPk(numericId);
         if (!domain) {
             const error = new Error('Domain not found');
             error.statusCode = 404;
@@ -347,11 +309,10 @@ class DomainService {
             where.name = { [Op.iLike]: `%${search.trim()}%` };
         }
 
-        // Return courses in this domain with their module counts
         const { count, rows } = await Course.findAndCountAll({
             where: {
                 ...where,
-                domain_id: domainId
+                domain_id: numericId
             },
             attributes: {
                 include: [
@@ -398,88 +359,23 @@ class DomainService {
 
         let total = 0;
         let active = 0;
+        let inactive = 0;
+
         stats.forEach(item => {
             const count = parseInt(item.count, 10) || 0;
             total += count;
             if (item.status === 'active') {
                 active = count;
+            } else if (item.status === 'inactive') {
+                inactive = count;
             }
         });
 
         return {
             total_domains: total,
-            active_domains: active
+            active_domains: active,
+            inactive_domains: inactive
         };
-    }
-
-    async _populateProgressForCourses(user, courses) {
-        // Sort courses by ID to maintain a consistent sequence for unlocking
-        const sortedCourses = [...courses].sort((a, b) => (a.id || a.course_id) - (b.id || b.course_id));
-        
-        let student = null;
-        let enrollmentIds = [];
-
-        if (user) {
-            student = await Student.findOne({ where: { email: user.email } });
-            if (student) {
-                const enrollments = await Enrollment.findAll({ where: { student_id: student.id, status: 'active' } });
-                enrollmentIds = enrollments.map(e => e.id);
-            }
-        }
-
-        let prevCourseCompleted = true;
-        const populatedCourses = [];
-
-        for (const course of sortedCourses) {
-            let cJson = course.toJSON ? course.toJSON() : course;
-            let completionProgress = 0;
-
-            if (student && enrollmentIds.length > 0) {
-                const courseId = cJson.id || cJson.course_id;
-                const modules = await Module.findAll({
-                    where: { course_id: courseId },
-                    include: [{
-                        model: Topic,
-                        as: 'topics',
-                        include: [{ model: Lesson, as: 'lessons', attributes: ['id'] }]
-                    }]
-                });
-
-                const lessonIds = [];
-                modules.forEach(m => {
-                    m.topics.forEach(t => {
-                        t.lessons.forEach(l => lessonIds.push(l.id));
-                    });
-                });
-
-                if (lessonIds.length > 0) {
-                    const completedCount = await LessonProgress.count({
-                        where: {
-                            enrollment_id: { [Op.in]: enrollmentIds },
-                            lesson_id: { [Op.in]: lessonIds },
-                            is_completed: true
-                        }
-                    });
-                    completionProgress = Math.round((completedCount / lessonIds.length) * 100);
-                }
-            }
-
-            cJson.progress = completionProgress;
-            cJson.is_locked = !prevCourseCompleted;
-            
-            if (cJson.is_locked) {
-                cJson.status = 'locked';
-            } else if (completionProgress === 100) {
-                cJson.status = 'completed';
-            } else {
-                cJson.status = 'in_progress';
-            }
-
-            prevCourseCompleted = (completionProgress === 100);
-            populatedCourses.push(cJson);
-        }
-
-        return populatedCourses;
     }
 }
 

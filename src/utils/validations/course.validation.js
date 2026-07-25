@@ -84,6 +84,11 @@ const createCourseSchema = Joi.object({
     description: Joi.string().allow('', null),
     thumbnail_url: Joi.string().allow('', null),
     domain_id: Joi.number().integer().allow(null),
+    domain: Joi.alternatives().try(
+        Joi.number().integer().allow(null),
+        Joi.string().allow('', null),
+        Joi.object({ id: Joi.number().integer().allow(null) }).unknown(true).allow(null)
+    ).allow(null),
     institution_id: Joi.number().integer().allow(null),
     tags: Joi.array().items(Joi.string()).allow(null),
     final_assessment_id: Joi.number().integer().allow(null),
@@ -100,6 +105,11 @@ const updateCourseSchema = Joi.object({
     description: Joi.string().allow('', null),
     thumbnail_url: Joi.string().allow('', null),
     domain_id: Joi.number().integer().allow(null),
+    domain: Joi.alternatives().try(
+        Joi.number().integer().allow(null),
+        Joi.string().allow('', null),
+        Joi.object({ id: Joi.number().integer().allow(null) }).unknown(true).allow(null)
+    ).allow(null),
     institution_id: Joi.number().integer().allow(null),
     tags: Joi.array().items(Joi.string()).allow(null),
     final_assessment_id: Joi.number().integer().allow(null),

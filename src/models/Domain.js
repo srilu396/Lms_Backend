@@ -28,10 +28,6 @@ module.exports = (sequelize, DataTypes) => {
             type: DataTypes.ARRAY(DataTypes.INTEGER),
             defaultValue: []
         },
-        tags: {
-            type: DataTypes.ARRAY(DataTypes.STRING),
-            defaultValue: []
-        },
         status: {
             type: DataTypes.ENUM('active', 'inactive'),
             defaultValue: 'active'

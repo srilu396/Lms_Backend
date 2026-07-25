@@ -463,7 +463,7 @@ class BatchService {
                 as: 'student',
                 where: search ? studentWhere : undefined,
                 required: !!search, // This inner join forces search query to work reliably 
-                attributes: ['id', 'first_name', 'last_name', 'email']
+                attributes: ['id', 'first_name', 'last_name', 'email', 'mobile_number', 'status']
             }],
             limit,
             offset,
@@ -471,15 +471,52 @@ class BatchService {
             distinct: true
         });
 
-        return {
-            students: enrollments.map(e => ({
+        const batch = await Batch.findByPk(batchId, { attributes: ['id', 'course_id'] });
+        let totalItemsInCourse = 0;
+
+        if (batch && batch.course_id) {
+            const { Lesson, Quiz, Assignment, Module } = require('../models');
+            const modules = await Module.findAll({ where: { course_id: batch.course_id }, attributes: ['id'] });
+            const moduleIds = modules.map(m => m.id);
+            
+            if (moduleIds.length > 0) {
+                const [lessonCount, quizCount, assignmentCount] = await Promise.all([
+                    Lesson.count({ where: { module_id: { [Op.in]: moduleIds } } }),
+                    Quiz.count({ where: { module_id: { [Op.in]: moduleIds } } }),
+                    Assignment.count({ where: { course_id: batch.course_id } })
+                ]);
+                totalItemsInCourse = lessonCount + quizCount + assignmentCount;
+            }
+        }
+
+        const { LessonProgress, QuizSubmission, AssignmentSubmission } = require('../models');
+
+        const studentsWithProgress = await Promise.all(enrollments.map(async (e) => {
+            let completionPercentage = 0;
+
+            if (totalItemsInCourse > 0) {
+                const [completedLessons, completedQuizzes, completedAssignments] = await Promise.all([
+                    LessonProgress.count({ where: { enrollment_id: e.id, is_completed: true } }),
+                    QuizSubmission.count({ where: { enrollment_id: e.id, status: { [Op.in]: ['completed', 'reviewed'] } } }),
+                    AssignmentSubmission.count({ where: { enrollment_id: e.id, status: { [Op.in]: ['submitted', 'graded'] } } })
+                ]);
+
+                const totalCompletions = completedLessons + completedQuizzes + completedAssignments;
+                completionPercentage = Math.min(100, Math.round((totalCompletions / totalItemsInCourse) * 100));
+            }
+
+            return {
                 id: e.student?.id,
                 full_name: `${e.student?.first_name || ''} ${e.student?.last_name || ''}`.trim(),
                 email: e.student?.email,
                 enrollment_date: e.enrollment_date,
                 status: e.status,
-                completion_percentage: 0 // Will replace dynamically if Progress is active
-            })),
+                completion_percentage: completionPercentage
+            };
+        }));
+
+        return {
+            students: studentsWithProgress,
             total: count,
             page: parseInt(page),
             limit: parseInt(limit),

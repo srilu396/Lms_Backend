@@ -164,6 +164,20 @@ function sanitizeCoursePayload(data = {}) {
         }
     });
 
+    // Normalize domain or domain_id payload into canonical domain_id
+    const rawDomain = courseData.domain_id !== undefined ? courseData.domain_id : courseData.domain;
+    if (rawDomain !== undefined) {
+        if (rawDomain === null || rawDomain === '') {
+            sanitized.domain_id = null;
+        } else if (typeof rawDomain === 'object' && rawDomain !== null) {
+            const parsedId = parseInt(rawDomain.id, 10);
+            sanitized.domain_id = isNaN(parsedId) ? null : parsedId;
+        } else {
+            const parsedId = parseInt(rawDomain, 10);
+            sanitized.domain_id = isNaN(parsedId) ? null : parsedId;
+        }
+    }
+
     if (courseData.final_assessment_id !== undefined || legacyFinalAssessmentId !== null) {
         sanitized.final_assessment_id = courseData.final_assessment_id ?? legacyFinalAssessmentId;
     }
@@ -250,13 +264,21 @@ class CourseService {
     async createCourse(data) {
         return await sequelize.transaction(async (transaction) => {
             const courseData = sanitizeCoursePayload(data);
+            if (courseData.domain_id) {
+                const domainExists = await Domain.findByPk(courseData.domain_id, { transaction });
+                if (!domainExists) {
+                    const error = new Error(`Domain with id ${courseData.domain_id} not found`);
+                    error.statusCode = 400;
+                    throw error;
+                }
+            }
             const course = await Course.create(courseData, { transaction });
             return await this.getCourseById(course.id, transaction, { includeHierarchy: false });
         });
     }
 
     async getCourses(query = {}) {
-        const { search, status, institution_id, page = 1, limit = 10 } = query;
+        const { search, status, institution_id, domain_id, domain, page = 1, limit = 10 } = query;
         const parsedLimit = Math.min(parseInt(limit, 10) || 10, 50);
         const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
         const offset = (parsedPage - 1) * parsedLimit;
@@ -271,12 +293,24 @@ class CourseService {
             where.institution_id = institution_id;
         }
 
+        const activeDomainId = domain_id || domain;
+        if (activeDomainId) {
+            where.domain_id = activeDomainId;
+        }
+
         if (search) {
             where.name = { [Op.iLike]: `%${search.trim()}%` };
         }
 
         const { count, rows } = await Course.findAndCountAll({
             where,
+            include: [
+                {
+                    model: Domain,
+                    as: 'domain',
+                    attributes: ['id', 'name']
+                }
+            ],
             attributes: {
                 include: [
                     [
@@ -516,8 +550,11 @@ class CourseService {
 
         if (!includeHierarchy) {
             const metadata = buildCourseMetadataPayload(courseJson);
-            if (courseJson.domain && courseJson.domain.name) {
-                metadata.domain_name = courseJson.domain.name;
+            if (courseJson.domain) {
+                metadata.domain = courseJson.domain;
+                if (courseJson.domain.name) {
+                    metadata.domain_name = courseJson.domain.name;
+                }
             }
             if (courseJson.final_assessment) {
                 metadata.final_assessment = courseJson.final_assessment;
@@ -584,6 +621,14 @@ class CourseService {
 
         await sequelize.transaction(async (transaction) => {
             const courseData = sanitizeCoursePayload(data);
+            if (courseData.domain_id) {
+                const domainExists = await Domain.findByPk(courseData.domain_id, { transaction });
+                if (!domainExists) {
+                    const error = new Error(`Domain with id ${courseData.domain_id} not found`);
+                    error.statusCode = 400;
+                    throw error;
+                }
+            }
             await course.update(courseData, { transaction });
         });
 

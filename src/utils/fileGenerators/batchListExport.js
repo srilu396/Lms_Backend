@@ -76,71 +76,82 @@ class BatchListExport {
      * Generate PDF and stream it to response
      */
     async generatePDF(data, res) {
-        const PDFDocument = require('pdfkit-table');
+        const pdfHelper = require('./pdfExportHelper');
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', 'attachment; filename="batch_report.pdf"');
 
-        // Create a document
-        const doc = new PDFDocument({ margin: 30, size: 'A4' });
-
-        // Pipe its output to the response
+        const doc = pdfHelper.createDocument({ margin: 40, size: 'A4' });
         doc.pipe(res);
 
-        // Header
-        const institutionName = data.length > 0 ? data[0].institution_name : 'Institution';
-        doc.fontSize(20).text('Institution Batch Progress Report', { align: 'center' });
-        doc.moveDown(0.5);
-        doc.fontSize(12).text(`Institution: ${institutionName}`, { align: 'center' });
-        doc.text(`Date Generated: ${new Date().toLocaleDateString()}`, { align: 'center' });
-        doc.moveDown(2);
+        const availableWidth = doc.page.width - 80;
 
-        // Summary Section
-        const totalBatches = data.length;
-        const avgProgress = totalBatches > 0 
-            ? Math.round(data.reduce((sum, b) => sum + (b.progress_percentage || 0), 0) / totalBatches)
-            : 0;
-
-        doc.fontSize(14).text('Summary', { underline: true });
-        doc.moveDown(0.5);
-        doc.fontSize(11).text(`Total Batches: ${totalBatches}`);
-        doc.text(`Average Progress: ${avgProgress}%`);
-        doc.moveDown(2);
-
-        // Table Data
-        const table = {
-            title: "Batch Details",
-            headers: [
-                { label: "Batch Code", property: 'batch_code', width: 80, headerColor: '#4F46E5', headerOpacity: 1, color: '#ffffff' },
-                { label: "Batch Name", property: 'batch_name', width: 100, headerColor: '#4F46E5', headerOpacity: 1, color: '#ffffff' },
-                { label: "Course", property: 'course', width: 100, headerColor: '#4F46E5', headerOpacity: 1, color: '#ffffff' },
-                { label: "Tutor", property: 'tutor', width: 80, headerColor: '#4F46E5', headerOpacity: 1, color: '#ffffff' },
-                { label: "Students", property: 'students', width: 50, headerColor: '#4F46E5', headerOpacity: 1, color: '#ffffff' },
-                { label: "Progress", property: 'progress', width: 50, headerColor: '#4F46E5', headerOpacity: 1, color: '#ffffff' },
-                { label: "Status", property: 'status', width: 60, headerColor: '#4F46E5', headerOpacity: 1, color: '#ffffff' },
-            ],
-            datas: data.map(batch => ({
-                batch_code: batch.batch_id || batch.batch_code || 'N/A', 
-                batch_name: batch.batch_name || 'N/A',
-                course: `${batch.course_name || batch.course || 'N/A'}\n(${batch.department || 'N/A'})`,
-                tutor: batch.tutor || batch.assigned_tutor?.name || 'N/A',
-                students: String(batch.total_students || 0),
-                progress: `${batch.progress_percentage || 0}%`,
-                status: batch.status || batch.progress_status || 'N/A'
-            }))
-        };
-
-        await doc.table(table, {
-            prepareHeader: () => doc.font("Helvetica-Bold").fontSize(10),
-            prepareRow: (row, indexColumn, indexRow, rectRow, rectCell) => {
-                doc.font("Helvetica").fontSize(9);
-                if (indexColumn === 0) {
-                    doc.addBackground(rectRow, (indexRow % 2 ? '#f9fafb' : '#ffffff'));
-                }
-            }
+        const institutionName = data.length > 0 ? (data[0].institution_name || 'Institution') : 'TRANSETU LMS';
+        
+        pdfHelper.drawHeader(doc, {
+            title: 'Institution Batch Progress Report',
+            organizationName: institutionName,
+            dateGenerated: new Date()
         });
 
-        // Finalize the PDF and end the stream
+        // Summary Section Card
+        const totalBatches = data.length;
+        const totalActiveStudents = data.reduce((sum, b) => sum + (Number(b.total_students) || 0), 0);
+        const avgProgress = totalBatches > 0 
+            ? Math.round(data.reduce((sum, b) => sum + (Number(b.progress_percentage) || 0), 0) / totalBatches)
+            : 0;
+
+        pdfHelper.drawSummaryCard(doc, [
+            { label: 'Total Batches', value: String(totalBatches) },
+            { label: 'Total Active Students', value: String(totalActiveStudents) },
+            { label: 'Average Progress %', value: `${avgProgress}%` }
+        ]);
+
+        if (data.length > 0) {
+            // Table Data
+            const table = {
+                title: "Batch Details",
+                headers: [
+                    { label: "Batch Code", property: 'batch_code', width: availableWidth * 0.12, headerColor: '#1e293b', color: '#ffffff', align: 'left' },
+                    { label: "Batch Name", property: 'batch_name', width: availableWidth * 0.23, headerColor: '#1e293b', color: '#ffffff', align: 'left' },
+                    { label: "Course", property: 'course', width: availableWidth * 0.23, headerColor: '#1e293b', color: '#ffffff', align: 'left' },
+                    { label: "Tutor", property: 'tutor', width: availableWidth * 0.17, headerColor: '#1e293b', color: '#ffffff', align: 'left' },
+                    { label: "Total Students", property: 'students', width: availableWidth * 0.12, headerColor: '#1e293b', color: '#ffffff', align: 'right' },
+                    { label: "Progress %", property: 'progress', width: availableWidth * 0.13, headerColor: '#1e293b', color: '#ffffff', align: 'right' }
+                ],
+                datas: data.map(batch => {
+                    const rawCourse = batch.course_name || batch.course;
+                    const courseName = (rawCourse && rawCourse !== 'N/A') ? rawCourse : 'N/A';
+                    const rawTutor = batch.tutor || batch.assigned_tutor?.name;
+                    const tutorName = (rawTutor && rawTutor !== 'Unassigned' && rawTutor !== 'N/A') ? rawTutor : 'N/A';
+
+                    return {
+                        batch_code: String(batch.batch_code || batch.batch_id || 'N/A'), 
+                        batch_name: batch.batch_name || batch.name || 'N/A',
+                        course: courseName,
+                        tutor: tutorName,
+                        students: String(batch.total_students || 0),
+                        progress: `${batch.progress_percentage || 0}%`
+                    };
+                })
+            };
+
+            await doc.table(table, {
+                x: 40,
+                width: availableWidth,
+                prepareHeader: () => doc.font("Helvetica-Bold").fontSize(10),
+                prepareRow: (row, indexColumn, indexRow, rectRow) => {
+                    doc.font("Helvetica").fontSize(9);
+                    if (indexColumn === 0 && indexRow % 2 === 1) {
+                        doc.addBackground(rectRow, pdfHelper.colors.lightBg);
+                    }
+                }
+            });
+        } else {
+            doc.font('Helvetica').fontSize(10).fillColor(pdfHelper.colors.subtext).text('No batches found.');
+        }
+
+        pdfHelper.drawFooters(doc, 'Generated by LMS');
         doc.end();
     }
 }

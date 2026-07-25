@@ -71,7 +71,8 @@ const generateReportPdf = async (institutionId, reportType) => {
     const todayDateStr = today.toISOString().split('T')[0];
     const filename = `${reportType}_${institution.name.replace(/[^a-zA-Z0-9]/g, '_')}_${todayDateStr}.pdf`;
 
-    const doc = new PDFDocument({ margin: 30, size: 'A4', bufferPages: true });
+    const pdfHelper = require('../../utils/fileGenerators/pdfExportHelper');
+    const doc = pdfHelper.createDocument({ margin: 40, size: 'A4' });
 
     const batches = await Batch.findAll({
         where: { institution_id: institutionId },
@@ -96,26 +97,33 @@ const generateReportPdf = async (institutionId, reportType) => {
         earliestDate = new Date(Math.min(...batchStartDates));
     }
 
-    let pageCount = 0;
-    doc.on('pageAdded', () => { pageCount++; });
-
-    doc.fontSize(20).font('Helvetica-Bold').text(institution.name, { align: 'center' });
-    
     let title = '';
     if (reportType === 'attendance') title = 'Attendance Report';
     if (reportType === 'performance') title = 'Performance Report';
     if (reportType === 'progress') title = 'Progress Report';
     if (reportType === 'at_risk') title = 'At-Risk Students Report';
-    
-    doc.fontSize(16).font('Helvetica').text(title, { align: 'center' });
-    doc.moveDown(0.5);
-    doc.fontSize(10).font('Helvetica').text(`Generated: ${today.toLocaleString()}`, { align: 'center' });
-    doc.text(`Data Period: ${earliestDate.toLocaleDateString()} to ${today.toLocaleDateString()}`, { align: 'center' });
-    doc.moveDown(2);
+
+    const periodStr = `${earliestDate.toLocaleDateString()} to ${today.toLocaleDateString()}`;
+    pdfHelper.drawHeader(doc, {
+        title: title,
+        organizationName: institution.name,
+        dateGenerated: today,
+        datePeriod: periodStr
+    });
 
     const batchIds = batches.map(b => b.id);
     const enrollmentIds = batches.flatMap(b => b.Enrollments ? b.Enrollments.map(e => e.id) : []);
     const courseIds = batches.map(b => b.course_id).filter(id => id);
+
+    const defaultTableOptions = {
+        prepareHeader: () => doc.font("Helvetica-Bold").fontSize(10),
+        prepareRow: (row, indexColumn, indexRow, rectRow) => {
+            doc.font("Helvetica").fontSize(10);
+            if (indexColumn === 0 && indexRow % 2 === 1) {
+                doc.addBackground(rectRow, pdfHelper.colors.lightBg);
+            }
+        }
+    };
 
     if (reportType === 'attendance') {
         const sessions = await AttendanceSession.findAll({
@@ -133,15 +141,17 @@ const generateReportPdf = async (institutionId, reportType) => {
         
         const overallAttendanceRate = attendanceRecordsCount ? ((totalPresent / attendanceRecordsCount) * 100).toFixed(1) : 0;
 
-        doc.fontSize(14).font('Helvetica-Bold').text('Section 1 - Institution Overview');
-        doc.moveDown(0.5);
-        doc.fontSize(11).font('Helvetica').text(`Total active students across all batches: ${activeStudentsCount}`);
-        doc.text(`Overall attendance rate: ${overallAttendanceRate}%`);
-        doc.text(`Total sessions conducted across all batches: ${totalSessionsConducted}`);
-        doc.moveDown(1.5);
+        doc.fontSize(12).font('Helvetica-Bold').fillColor(pdfHelper.colors.primary).text('Section 1 - Institution Overview');
+        doc.moveDown(0.3);
 
-        doc.fontSize(14).font('Helvetica-Bold').text('Section 2 - Batch-wise Attendance Table');
-        doc.moveDown(0.5);
+        pdfHelper.drawSummaryCard(doc, [
+            { label: 'Active Students', value: String(activeStudentsCount) },
+            { label: 'Overall Attendance Rate', value: `${overallAttendanceRate}%` },
+            { label: 'Total Sessions Conducted', value: String(totalSessionsConducted) }
+        ]);
+
+        doc.fontSize(12).font('Helvetica-Bold').fillColor(pdfHelper.colors.primary).text('Section 2 - Batch-wise Attendance Table');
+        doc.moveDown(0.3);
 
         const batchAttendanceRows = [];
         for (const batch of batches) {
@@ -174,14 +184,21 @@ const generateReportPdf = async (institutionId, reportType) => {
 
         if (batchAttendanceRows.length > 0) {
             await doc.table({
-                headers: ['Batch', 'Course', 'Students', 'Sessions', 'Avg Attendance %', 'Status'],
+                headers: [
+                    { label: 'Batch', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Course', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Students', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Sessions', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Avg Attendance %', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Status', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white }
+                ],
                 rows: batchAttendanceRows
-            }, { width: 500 });
+            }, defaultTableOptions);
         }
         doc.moveDown(1.5);
 
-        doc.fontSize(14).font('Helvetica-Bold').text('Section 3 - At-Risk Students (< 75% attendance)');
-        doc.moveDown(0.5);
+        doc.fontSize(12).font('Helvetica-Bold').fillColor(pdfHelper.colors.primary).text('Section 3 - At-Risk Students (< 75% attendance)');
+        doc.moveDown(0.3);
 
         const atRiskRows = [];
         for (const batch of batches) {
@@ -206,11 +223,16 @@ const generateReportPdf = async (institutionId, reportType) => {
 
         if (atRiskRows.length > 0) {
             await doc.table({
-                headers: ['Student Name', 'Batch', 'Attendance %', 'Sessions Attended'],
+                headers: [
+                    { label: 'Student Name', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Batch', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Attendance %', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Sessions Attended', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white }
+                ],
                 rows: atRiskRows
-            }, { width: 500 });
+            }, defaultTableOptions);
         } else {
-            doc.fontSize(11).font('Helvetica').text('No at-risk students found.');
+            doc.fontSize(10).font('Helvetica').fillColor(pdfHelper.colors.subtext).text('No at-risk students found.');
         }
 
     } else if (reportType === 'performance') {
@@ -243,15 +265,17 @@ const generateReportPdf = async (institutionId, reportType) => {
             avgScoreOverall = sumScores / quizSubmissions.length;
         }
 
-        doc.fontSize(14).font('Helvetica-Bold').text('Section 1 - Institution Performance Overview');
-        doc.moveDown(0.5);
-        doc.fontSize(11).font('Helvetica').text(`Overall Avg Quiz Score: ${avgScoreOverall.toFixed(1)}%`);
-        doc.text(`Total Quizzes Conducted: ${totalQuizzes}`);
-        doc.text(`Assignments Submitted vs Assigned: ${totalSubmitted} / ${totalAssigned}`);
-        doc.moveDown(1.5);
+        doc.fontSize(12).font('Helvetica-Bold').fillColor(pdfHelper.colors.primary).text('Section 1 - Institution Performance Overview');
+        doc.moveDown(0.3);
 
-        doc.fontSize(14).font('Helvetica-Bold').text('Section 2 - Batch-wise Performance Table');
-        doc.moveDown(0.5);
+        pdfHelper.drawSummaryCard(doc, [
+            { label: 'Overall Avg Quiz Score', value: `${avgScoreOverall.toFixed(1)}%` },
+            { label: 'Total Quizzes Conducted', value: String(totalQuizzes) },
+            { label: 'Assignments Submitted vs Assigned', value: `${totalSubmitted} / ${totalAssigned}` }
+        ]);
+
+        doc.fontSize(12).font('Helvetica-Bold').fillColor(pdfHelper.colors.primary).text('Section 2 - Batch-wise Performance Table');
+        doc.moveDown(0.3);
 
         const batchPerfRows = [];
         const studentStatsMap = new Map();
@@ -303,7 +327,7 @@ const generateReportPdf = async (institutionId, reportType) => {
             batchPerfRows.push([
                 batch.name,
                 batch.Course ? batch.Course.title : 'N/A',
-                bQS.length > 0 ? bAvgScore.toFixed(1) + '%' : '0% (No submissions yet)',
+                bQS.length > 0 ? bAvgScore.toFixed(1) + '%' : '0%',
                 bTotalExpectedAss > 0 ? bAssPerc.toFixed(1) + '%' : '0%',
                 topScorer !== 'None' ? `${topScorer} (${topScore.toFixed(1)}%)` : 'N/A'
             ]);
@@ -311,14 +335,20 @@ const generateReportPdf = async (institutionId, reportType) => {
 
         if (batchPerfRows.length > 0) {
             await doc.table({
-                headers: ['Batch', 'Course', 'Avg Quiz %', 'Assignments Completed %', 'Top Scorer'],
+                headers: [
+                    { label: 'Batch', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Course', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Avg Quiz %', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Assignments %', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Top Scorer', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white }
+                ],
                 rows: batchPerfRows
-            }, { width: 500 });
+            }, defaultTableOptions);
         }
         doc.moveDown(1.5);
 
-        doc.fontSize(14).font('Helvetica-Bold').text('Section 3 - Top 10 Students Table');
-        doc.moveDown(0.5);
+        doc.fontSize(12).font('Helvetica-Bold').fillColor(pdfHelper.colors.primary).text('Section 3 - Top 10 Students Table');
+        doc.moveDown(0.3);
 
         const allStudents = Array.from(studentStatsMap.values());
         allStudents.sort((a, b) => b.avgScore - a.avgScore);
@@ -343,16 +373,22 @@ const generateReportPdf = async (institutionId, reportType) => {
 
         if (top10Rows.length > 0) {
             await doc.table({
-                headers: ['Student Name', 'Batch', 'Avg Quiz Score', 'Assignments Completed', 'Grade'],
+                headers: [
+                    { label: 'Student Name', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Batch', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Avg Quiz Score', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Assignments Completed', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Grade', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white }
+                ],
                 rows: top10Rows
-            }, { width: 500 });
+            }, defaultTableOptions);
         } else {
-            doc.fontSize(11).font('Helvetica').text('No student performance data available.');
+            doc.fontSize(10).font('Helvetica').fillColor(pdfHelper.colors.subtext).text('No student performance data available.');
         }
         doc.moveDown(1.5);
 
-        doc.fontSize(14).font('Helvetica-Bold').text('Section 4 - Grade Distribution Summary');
-        doc.moveDown(0.5);
+        doc.fontSize(12).font('Helvetica-Bold').fillColor(pdfHelper.colors.primary).text('Section 4 - Grade Distribution Summary');
+        doc.moveDown(0.3);
 
         const grades = { 'A+': 0, 'A': 0, 'B': 0, 'C': 0, 'D': 0, 'F': 0 };
         for (const s of allStudents) {
@@ -365,9 +401,12 @@ const generateReportPdf = async (institutionId, reportType) => {
 
         const gradeRows = Object.entries(grades).map(([g, count]) => [g, count.toString()]);
         await doc.table({
-            headers: ['Grade', 'Student Count'],
+            headers: [
+                { label: 'Grade', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                { label: 'Student Count', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white }
+            ],
             rows: gradeRows
-        }, { width: 250 });
+        }, defaultTableOptions);
 
     } else if (reportType === 'progress') {
         const modules = await Module.findAll({ where: { course_id: courseIds } });
@@ -375,7 +414,6 @@ const generateReportPdf = async (institutionId, reportType) => {
         
         let lessons = [];
         if (moduleIds.length > 0) {
-            // New hierarchy: lessons belong directly to modules via module_id
             const dbLessons = await sequelize.query(
                 'SELECT id, name, module_id FROM lessons WHERE module_id IN (:moduleIds)',
                 {
@@ -392,7 +430,6 @@ const generateReportPdf = async (institutionId, reportType) => {
             }));
         }
 
-        
         const lessonProgresses = await LessonProgress.findAll({
             where: { enrollment_id: enrollmentIds }
         });
@@ -416,15 +453,17 @@ const generateReportPdf = async (institutionId, reportType) => {
 
         const overallProgress = overallTotalLessons > 0 ? (overallCompletedLessons / overallTotalLessons * 100).toFixed(1) : 0;
 
-        doc.fontSize(14).font('Helvetica-Bold').text('Section 1 - Institution Progress Overview');
-        doc.moveDown(0.5);
-        doc.fontSize(11).font('Helvetica').text(`Total batches: ${totalBatches}`);
-        doc.text(`Total modules across all courses: ${totalModules}`);
-        doc.text(`Overall course completion: ${overallProgress}%`);
-        doc.moveDown(1.5);
+        doc.fontSize(12).font('Helvetica-Bold').fillColor(pdfHelper.colors.primary).text('Section 1 - Institution Progress Overview');
+        doc.moveDown(0.3);
 
-        doc.fontSize(14).font('Helvetica-Bold').text('Section 2 - Batch-wise Progress Table');
-        doc.moveDown(0.5);
+        pdfHelper.drawSummaryCard(doc, [
+            { label: 'Total Batches', value: String(totalBatches) },
+            { label: 'Total Modules', value: String(totalModules) },
+            { label: 'Overall Completion', value: `${overallProgress}%` }
+        ]);
+
+        doc.fontSize(12).font('Helvetica-Bold').fillColor(pdfHelper.colors.primary).text('Section 2 - Batch-wise Progress Table');
+        doc.moveDown(0.3);
 
         const batchProgressRows = [];
         const moduleStatusData = [];
@@ -441,9 +480,8 @@ const generateReportPdf = async (institutionId, reportType) => {
                 bProgressPerc = (bProgress.length / bLessons.length) * 100;
             }
 
-            // Simple status calculation based on elapsed time vs progress
             const bStart = new Date(batch.start_date);
-            const bEnd = new Date(batch.end_date || new Date(bStart.getTime() + 180*24*60*60*1000)); // default 6mo
+            const bEnd = new Date(batch.end_date || new Date(bStart.getTime() + 180*24*60*60*1000));
             const elapsed = today.getTime() - bStart.getTime();
             const totalDur = bEnd.getTime() - bStart.getTime();
             const expectedProgress = totalDur > 0 ? (elapsed / totalDur) * 100 : 0;
@@ -451,11 +489,10 @@ const generateReportPdf = async (institutionId, reportType) => {
             let status = 'On Track';
             if (bProgressPerc >= 100) {
                 status = 'Completed';
-            } else if (bProgressPerc < expectedProgress - 10) { // 10% buffer
+            } else if (bProgressPerc < expectedProgress - 10) {
                 status = 'Behind';
             }
 
-            // Determine current module
             let currentModuleName = 'N/A';
             const completedLessonIds = bProgress.map(lp => lp.lesson_id);
             for (const mod of bModules) {
@@ -469,7 +506,7 @@ const generateReportPdf = async (institutionId, reportType) => {
                 }
             }
             if (currentModuleName === 'N/A' && bModules.length > 0) {
-                 currentModuleName = bModules[bModules.length - 1].title; // last module if all done
+                 currentModuleName = bModules[bModules.length - 1].title;
             }
 
             batchProgressRows.push([
@@ -481,7 +518,6 @@ const generateReportPdf = async (institutionId, reportType) => {
                 status
             ]);
 
-            // Module completion summary for Section 3
             for (const mod of bModules) {
                 const modLessons = bLessons.filter(l => l.module_id === mod.id);
                 let modCompletedCount = 0;
@@ -508,31 +544,63 @@ const generateReportPdf = async (institutionId, reportType) => {
 
         if (batchProgressRows.length > 0) {
             await doc.table({
-                headers: ['Batch', 'Course', 'Start Date', 'Current Module', 'Progress %', 'Status'],
+                headers: [
+                    { label: 'Batch', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Course', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Start Date', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Current Module', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Progress %', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Status', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white }
+                ],
                 rows: batchProgressRows
-            }, { width: 500 });
+            }, defaultTableOptions);
         }
         doc.moveDown(1.5);
 
-        doc.fontSize(14).font('Helvetica-Bold').text('Section 3 - Module Completion Summary');
-        doc.moveDown(0.5);
+        doc.fontSize(12).font('Helvetica-Bold').fillColor(pdfHelper.colors.primary).text('Section 3 - Module Completion Summary');
+        doc.moveDown(0.3);
         if (moduleStatusData.length > 0) {
-             await doc.table({
-                headers: ['Batch Name', 'Module Name', 'Status', 'Completion %'],
+            await doc.table({
+                headers: [
+                    { label: 'Batch Name', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Module Name', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Status', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                    { label: 'Completion %', headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white }
+                ],
                 rows: moduleStatusData
-            }, { width: 500 });
+            }, defaultTableOptions);
         }
 
     } else if (reportType === 'at_risk') {
-        const studentIds = batches.flatMap(b => b.Enrollments ? b.Enrollments.map(e => e.student.id) : []);
+        const availableWidth = doc.page.width - 80;
+
+        const studentIds = batches.flatMap(b => b.Enrollments ? b.Enrollments.map(e => e.student ? e.student.id : null).filter(Boolean) : []);
+        const enrollmentIds = batches.flatMap(b => b.Enrollments ? b.Enrollments.map(e => e.id) : []);
 
         const attendances = await StudentAttendance.findAll({
-            where: { enrollment_id: batches.flatMap(b => b.Enrollments ? b.Enrollments.map(e => e.id) : []), marked_at: { [Op.lte]: today } }
+            where: { enrollment_id: enrollmentIds, marked_at: { [Op.lte]: today } }
         });
         
         const quizSubmissions = await QuizSubmission.findAll({
-            where: { student_id: studentIds, submitted_at: { [Op.lte]: today } }
+            where: { 
+                [Op.or]: [
+                    { student_id: studentIds },
+                    { enrollment_id: enrollmentIds }
+                ],
+                submitted_at: { [Op.lte]: today } 
+            },
+            include: [{ model: Quiz, attributes: ['id', 'total_marks'] }]
         });
+
+        function formatDateDDMMYYYY(dateVal) {
+            if (!dateVal) return 'N/A';
+            const d = new Date(dateVal);
+            if (isNaN(d.getTime())) return 'N/A';
+            const day = String(d.getDate()).padStart(2, '0');
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const year = d.getFullYear();
+            return `${day}/${month}/${year}`;
+        }
 
         const atRiskStudentsData = [];
         let attIssuesOnly = 0;
@@ -545,7 +613,7 @@ const generateReportPdf = async (institutionId, reportType) => {
             let bRiskCount = 0;
 
             for (const enrollment of batch.Enrollments) {
-                const sId = enrollment.student.id;
+                const sId = enrollment.student ? enrollment.student.id : null;
                 
                 const sAttendances = attendances.filter(a => a.enrollment_id === enrollment.id);
                 const sTotalAtt = sAttendances.length;
@@ -555,37 +623,57 @@ const generateReportPdf = async (institutionId, reportType) => {
                     sAttPerc = (sPresent / sTotalAtt) * 100;
                 }
 
-                const sQS = quizSubmissions.filter(qs => qs.student_id === sId);
-                let sAvgQuiz = 100; // Assume good if no quizzes
-                if (sQS.length > 0) {
-                    sAvgQuiz = sQS.reduce((sum, qs) => sum + Number(qs.score_percentage || 0), 0) / sQS.length;
+                const sQS = quizSubmissions.filter(qs => 
+                    (sId && String(qs.student_id) === String(sId)) || 
+                    (qs.enrollment_id && String(qs.enrollment_id) === String(enrollment.id))
+                );
+                
+                let sAvgQuiz = 0;
+                let hasQuizSubmissions = sQS.length > 0;
+                if (hasQuizSubmissions) {
+                    const totalQuizScorePct = sQS.reduce((sum, qs) => {
+                        let pct = 0;
+                        if (qs.score_percentage !== undefined && qs.score_percentage !== null) {
+                            pct = Number(qs.score_percentage);
+                        } else if (qs.score !== null && qs.score !== undefined) {
+                            const scoreVal = Number(qs.score);
+                            const totalMarks = (qs.Quiz && Number(qs.Quiz.total_marks)) ? Number(qs.Quiz.total_marks) : 100;
+                            pct = (scoreVal / totalMarks) * 100;
+                        }
+                        return sum + pct;
+                    }, 0);
+                    sAvgQuiz = totalQuizScorePct / sQS.length;
                 }
 
                 let isAttRisk = sAttPerc < 75 && sTotalAtt > 0;
-                let isQuizRisk = sAvgQuiz < 60 && sQS.length > 0;
+                let isQuizRisk = hasQuizSubmissions ? sAvgQuiz < 60 : false;
 
                 if (isAttRisk || isQuizRisk) {
                     bRiskCount++;
-                    let issues = [];
+                    let issueType = '';
                     if (isAttRisk && isQuizRisk) {
-                        issues.push('Both');
+                        issueType = 'Both';
                         bothIssues++;
                     } else if (isAttRisk) {
-                        issues.push('Attendance');
+                        issueType = 'Attendance';
                         attIssuesOnly++;
                     } else {
-                        issues.push('Quiz');
+                        issueType = 'Quiz';
                         quizIssuesOnly++;
                     }
 
-                    atRiskStudentsData.push([
-                        enrollment.student ? `${enrollment.student.first_name} ${enrollment.student.last_name}` : 'Unknown',
-                        batch.name,
-                        sTotalAtt > 0 ? sAttPerc.toFixed(1) + '%' : 'N/A',
-                        sQS.length > 0 ? sAvgQuiz.toFixed(1) + '%' : 'N/A',
-                        issues.join(', '),
-                        batch.start_date ? new Date(batch.start_date).toLocaleDateString() : 'N/A'
-                    ]);
+                    const enrolledDate = batch.start_date 
+                        ? formatDateDDMMYYYY(batch.start_date)
+                        : formatDateDDMMYYYY(enrollment.created_at);
+
+                    atRiskStudentsData.push({
+                        name: enrollment.student ? `${enrollment.student.first_name} ${enrollment.student.last_name}`.trim() : 'Unknown',
+                        batch: batch.name || 'N/A',
+                        attendance: sTotalAtt > 0 ? sAttPerc.toFixed(1) + '%' : 'N/A',
+                        quizAvg: hasQuizSubmissions ? sAvgQuiz.toFixed(1) + '%' : (sAvgQuiz ? sAvgQuiz.toFixed(1) + '%' : '0.0%'),
+                        issueType: issueType,
+                        enrolledSince: enrolledDate
+                    });
                 }
             }
             batchRiskCounts.set(batch.id, bRiskCount);
@@ -593,62 +681,86 @@ const generateReportPdf = async (institutionId, reportType) => {
 
         const totalAtRisk = atRiskStudentsData.length;
 
-        doc.fontSize(14).font('Helvetica-Bold').text('Section 1 - At-Risk Overview');
-        doc.moveDown(0.5);
-        doc.fontSize(11).font('Helvetica').text(`Total at-risk students: ${totalAtRisk}`);
-        doc.text(`Breakdown: Attendance issues only (${attIssuesOnly}), Quiz issues only (${quizIssuesOnly}), Both issues (${bothIssues})`);
-        doc.moveDown(1.5);
+        doc.fontSize(12).font('Helvetica-Bold').fillColor(pdfHelper.colors.primary).text('Section 1 - At-Risk Overview');
+        doc.moveDown(0.3);
 
-        doc.fontSize(14).font('Helvetica-Bold').text('Section 2 - At-Risk Students Table');
-        doc.moveDown(0.5);
+        pdfHelper.drawSummaryCard(doc, [
+            { label: 'Total At-Risk Students', value: String(totalAtRisk) },
+            { label: 'Attendance Issues', value: String(attIssuesOnly) },
+            { label: 'Quiz Issues', value: String(quizIssuesOnly) },
+            { label: 'Both Issues', value: String(bothIssues) }
+        ]);
+
+        doc.fontSize(12).font('Helvetica-Bold').fillColor(pdfHelper.colors.primary).text('Section 2 - At-Risk Students Table');
+        doc.moveDown(0.3);
 
         if (atRiskStudentsData.length > 0) {
             await doc.table({
-                headers: ['Student Name', 'Batch', 'Attendance %', 'Avg Quiz %', 'Issues', 'Enrolled Since'],
-                rows: atRiskStudentsData
-            }, { width: 500 });
+                headers: [
+                    { label: 'Student Name', property: 'name', width: availableWidth * 0.22, headerColor: '#1e293b', color: '#ffffff', align: 'left' },
+                    { label: 'Batch', property: 'batch', width: availableWidth * 0.18, headerColor: '#1e293b', color: '#ffffff', align: 'left' },
+                    { label: 'Attendance %', property: 'attendance', width: availableWidth * 0.15, headerColor: '#1e293b', color: '#ffffff', align: 'right' },
+                    { label: 'Avg Quiz Score %', property: 'quizAvg', width: availableWidth * 0.15, headerColor: '#1e293b', color: '#ffffff', align: 'right' },
+                    { label: 'Issue Type', property: 'issueType', width: availableWidth * 0.15, headerColor: '#1e293b', color: '#ffffff', align: 'left' },
+                    { label: 'Enrolled Since', property: 'enrolledSince', width: availableWidth * 0.15, headerColor: '#1e293b', color: '#ffffff', align: 'center' }
+                ],
+                datas: atRiskStudentsData
+            }, {
+                x: 40,
+                width: availableWidth,
+                prepareHeader: () => doc.font("Helvetica-Bold").fontSize(10),
+                prepareRow: (row, indexColumn, indexRow, rectRow) => {
+                    doc.font("Helvetica").fontSize(9);
+                    if (indexColumn === 0 && indexRow % 2 === 1) {
+                        doc.addBackground(rectRow, pdfHelper.colors.lightBg);
+                    }
+                }
+            });
         } else {
-            doc.fontSize(11).font('Helvetica').text('No at-risk students found.');
+            doc.fontSize(10).font('Helvetica').fillColor(pdfHelper.colors.subtext).text('No at-risk students found.');
         }
         doc.moveDown(1.5);
 
-        doc.fontSize(14).font('Helvetica-Bold').text('Section 3 - Batch-wise At-Risk Summary');
-        doc.moveDown(0.5);
+        doc.fontSize(12).font('Helvetica-Bold').fillColor(pdfHelper.colors.primary).text('Section 3 - Batch-wise At-Risk Summary');
+        doc.moveDown(0.3);
 
-        const batchRiskRows = [];
-        for (const batch of batches) {
-            const totalSt = batch.Enrollments.length;
+        const batchRiskRows = batches.map(batch => {
+            const totalSt = batch.Enrollments ? batch.Enrollments.length : 0;
             const bRisk = batchRiskCounts.get(batch.id) || 0;
-            const bRiskPerc = totalSt > 0 ? (bRisk / totalSt * 100).toFixed(1) + '%' : '0%';
+            const bRiskPerc = totalSt > 0 ? (bRisk / totalSt * 100).toFixed(1) + '%' : '0.0%';
             
-            batchRiskRows.push([
-                batch.name,
-                totalSt.toString(),
-                bRisk.toString(),
-                bRiskPerc
-            ]);
-        }
+            return {
+                batch_name: batch.name || 'N/A',
+                total_students: String(totalSt),
+                at_risk_count: String(bRisk),
+                at_risk_pct: bRiskPerc
+            };
+        });
 
         if (batchRiskRows.length > 0) {
             await doc.table({
-                headers: ['Batch Name', 'Total Students', 'At-Risk Count', 'At-Risk %'],
-                rows: batchRiskRows
-            }, { width: 400 });
+                headers: [
+                    { label: 'Batch Name', property: 'batch_name', width: availableWidth * 0.40, headerColor: '#1e293b', color: '#ffffff', align: 'left' },
+                    { label: 'Total Students', property: 'total_students', width: availableWidth * 0.20, headerColor: '#1e293b', color: '#ffffff', align: 'right' },
+                    { label: 'At-Risk Count', property: 'at_risk_count', width: availableWidth * 0.20, headerColor: '#1e293b', color: '#ffffff', align: 'right' },
+                    { label: 'At-Risk %', property: 'at_risk_pct', width: availableWidth * 0.20, headerColor: '#1e293b', color: '#ffffff', align: 'right' }
+                ],
+                datas: batchRiskRows
+            }, {
+                x: 40,
+                width: availableWidth,
+                prepareHeader: () => doc.font("Helvetica-Bold").fontSize(10),
+                prepareRow: (row, indexColumn, indexRow, rectRow) => {
+                    doc.font("Helvetica").fontSize(9);
+                    if (indexColumn === 0 && indexRow % 2 === 1) {
+                        doc.addBackground(rectRow, pdfHelper.colors.lightBg);
+                    }
+                }
+            });
         }
     }
 
-    // Add page numbers
-    const pages = doc.bufferedPageRange();
-    for (let i = 0; i < pages.count; i++) {
-        doc.switchToPage(i);
-        doc.fontSize(10).font('Helvetica').text(
-            `Page ${i + 1} of ${pages.count}`,
-            0,
-            doc.page.height - 30,
-            { align: 'center' }
-        );
-    }
-
+    pdfHelper.drawFooters(doc, 'Generated by LMS');
     return { filename, doc };
 };
 

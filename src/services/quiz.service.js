@@ -110,12 +110,114 @@ class QuizService {
         };
     }
 
+    validateQuizPayload(quizData) {
+        const { quiz_title, total_marks, passing_score, questions } = quizData;
+
+        if (!quiz_title || typeof quiz_title !== 'string' || !quiz_title.trim()) {
+            throw {
+                statusCode: 400,
+                message: 'Quiz title is required'
+            };
+        }
+
+        if (total_marks === undefined || total_marks === null || total_marks === '') {
+            throw {
+                statusCode: 400,
+                message: 'Total marks is required'
+            };
+        }
+
+        const totalMarksNum = Number(total_marks);
+        if (isNaN(totalMarksNum) || !Number.isInteger(totalMarksNum) || totalMarksNum <= 0) {
+            throw {
+                statusCode: 400,
+                message: 'Total marks must be a positive integer greater than 0'
+            };
+        }
+
+        if (passing_score !== undefined && passing_score !== null && passing_score !== '') {
+            const passingNum = Number(passing_score);
+            if (isNaN(passingNum) || !Number.isInteger(passingNum) || passingNum <= 0) {
+                throw {
+                    statusCode: 400,
+                    message: 'Passing score must be a positive integer'
+                };
+            }
+            if (passingNum > totalMarksNum) {
+                throw {
+                    statusCode: 400,
+                    message: 'Passing score cannot exceed total marks'
+                };
+            }
+        }
+
+        if (!questions || !Array.isArray(questions) || questions.length === 0) {
+            throw {
+                statusCode: 400,
+                message: 'Questions array is required and cannot be empty'
+            };
+        }
+
+        let sumMarks = 0;
+
+        questions.forEach((q, index) => {
+            const qNum = index + 1;
+            const qText = q.question_text || q.question;
+
+            if (!qText || typeof qText !== 'string' || !qText.trim()) {
+                throw {
+                    statusCode: 400,
+                    message: `Question ${qNum} text is required`
+                };
+            }
+
+            if (!q.options || !Array.isArray(q.options) || q.options.length === 0) {
+                throw {
+                    statusCode: 400,
+                    message: `Question ${qNum} must have valid options`
+                };
+            }
+
+            if (q.correct_answer === undefined || q.correct_answer === null || q.correct_answer === '') {
+                throw {
+                    statusCode: 400,
+                    message: `Question ${qNum} must have a correct answer`
+                };
+            }
+
+            if (q.marks === undefined || q.marks === null || q.marks === '' || typeof q.marks === 'boolean') {
+                throw {
+                    statusCode: 400,
+                    message: `Question ${qNum} must have a valid positive marks value greater than 0`
+                };
+            }
+
+            const marksNum = Number(q.marks);
+            if (isNaN(marksNum) || !Number.isInteger(marksNum) || marksNum <= 0) {
+                throw {
+                    statusCode: 400,
+                    message: `Question ${qNum} marks must be a positive integer`
+                };
+            }
+
+            sumMarks += marksNum;
+        });
+
+        if (sumMarks !== totalMarksNum) {
+            throw {
+                statusCode: 400,
+                message: `The total of all question marks (${sumMarks}) must equal the quiz total marks (${totalMarksNum})`
+            };
+        }
+    }
+
     async getQuizById(quizId) {
         const quiz = await Quiz.findByPk(quizId, {
             include: [{
                 model: QuizQuestion,
                 attributes: ['id', 'question_text', 'type', 'options', 'correct_answer', 'marks', 'order_num']
-            }]
+            }],
+            order: [[QuizQuestion, 'order_num', 'ASC']]
         });
 
         if (!quiz) {
@@ -125,13 +227,7 @@ class QuizService {
             };
         }
 
-        // Get questions
-        let questions = quiz.QuizQuestions || [];
-        
-        // Shuffle questions if shuffle_questions is true
-        if (quiz.shuffle_questions && questions.length > 0) {
-            questions = this.shuffleArray([...questions]);
-        }
+        const questions = quiz.QuizQuestions || [];
 
         return {
             id: quiz.id,
@@ -151,24 +247,12 @@ class QuizService {
     }
 
     async createQuiz(quizData) {
-        const { quiz_title, instructions, max_attempts, duration, total_marks, passing_score, domain, tags, questions, status, is_published, shuffle_questions } = quizData;
+        const { quiz_title, instructions, max_attempts, duration, total_marks, passing_score, domain, tags, questions, status, is_published, shuffle_questions, shuffle } = quizData;
 
-        // Validate required fields
-        if (!quiz_title) {
-            throw {
-                statusCode: 400,
-                message: 'Quiz title is required'
-            };
-        }
+        // Validate required fields and marks logic
+        this.validateQuizPayload(quizData);
 
-        if (!total_marks) {
-            throw {
-                statusCode: 400,
-                message: 'Total marks is required'
-            };
-        }
-
-        const existingQuiz = await Quiz.findOne({ where: { name: { [Op.iLike]: quiz_title } } });
+        const existingQuiz = await Quiz.findOne({ where: { name: { [Op.iLike]: quiz_title.trim() } } });
         if (existingQuiz) {
             throw {
                 statusCode: 400,
@@ -176,52 +260,51 @@ class QuizService {
             };
         }
 
+        const shuffleVal = shuffle_questions !== undefined ? Boolean(shuffle_questions) : (shuffle !== undefined ? Boolean(shuffle) : false);
+
         try {
             // Create the quiz
             const quiz = await Quiz.create({
-                name: quiz_title,
+                name: quiz_title.trim(),
                 instructions: instructions || null,
                 max_attempts: max_attempts || 1,
                 time_limit_minutes: duration || null,
-                total_marks,
-                passing_score: passing_score || null,
+                total_marks: Number(total_marks),
+                passing_score: passing_score ? Number(passing_score) : null,
                 domain: Array.isArray(domain) ? domain : (domain ? [domain] : []),
                 tags: Array.isArray(tags) ? tags : (tags ? [tags] : []),
                 status: status || 'draft',
                 is_published: is_published || false,
-                shuffle_questions: shuffle_questions || false
+                shuffle_questions: shuffleVal
             });
 
-            // Add questions if provided
-            if (questions && Array.isArray(questions) && questions.length > 0) {
-                const quizQuestions = questions.map((q, index) => ({
-                    quiz_id: quiz.id,
-                    question_text: q.question_text,
-                    type: q.type, // 'mcq' or 'true_false'
-                    options: q.options || [],
-                    correct_answer: q.correct_answer,
-                    marks: q.marks || 1,
-                    order_num: index + 1
-                }));
-                await QuizQuestion.bulkCreate(quizQuestions);
-            }
+            // Add questions
+            const quizQuestions = questions.map((q, index) => ({
+                quiz_id: quiz.id,
+                question_text: q.question_text || q.question,
+                type: q.type || 'mcq',
+                options: q.options || [],
+                correct_answer: String(q.correct_answer),
+                marks: Number(q.marks),
+                order_num: index + 1
+            }));
+            await QuizQuestion.bulkCreate(quizQuestions);
 
             // Fetch and return the created quiz with questions
-            const createdQuiz = await this.getQuizById(quiz.id);
-            return createdQuiz;
+            return await this.getQuizById(quiz.id);
         } catch (error) {
             throw {
-                statusCode: 400,
+                statusCode: error.statusCode || 400,
                 message: error.message || 'Error creating quiz'
             };
         }
     }
 
     async updateQuiz(quizId, updateData) {
-        const { quiz_title, instructions, max_attempts, duration, total_marks, passing_score, domain, tags, questions, status, is_published, shuffle_questions } = updateData;
-
         try {
-            const quiz = await Quiz.findByPk(quizId);
+            const quiz = await Quiz.findByPk(quizId, {
+                include: [{ model: QuizQuestion }]
+            });
             if (!quiz) {
                 throw {
                     statusCode: 404,
@@ -229,41 +312,58 @@ class QuizService {
                 };
             }
 
-            // Update basic fields
-            if (quiz_title !== undefined) quiz.name = quiz_title;
+            if (updateData.quiz_title && updateData.quiz_title.trim().toLowerCase() !== quiz.name.toLowerCase()) {
+                const existingQuiz = await Quiz.findOne({ where: { name: { [Op.iLike]: updateData.quiz_title.trim() } } });
+                if (existingQuiz && existingQuiz.id !== quiz.id) {
+                    throw {
+                        statusCode: 400,
+                        message: 'A quiz with this title already exists'
+                    };
+                }
+            }
+
+            const effectivePayload = {
+                quiz_title: updateData.quiz_title !== undefined ? updateData.quiz_title : quiz.name,
+                total_marks: updateData.total_marks !== undefined ? updateData.total_marks : quiz.total_marks,
+                passing_score: updateData.passing_score !== undefined ? updateData.passing_score : quiz.passing_score,
+                questions: updateData.questions !== undefined ? updateData.questions : (quiz.QuizQuestions || [])
+            };
+
+            this.validateQuizPayload(effectivePayload);
+
+            const { quiz_title, instructions, max_attempts, duration, total_marks, passing_score, domain, tags, questions, status, is_published, shuffle_questions, shuffle } = updateData;
+
+            if (quiz_title !== undefined) quiz.name = quiz_title.trim();
             if (instructions !== undefined) quiz.instructions = instructions;
             if (max_attempts !== undefined) quiz.max_attempts = max_attempts;
             if (duration !== undefined) quiz.time_limit_minutes = duration;
-            if (total_marks !== undefined) quiz.total_marks = total_marks;
-            if (passing_score !== undefined) quiz.passing_score = passing_score;
+            if (total_marks !== undefined) quiz.total_marks = Number(total_marks);
+            if (passing_score !== undefined) quiz.passing_score = passing_score ? Number(passing_score) : null;
             if (domain !== undefined) quiz.domain = Array.isArray(domain) ? domain : (domain ? [domain] : []);
             if (tags !== undefined) quiz.tags = Array.isArray(tags) ? tags : (tags ? [tags] : []);
             if (status !== undefined) quiz.status = status;
             if (is_published !== undefined) quiz.is_published = is_published;
-            if (shuffle_questions !== undefined) quiz.shuffle_questions = shuffle_questions;
+            if (shuffle_questions !== undefined) quiz.shuffle_questions = Boolean(shuffle_questions);
+            else if (shuffle !== undefined) quiz.shuffle_questions = Boolean(shuffle);
 
             await quiz.save();
 
-            // Update questions if provided
             if (questions && Array.isArray(questions)) {
-                // Delete existing questions
                 await QuizQuestion.destroy({ where: { quiz_id: quizId } });
 
-                // Add new questions
                 const quizQuestions = questions.map((q, index) => ({
                     quiz_id: quizId,
-                    question_text: q.question_text,
-                    type: q.type,
+                    question_text: q.question_text || q.question,
+                    type: q.type || 'mcq',
                     options: q.options || [],
-                    correct_answer: q.correct_answer,
-                    marks: q.marks || 1,
+                    correct_answer: String(q.correct_answer),
+                    marks: Number(q.marks),
                     order_num: index + 1
                 }));
                 await QuizQuestion.bulkCreate(quizQuestions);
             }
 
-            const updatedQuiz = await this.getQuizById(quizId);
-            return updatedQuiz;
+            return await this.getQuizById(quizId);
         } catch (error) {
             throw {
                 statusCode: error.statusCode || 400,

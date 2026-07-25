@@ -4,7 +4,16 @@ const bcrypt = require('bcryptjs');
 
 class UserService {
     async createUser(data) {
-        const { full_name, email, password, role, institution_id, is_active } = data;
+        const { full_name, email, password, confirm_password, role, institution_id, is_active } = data;
+
+        if (password || confirm_password) {
+            if (password !== confirm_password) {
+                const error = new Error('Password and confirm password do not match');
+                error.statusCode = 400;
+                throw error;
+            }
+        }
+
         let institutionIdToAssign = null;
 
         // Validate institution requirements
@@ -40,7 +49,7 @@ class UserService {
                 username,
                 password_hash,
                 role: role,
-                is_active: is_active !== undefined ? is_active : true,
+                is_active: true,
                 institution_id: institutionIdToAssign
             }, { transaction: t });
 
@@ -180,25 +189,65 @@ class UserService {
             throw error;
         }
 
+        delete updateData.is_active;
+        delete updateData.status;
+
+        const effectiveRole = updateData.role || user.role;
+
+        if (effectiveRole === 'admin') {
+            // Admin users must not have an associated institution
+            updateData.institution_id = null;
+        } else if (effectiveRole === 'institution_representative') {
+            const instIdToValidate = updateData.institution_id !== undefined ? updateData.institution_id : user.institution_id;
+            if (!instIdToValidate) {
+                const error = new Error('institution_id is required for institution_representative');
+                error.statusCode = 400;
+                throw error;
+            }
+            if (updateData.institution_id !== undefined && updateData.institution_id !== null) {
+                const institution = await Institution.findByPk(instIdToValidate);
+                if (!institution) {
+                    const error = new Error(`Institution with id "${instIdToValidate}" not found`);
+                    error.statusCode = 404;
+                    throw error;
+                }
+            }
+        }
+
+        if (updateData.password || updateData.confirm_password) {
+            if (updateData.password !== updateData.confirm_password) {
+                const error = new Error('Password and confirm password do not match');
+                error.statusCode = 400;
+                throw error;
+            }
+        }
+
         if (updateData.password) {
             const salt = await bcrypt.genSalt(10);
             updateData.password_hash = await bcrypt.hash(updateData.password, salt);
             delete updateData.password;
+            delete updateData.confirm_password;
         }
 
         await user.update(updateData);
 
-        const updatedUser = await User.findByPk(id, {
-            attributes: { exclude: ['password_hash'] },
-            include: [{ model: Institution, attributes: ['id', 'name'] }]
-        });
+        return await this.getUserById(id);
+    }
 
-        const userJson = updatedUser.toJSON();
-        if (userJson.Institution) {
-            userJson.institution = userJson.Institution;
-            delete userJson.Institution;
+    async updateUserStatus(id, status) {
+        const user = await User.findByPk(id);
+        if (!user) {
+            const error = new Error('User not found');
+            error.statusCode = 404;
+            throw error;
         }
-        return userJson;
+
+        const targetActiveState = (status === 'active');
+        if (user.is_active !== targetActiveState) {
+            await user.update({ is_active: targetActiveState });
+        }
+
+        return await this.getUserById(id);
     }
 
     async deleteUser(id) {

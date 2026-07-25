@@ -3,6 +3,14 @@ const { Op } = Sequelize;
 
 class TutorService {
     async createTutor(data) {
+        if (data.password || data.confirm_password) {
+            if (data.password !== data.confirm_password) {
+                const error = new Error('Password and confirm password do not match');
+                error.statusCode = 400;
+                throw error;
+            }
+        }
+
         let passwordProvided = true;
         if (!data.password) {
             passwordProvided = false;
@@ -11,14 +19,17 @@ class TutorService {
             data.password = crypto.randomBytes(32).toString('hex');
         }
 
+        const normalizedDomains = await this.normalizeDomains(data.domains);
+        const normalizedTags = this.normalizeTags(data.tags);
+
         const tutor = await Tutor.create({
             full_name: data.full_name || data.fullName || data['Full name'],
             email: data.email || data['Email address'],
             mobile_number: data.mobile_number || data.mobileNumber || data.phone || data['tutor mobile number'],
             password: data.password,
-            domains: Array.isArray(data.domains) ? data.domains : [],
-            tags: Array.isArray(data.tags) ? data.tags : [],
-            status: data.status || 'active'
+            domains: normalizedDomains,
+            tags: normalizedTags,
+            status: 'active'
         });
 
         const { User, PasswordResetToken } = require('../models');
@@ -31,7 +42,8 @@ class TutorService {
                 email: tutor.email,
                 username: tutor.email.split('@')[0] + Math.floor(Math.random() * 10000),
                 password_hash: tutor.password,
-                role: 'tutor'
+                role: 'tutor',
+                is_active: true
             }
         });
 
@@ -54,8 +66,60 @@ class TutorService {
         return this.formatTutorOutput(tutor);
     }
 
-    async getTutors(query) {
-        const { search, status, domains, page = 1, limit = 10, rowsPerPage } = query;
+    async normalizeDomains(domainsInput) {
+        if (!domainsInput) return [];
+        const arr = Array.isArray(domainsInput) ? domainsInput : String(domainsInput).split(',');
+        const { Domain } = require('../models');
+        
+        const resolvedIds = new Set();
+        
+        for (let item of arr) {
+            if (item === null || item === undefined) continue;
+            const strVal = String(item).trim();
+            if (!strVal) continue;
+
+            const numId = parseInt(strVal, 10);
+            if (!isNaN(numId) && String(numId) === strVal) {
+                const domainRecord = await Domain.findByPk(numId);
+                if (domainRecord) {
+                    resolvedIds.add(domainRecord.id);
+                } else {
+                    resolvedIds.add(numId);
+                }
+            } else {
+                const domainRecord = await Domain.findOne({
+                    where: sequelize.where(
+                        sequelize.fn('LOWER', sequelize.col('name')),
+                        Op.eq,
+                        strVal.toLowerCase()
+                    )
+                });
+                if (domainRecord) {
+                    resolvedIds.add(domainRecord.id);
+                } else {
+                    resolvedIds.add(strVal);
+                }
+            }
+        }
+        return Array.from(resolvedIds);
+    }
+
+    normalizeTags(tagsInput) {
+        if (!tagsInput) return [];
+        const arr = Array.isArray(tagsInput) ? tagsInput : String(tagsInput).split(',');
+        const cleanTags = [];
+        for (let item of arr) {
+            if (item === null || item === undefined) continue;
+            const str = String(item).trim();
+            if (str && !cleanTags.includes(str)) {
+                cleanTags.push(str);
+            }
+        }
+        return cleanTags;
+    }
+
+    async getTutors(query = {}) {
+        const { search, status, domain_id, domain, domains, page = 1, limit = 10, rowsPerPage } = query;
         
         // Proper numeric parsing for pagination
         let parsedLimit = parseInt(rowsPerPage || limit, 10);
@@ -73,19 +137,52 @@ class TutorService {
             where.status = status;
         }
 
-        if (domains) {
-            // domains could come as a comma-separated string
-            const domainArray = domains.split(',').map(d => d.trim()).filter(Boolean);
-            if (domainArray.length > 0) {
-                // To filter JSON arrays accurately cross-db, cast to text and use LIKE/Op.like
+        const activeDomainFilter = domain_id || domain || domains;
+        if (activeDomainFilter) {
+            const filterString = String(activeDomainFilter);
+            const filterArray = filterString.split(',').map(d => d.trim()).filter(Boolean);
+            if (filterArray.length > 0) {
+                const { Domain } = require('../models');
+                const searchTerms = new Set();
+
+                for (const val of filterArray) {
+                    const numId = parseInt(val, 10);
+                    if (!isNaN(numId)) {
+                        searchTerms.add(numId);
+                        searchTerms.add(String(numId));
+                        const dom = await Domain.findByPk(numId);
+                        if (dom) {
+                            searchTerms.add(dom.name);
+                            searchTerms.add(dom.name.toUpperCase());
+                            searchTerms.add(dom.name.toLowerCase());
+                        }
+                    } else {
+                        searchTerms.add(val);
+                        searchTerms.add(val.toUpperCase());
+                        searchTerms.add(val.toLowerCase());
+                        const dom = await Domain.findOne({
+                            where: sequelize.where(
+                                sequelize.fn('LOWER', sequelize.col('name')),
+                                Op.eq,
+                                val.toLowerCase()
+                            )
+                        });
+                        if (dom) {
+                            searchTerms.add(dom.id);
+                            searchTerms.add(String(dom.id));
+                        }
+                    }
+                }
+
                 const isPostgres = sequelize.getDialect() === 'postgres';
                 const jsonFieldCast = isPostgres ? 'cast("domains" as text)' : 'domains';
-                
-                where[Op.and] = domainArray.map(domain =>
+                const termList = Array.from(searchTerms);
+
+                where[Op.or] = termList.map(term =>
                     sequelize.where(
                         sequelize.literal(jsonFieldCast),
                         Op.like,
-                        `%${domain}%`
+                        `%${term}%`
                     )
                 );
             }
@@ -149,8 +246,6 @@ class TutorService {
             order: [['full_name', 'ASC']]
         });
 
-        // Some places might expect exactly { id, name }, so renaming via array aliases
-        // but let's keep it safe in case sequelize aliases get weird.
         const formattedRows = rows.map(t => ({
             id: t.id,
             name: t.get('name') || t.full_name
@@ -179,21 +274,53 @@ class TutorService {
             throw error;
         }
 
+        if (updateData.password || updateData.confirm_password) {
+            if (updateData.password !== updateData.confirm_password) {
+                const error = new Error('Password and confirm password do not match');
+                error.statusCode = 400;
+                throw error;
+            }
+        }
+
         const mappedData = {};
         if (updateData.full_name || updateData.fullName || updateData['Full name']) mappedData.full_name = updateData.full_name || updateData.fullName || updateData['Full name'];
         if (updateData.email || updateData['Email address']) mappedData.email = updateData.email || updateData['Email address'];
         if (updateData.mobile_number || updateData.mobileNumber || updateData.phone || updateData['tutor mobile number']) mappedData.mobile_number = updateData.mobile_number || updateData.mobileNumber || updateData.phone || updateData['tutor mobile number'];
         if (updateData.password) mappedData.password = updateData.password;
-        if (updateData.status) mappedData.status = updateData.status;
 
-        if (updateData.domains) {
-            mappedData.domains = Array.isArray(updateData.domains) ? updateData.domains : [updateData.domains];
+        if (updateData.domains !== undefined) {
+            mappedData.domains = await this.normalizeDomains(updateData.domains);
         }
-        if (updateData.tags) {
-            mappedData.tags = Array.isArray(updateData.tags) ? updateData.tags : [updateData.tags];
+        if (updateData.tags !== undefined) {
+            mappedData.tags = this.normalizeTags(updateData.tags);
         }
 
         await tutor.update(mappedData);
+        return this.formatTutorOutput(tutor);
+    }
+
+    async updateTutorStatus(id, status) {
+        const tutor = await Tutor.findByPk(id);
+        if (!tutor) {
+            const error = new Error('Tutor not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        if (tutor.status !== status) {
+            await tutor.update({ status });
+        }
+
+        // Synchronize associated User account
+        const { User } = require('../models');
+        const user = await User.findOne({ where: { email: tutor.email } });
+        if (user) {
+            const targetActiveState = (status === 'active');
+            if (user.is_active !== targetActiveState) {
+                await user.update({ is_active: targetActiveState });
+            }
+        }
+
         return this.formatTutorOutput(tutor);
     }
 
@@ -264,6 +391,7 @@ class TutorService {
 
     formatTutorOutput(tutor, includeBatches = false) {
         const output = {
+            id: tutor.id,
             tutor_id: tutor.id,
             tutor_name: tutor.full_name,
             email: tutor.email,

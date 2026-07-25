@@ -19,6 +19,7 @@ router.get('/stats', tutorController.getTutorStats);
 // ID-based endpoints
 router.get('/:id', tutorController.getTutorById);
 router.put('/:id', tutorController.updateTutor);
+router.patch('/:id/status', tutorController.updateTutorStatus);
 router.delete('/:id', tutorController.deleteTutor);
 
 module.exports = router;

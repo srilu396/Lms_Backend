@@ -110,6 +110,23 @@ class StudentController {
         }
     }
 
+    async updateStudentStatus(req, res) {
+        try {
+            const { status } = req.body;
+            const student = await studentService.updateStudentStatus(req.params.id, status);
+            res.status(200).json({
+                success: true,
+                message: `Student status updated to ${status} successfully`,
+                data: student
+            });
+        } catch (error) {
+            res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || 'Server error updating student status'
+            });
+        }
+    }
+
     async deleteStudent(req, res) {
         try {
             await studentService.deleteStudent(req.params.id);
@@ -142,21 +159,20 @@ class StudentController {
         }
     }
 
-    async downloadBulkUploadTemplate(req, res) {
+    async downloadBulkUploadTemplate(req, res, next) {
         try {
-            const csvHeaders = 'first_name,last_name,email,mobile_number,password,status,institution\n';
-            const csvSampleData = 'Anilsai,Nunna,saitrinath01c@gmail.com,6300915551,P@55word,inactive,ABC College\nJane,Smith,jane.smith@example.com,9876543210,Password123!,active,\n';
-            
-            const csvContent = csvHeaders + csvSampleData;
+            const csvContent = await studentService.getBulkUploadTemplate();
 
             res.setHeader('Content-Type', 'text/csv');
-            res.setHeader('Content-Disposition', 'attachment; filename="student_upload_template.csv"');
-            res.status(200).send(csvContent);
+            res.setHeader('Content-Disposition', 'attachment; filename="student-upload-template.csv"');
+            return res.status(200).send(csvContent);
         } catch (error) {
-            res.status(500).json({
-                success: false,
-                message: 'Server error generating CSV template'
-            });
+            if (!res.headersSent) {
+                return res.status(500).json({
+                    success: false,
+                    message: 'Server error generating CSV template'
+                });
+            }
         }
     }
 

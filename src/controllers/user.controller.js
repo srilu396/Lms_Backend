@@ -77,10 +77,8 @@ class UserController {
     async updateUser(req, res) {
         try {
             const updateData = { ...req.body };
-            if (updateData.status) {
-                updateData.is_active = (updateData.status === 'active');
-                delete updateData.status;
-            }
+            delete updateData.status;
+            delete updateData.is_active;
 
             const user = await userService.updateUser(req.params.id, updateData);
             res.status(200).json({
@@ -92,6 +90,24 @@ class UserController {
             res.status(error.statusCode || 500).json({
                 success: false,
                 message: error.message || 'Server error updating user'
+            });
+        }
+    }
+
+    // PATCH /users/:id/status
+    async updateUserStatus(req, res) {
+        try {
+            const { status } = req.body;
+            const user = await userService.updateUserStatus(req.params.id, status);
+            res.status(200).json({
+                success: true,
+                message: `User status updated to ${status} successfully`,
+                data: user
+            });
+        } catch (error) {
+            res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || 'Server error updating user status'
             });
         }
     }

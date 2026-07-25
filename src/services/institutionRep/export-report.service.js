@@ -1,5 +1,5 @@
 const PDFDocument = require('pdfkit-table');
-const { Batch, Course, User, Enrollment, Student, AttendanceSession, BatchAssignment, StudentAttendance, QuizSubmission, AssignmentSubmission, sequelize } = require('../../models');
+const { Batch, Course, User, Enrollment, Student, AttendanceSession, BatchAssignment, StudentAttendance, QuizSubmission, AssignmentSubmission, BatchTutor, Tutor, sequelize } = require('../../models');
 const { Op } = require('sequelize');
 const { verifyBatchOwnership } = require('../../utils/institutionRep.helper');
 
@@ -8,7 +8,12 @@ class ExportReportService {
         const batch = await verifyBatchOwnership(batchId, institutionId, {
             include: [
                 { model: Course },
-                { model: User, as: 'tutors' }
+                { model: User, as: 'tutors' },
+                { 
+                    model: BatchTutor, 
+                    as: 'batchTutors',
+                    include: [{ model: Tutor }]
+                }
             ]
         });
 
@@ -41,7 +46,7 @@ class ExportReportService {
                 attributes: [[sequelize.fn('AVG', sequelize.col('score')), 'avgScore']],
                 raw: true
             });
-            const quizAvg = parseFloat(parseFloat(quizAvgResult.avgScore || 0).toFixed(1));
+            const quizAvg = parseFloat(parseFloat(quizAvgResult?.avgScore || 0).toFixed(1));
 
             const assignmentsCompleted = await AssignmentSubmission.count({
                 where: { enrollment_id: enrollment.id, status: { [Op.in]: ['submitted', 'graded'] } }
@@ -55,7 +60,7 @@ class ExportReportService {
             }
 
             return {
-                name: `${student.first_name || ''} ${student.last_name || ''}`.trim(),
+                name: student ? `${student.first_name || ''} ${student.last_name || ''}`.trim() : 'Unknown',
                 attendance: `${attendancePercent}%`,
                 quizAvg: `${quizAvg}%`,
                 assignments: `${assignmentsCompleted}/${totalAssignments}`,
@@ -85,42 +90,88 @@ class ExportReportService {
         }
 
         // 3. Generate PDF
-        const doc = new PDFDocument({ margin: 30, size: 'A4' });
+        const pdfHelper = require('../../utils/fileGenerators/pdfExportHelper');
+        const doc = pdfHelper.createDocument({ margin: 40, size: 'A4' });
         
+        const availableWidth = doc.page.width - 80;
+
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="batch_report_${batch.name.replace(/\\s+/g, '_')}.pdf"`);
+        res.setHeader('Content-Disposition', `attachment; filename="batch_report_${batch.name ? batch.name.replace(/\s+/g, '_') : 'export'}.pdf"`);
         doc.pipe(res);
 
-        // Header
-        doc.fontSize(20).text('Batch Full Report', { align: 'center' }).moveDown();
-        
-        doc.fontSize(12).font('Helvetica-Bold').text('Batch Details:');
-        doc.font('Helvetica').text(`Batch Name: ${batch.name}`);
-        doc.text(`Course Name: ${batch.Course ? batch.Course.title : 'N/A'}`);
-        doc.text(`Tutor Name: ${(batch.tutors && batch.tutors.length > 0) ? batch.tutors.map(t => t.first_name + ' ' + t.last_name).join(', ') : 'N/A'}`);
-        doc.text(`Total Active Students: ${totalActiveStudents}`).moveDown();
-        
-        doc.fontSize(12).font('Helvetica-Bold').text('Batch Overview Metrics:');
-        doc.font('Helvetica').text(`Batch Average Score: ${batchAvgScore}%`);
-        doc.text(`Assignment Completion: ${batchAssignmentCompletion}%`);
-        doc.text(`Total At-Risk Students: ${totalAtRisk}`).moveDown(2);
+        let tutorNames = '';
+        if (batch.tutors && batch.tutors.length > 0) {
+            tutorNames = batch.tutors.map(t => t.full_name || `${t.first_name || ''} ${t.last_name || ''}`.trim()).filter(Boolean).join(', ');
+        } else if (batch.batchTutors && batch.batchTutors.length > 0) {
+            tutorNames = batch.batchTutors.map(bt => bt.Tutor ? (bt.Tutor.full_name || `${bt.Tutor.first_name || ''} ${bt.Tutor.last_name || ''}`.trim()) : '').filter(Boolean).join(', ');
+        }
+        if (!tutorNames) tutorNames = 'N/A';
 
-        // Table
+        const courseTitle = batch.Course ? (batch.Course.name || batch.Course.title || 'N/A') : 'N/A';
+
+        pdfHelper.drawHeader(doc, {
+            title: 'Batch Comprehensive Report',
+            organizationName: 'TRANSETU LMS',
+            batchName: batch.name,
+            dateGenerated: new Date()
+        });
+
+        // Overview Info Box
+        pdfHelper.drawSummaryCard(doc, [
+            { label: 'Course', value: courseTitle },
+            { label: 'Tutor', value: tutorNames },
+            { label: 'Active Students', value: String(totalActiveStudents) },
+            { label: 'Batch Avg Score', value: `${batchAvgScore}%` },
+            { label: 'Assignment Completion', value: `${batchAssignmentCompletion}%` },
+            { label: 'At-Risk Count', value: String(totalAtRisk) }
+        ]);
+
+        // Table Data
         const table = {
-            title: "Student List",
-            headers: ["Student Name", "Attendance", "Quiz Avg", "Assignments Completed", "Status"],
-            rows: studentsData.map(s => [s.name, s.attendance, s.quizAvg, s.assignments, s.status])
+            title: "Student Roster & Performance Summary",
+            headers: [
+                { label: "Student Name", property: 'name', width: availableWidth * 0.30, headerColor: '#1e293b', color: '#ffffff', align: 'left' },
+                { label: "Attendance %", property: 'attendance', width: availableWidth * 0.17, headerColor: '#1e293b', color: '#ffffff', align: 'right' },
+                { label: "Quiz Avg %", property: 'quizAvg', width: availableWidth * 0.17, headerColor: '#1e293b', color: '#ffffff', align: 'right' },
+                { label: "Assignments", property: 'assignments', width: availableWidth * 0.18, headerColor: '#1e293b', color: '#ffffff', align: 'right' },
+                { label: "Status", property: 'status', width: availableWidth * 0.18, headerColor: '#1e293b', color: '#ffffff', align: 'center' }
+            ],
+            datas: studentsData.map(s => ({
+                name: s.name || 'N/A',
+                attendance: s.attendance,
+                quizAvg: s.quizAvg,
+                assignments: s.assignments,
+                status: s.status
+            }))
         };
 
         if (studentsData.length > 0) {
             await doc.table(table, {
+                x: 40,
+                width: availableWidth,
                 prepareHeader: () => doc.font("Helvetica-Bold").fontSize(10),
-                prepareRow: (row, i) => doc.font("Helvetica").fontSize(10)
+                prepareRow: (row, indexColumn, indexRow, rectRow) => {
+                    doc.font("Helvetica").fontSize(9).fillColor(pdfHelper.colors.text);
+                    if (indexColumn === 0 && indexRow % 2 === 1) {
+                        doc.addBackground(rectRow, pdfHelper.colors.lightBg);
+                    }
+                    if (indexColumn === 4) {
+                        const statusVal = typeof row === 'object' && row.status ? row.status : row[4];
+                        if (statusVal === 'On Track') {
+                            doc.fillColor('#16a34a');
+                        } else if (statusVal === 'At Risk') {
+                            doc.fillColor('#ea580c');
+                        } else if (statusVal === 'Excellent') {
+                            doc.fillColor('#2563eb');
+                        }
+                    }
+                }
             });
         } else {
-            doc.text("No students found in this batch.");
+            doc.font('Helvetica').fontSize(10).fillColor(pdfHelper.colors.subtext).text("No students found in this batch.");
         }
 
+        pdfHelper.drawFooters(doc, 'Generated by LMS');
         doc.end();
     }
 }

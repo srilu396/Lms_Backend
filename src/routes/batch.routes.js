@@ -4,7 +4,7 @@ const multer = require('multer');
 const os = require('os');
 const batchController = require('../controllers/batch.controller');
 const validate = require('../middlewares/validate');
-const { createBatchSchema, updateBatchSchema } = require('../utils/validations/batch.validation');
+const { createBatchSchema, updateBatchSchema, updateBatchStatusSchema } = require('../utils/validations/batch.validation');
 const authMiddleware = require('../middlewares/auth.middleware');
 const roleMiddleware = require('../middlewares/role.middleware');
 
@@ -59,6 +59,9 @@ router.get('/:id', batchController.getBatchById);
 
 // Update a batch completely or partially
 router.put('/:id', validate(updateBatchSchema), batchController.updateBatch);
+
+// Update batch status
+router.patch('/:id/status', validate(updateBatchStatusSchema), batchController.updateBatchStatus);
 
 // Delete a batch
 router.delete('/:id', batchController.deleteBatch);

@@ -106,6 +106,30 @@ class BatchController {
     }
 
     /**
+     * PATCH /batches/:id/status
+     */
+    async updateBatchStatus(req, res) {
+        try {
+            const { id } = req.params;
+            const { status } = req.body;
+            const updatedBatch = await batchService.updateBatchStatus(id, status);
+            res.status(200).json({
+                success: true,
+                message: `Batch status updated to ${status} successfully`,
+                data: updatedBatch
+            });
+        } catch (error) {
+            if (error.message === 'Batch not found') {
+                return res.status(404).json({ success: false, message: error.message });
+            }
+            res.status(error.statusCode || 500).json({
+                success: false,
+                message: error.message || 'Internal server error'
+            });
+        }
+    }
+
+    /**
      * DELETE /batches/:id
      */
     async deleteBatch(req, res) {
@@ -119,6 +143,9 @@ class BatchController {
         } catch (error) {
             if (error.message === 'Batch not found') {
                 return res.status(404).json({ success: false, message: error.message });
+            }
+            if (error.statusCode === 400 || error.message.includes('Active batches cannot be deleted')) {
+                return res.status(400).json({ success: false, message: error.message });
             }
             res.status(500).json({
                 success: false,
@@ -344,105 +371,92 @@ class BatchController {
     /**
      * GET /batches/:id/students/export-pdf
      */
-    async exportBatchStudentsPDF(req, res) {
+    /**
+     * GET /batches/:id/students/export-pdf
+     */
+    async exportBatchStudentsPDF(req, res, next) {
         try {
-            const PDFDocument = require('pdfkit');
+            const pdfHelper = require('../utils/fileGenerators/pdfExportHelper');
             const { id } = req.params;
             
-            // Reusing getBatchStudents but without pagination just for the PDF export
-            const result = await batchService.getBatchStudents(id, { limit: 10000, page: 1, ...req.query });
+            const [batchInfo, result] = await Promise.all([
+                batchService.getBatchById(id).catch(() => null),
+                batchService.getBatchStudents(id, { limit: 10000, page: 1, ...req.query })
+            ]);
 
-            const doc = new PDFDocument({ margin: 30 });
+            const doc = pdfHelper.createDocument({ margin: 30, size: 'A4' });
 
-            res.setHeader('Content-disposition', `attachment; filename="batch_students_export.pdf"`);
-            res.setHeader('Content-type', 'application/pdf');
-            
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', `attachment; filename="batch_students_export.pdf"`);
+
             doc.pipe(res);
 
-            // Title
-            doc.fontSize(22).fillColor('#333333').text(`Batch Students Report`, { align: 'center' });
-            doc.fontSize(14).fillColor('#666666').text(`Batch ID: #${id}`, { align: 'center' });
-            doc.moveDown(2);
+            const batchName = batchInfo ? batchInfo.name : `#${id}`;
+            const courseTitle = batchInfo && batchInfo.Course ? batchInfo.Course.title : (batchInfo ? batchInfo.course_name || 'N/A' : 'N/A');
+            const instName = batchInfo && batchInfo.Institution ? batchInfo.Institution.name : 'Transetu LMS';
 
-            // Table configuration
-            const tableTop = 150;
-            const headers = ['Full Name', 'Email', 'Status', 'Completion %'];
-            const columnPositions = [50, 200, 380, 480];
-            const columnWidths = [140, 170, 90, 70];
-            const rowHeight = 25;
-
-            // Draw header background
-            doc.rect(50, tableTop - 5, 500, rowHeight).fill('#f0f0f0');
-
-            // Draw headers
-            doc.fillColor('#333333').font('Helvetica-Bold').fontSize(11);
-            headers.forEach((header, i) => {
-                doc.text(header, columnPositions[i], tableTop, { width: columnWidths[i], align: 'left' });
-            });
-            
-            doc.moveTo(50, tableTop + 20).lineTo(550, tableTop + 20).strokeColor('#4a4a4a').lineWidth(1.5).stroke();
-
-            // Draw rows
-            doc.font('Helvetica').fontSize(10);
-            let y = tableTop + 30;
-
-            result.students.forEach((student, index) => {
-                if (y > 700) {
-                    doc.addPage();
-                    y = 50;
-                    
-                    // Redraw headers on new page
-                    doc.rect(50, y - 5, 500, rowHeight).fill('#f0f0f0');
-                    doc.fillColor('#333333').font('Helvetica-Bold').fontSize(11);
-                    headers.forEach((header, i) => {
-                        doc.text(header, columnPositions[i], y, { width: columnWidths[i], align: 'left' });
-                    });
-                    doc.moveTo(50, y + 20).lineTo(550, y + 20).strokeColor('#4a4a4a').lineWidth(1.5).stroke();
-                    y += 30;
-                    doc.font('Helvetica').fontSize(10);
-                }
-
-                // Alternate row background colors
-                if (index % 2 === 1) {
-                    doc.rect(50, y - 5, 500, rowHeight).fill('#fafafa');
-                    doc.fillColor('#333333');
-                } else {
-                    doc.fillColor('#333333');
-                }
-
-                doc.text(student.full_name || 'N/A', columnPositions[0], y, { width: columnWidths[0], ellipsis: true });
-                doc.text(student.email || 'N/A', columnPositions[1], y, { width: columnWidths[1], ellipsis: true });
-                
-                // Color code the status
-                if (student.status === 'active') doc.fillColor('#2e7d32');
-                else doc.fillColor('#d32f2f');
-                doc.text((student.status || 'N/A').toUpperCase(), columnPositions[2], y, { width: columnWidths[2] });
-                
-                // Content color default
-                doc.fillColor('#333333');
-                doc.text(`${student.completion_percentage || 0}%`, columnPositions[3], y, { width: columnWidths[3] });
-                
-                // Light border separator
-                doc.moveTo(50, y + 20).lineTo(550, y + 20).strokeColor('#e0e0e0').lineWidth(0.5).stroke();
-                y += rowHeight;
+            // Draw Header
+            pdfHelper.drawHeader(doc, {
+                title: 'Batch Students Report',
+                organizationName: 'TRANSETU LMS',
+                batchName: batchName,
+                dateGenerated: new Date()
             });
 
-            // Add footer with timestamp
-            const pages = doc.bufferedPageRange();
-            for (let i = 0; i < pages.count; i++) {
-                doc.switchToPage(i);
-                doc.moveTo(50, 750).lineTo(550, 750).strokeColor('#e0e0e0').lineWidth(1).stroke();
-                doc.fontSize(8).fillColor('#999999').text(`Generated on: ${new Date().toLocaleString()}`, 50, 760);
-                doc.text(`Page ${i + 1} of ${pages.count}`, 500, 760, { align: 'right' });
+            // Draw Info Card
+            pdfHelper.drawSummaryCard(doc, [
+                { label: 'Batch Name', value: batchName },
+                { label: 'Batch ID', value: `#${id}` },
+                { label: 'Course', value: courseTitle },
+                { label: 'Institution', value: instName },
+                { label: 'Total Enrolled', value: String((result && result.students) ? result.students.length : 0) }
+            ]);
+
+            const students = (result && result.students) ? result.students : [];
+
+            if (students.length > 0) {
+                const table = {
+                    headers: [
+                        { label: "Student ID", property: 'student_id', width: 60, headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                        { label: "Student Name", property: 'name', width: 110, headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                        { label: "Email", property: 'email', width: 145, headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                        { label: "Mobile", property: 'mobile', width: 85, headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                        { label: "Status", property: 'status', width: 65, headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white },
+                        { label: "Progress", property: 'progress', width: 70, headerColor: pdfHelper.colors.primary, color: pdfHelper.colors.white }
+                    ],
+                    datas: students.map(student => ({
+                        student_id: String(student.id || 'N/A'),
+                        name: student.full_name || `${student.first_name || ''} ${student.last_name || ''}`.trim() || 'N/A',
+                        email: student.email || 'N/A',
+                        mobile: student.mobile_number || 'N/A',
+                        status: (student.status || 'active').toUpperCase(),
+                        progress: `${student.completion_percentage || 0}%`
+                    }))
+                };
+
+                await doc.table(table, {
+                    prepareHeader: () => doc.font("Helvetica-Bold").fontSize(10),
+                    prepareRow: (row, indexColumn, indexRow, rectRow) => {
+                        doc.font("Helvetica").fontSize(10);
+                        if (indexColumn === 0 && indexRow % 2 === 1) {
+                            doc.addBackground(rectRow, pdfHelper.colors.lightBg);
+                        }
+                    }
+                });
+            } else {
+                doc.font('Helvetica').fontSize(10).fillColor(pdfHelper.colors.subtext).text('No students enrolled in this batch.');
             }
 
+            pdfHelper.drawFooters(doc, 'Generated by LMS');
             doc.end();
 
         } catch (error) {
-            res.status(500).json({
-                success: false,
-                message: error.message || 'Internal server error exporting PDF'
-            });
+            if (!res.headersSent) {
+                res.status(500).json({
+                    success: false,
+                    message: error.message || 'Server error exporting batch students PDF'
+                });
+            }
         }
     }
 

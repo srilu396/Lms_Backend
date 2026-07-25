@@ -4,7 +4,7 @@ const multer = require('multer');
 const os = require('os');
 const studentController = require('../controllers/student.controller');
 const validate = require('../middlewares/validate');
-const { createStudentSchema, updateStudentSchema } = require('../utils/validations/student.validation');
+const { createStudentSchema, updateStudentSchema, updateStudentStatusSchema } = require('../utils/validations/student.validation');
 const authMiddleware = require('../middlewares/auth.middleware');
 const roleMiddleware = require('../middlewares/role.middleware');
 
@@ -39,6 +39,7 @@ router.get('/', studentController.getStudents);
 router.get('/lookup', studentController.getStudentLookup);
 router.get('/:id', studentController.getStudentById);
 router.put('/:id', validate(updateStudentSchema), studentController.updateStudent);
+router.patch('/:id/status', validate(updateStudentStatusSchema), studentController.updateStudentStatus);
 router.delete('/:id', studentController.deleteStudent);
 
 module.exports = router;

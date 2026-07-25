@@ -34,6 +34,10 @@ class AuthController {
                 return res.status(401).json({ success: false, message: 'Invalid credentials' });
             }
 
+            if (!user.is_active) {
+                return res.status(401).json({ success: false, message: 'Account is inactive' });
+            }
+
             const isMatch = await bcrypt.compare(password, user.password_hash);
             if (!isMatch) {
                 return res.status(401).json({ success: false, message: 'Invalid credentials' });

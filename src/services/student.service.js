@@ -6,6 +6,14 @@ const models = require('../models');
 
 class StudentService {
     async createStudent(data) {
+        if (data.password || data.confirm_password) {
+            if (data.password !== data.confirm_password) {
+                const error = new Error('Password and confirm password do not match');
+                error.statusCode = 400;
+                throw error;
+            }
+        }
+
         // Validation: Unique Email constraint logic before DB insertion
         const existingStudent = await Student.findOne({ where: { email: data.email } });
         if (existingStudent) {
@@ -37,6 +45,7 @@ class StudentService {
             data.password = crypto.randomBytes(32).toString('hex');
         }
 
+        data.status = 'active';
         // Will trigger beforeCreate hook to hash password
         const student = await Student.create(data);
 
@@ -50,7 +59,8 @@ class StudentService {
                 email: student.email,
                 username: student.email.split('@')[0] + Math.floor(Math.random() * 10000),
                 password_hash: student.password, 
-                role: 'student'
+                role: 'student',
+                is_active: true
             }
         });
 
@@ -260,6 +270,8 @@ class StudentService {
     }
 
     async updateStudent(id, updateData) {
+        delete updateData.status;
+
         const student = await Student.findByPk(id);
         if (!student) {
             const error = new Error('Student not found');
@@ -267,7 +279,48 @@ class StudentService {
             throw error;
         }
 
+        if (updateData.password || updateData.confirm_password) {
+            if (updateData.password !== updateData.confirm_password) {
+                const error = new Error('Password and confirm password do not match');
+                error.statusCode = 400;
+                throw error;
+            }
+        }
+
         await student.update(updateData);
+
+        if (updateData.password) {
+            const { User } = require('../models');
+            const user = await User.findOne({ where: { email: student.email } });
+            if (user) {
+                await user.update({ password_hash: student.password });
+            }
+        }
+
+        return await this.getStudentById(id);
+    }
+
+    async updateStudentStatus(id, status) {
+        const student = await Student.findByPk(id);
+        if (!student) {
+            const error = new Error('Student not found');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        if (student.status !== status) {
+            await student.update({ status });
+        }
+
+        // Synchronize associated User account
+        const { User } = require('../models');
+        const user = await User.findOne({ where: { email: student.email } });
+        if (user) {
+            const targetActiveState = (status === 'active');
+            if (user.is_active !== targetActiveState) {
+                await user.update({ is_active: targetActiveState });
+            }
+        }
 
         return await this.getStudentById(id);
     }
@@ -370,17 +423,30 @@ class StudentService {
             fs.createReadStream(filePath)
                 .pipe(csvParser())
                 .on('data', (row) => {
-                    // Minimal validation/mapping 
-                    if (row.email && row.first_name && row.last_name && row.password) {
+                    // Flexible header resolution
+                    const email = row.email || row.Email || row['Email address'] || row['email_address'];
+                    const firstName = row.first_name || row['First Name'] || row.first_Name || row.firstName;
+                    const lastName = row.last_name || row['Last Name'] || row.last_Name || row.lastName || '';
+                    const mobile = row.mobile_number || row['Mobile Number'] || row.phone || row.mobile || null;
+                    const rawPassword = row.password || row.Password || row['password_hash'];
+                    const courseId = row.course_id || row['Course ID'] || row.courseId;
+                    const notes = row.notes || row.Notes || null;
+                    const institutionName = row.institution || row.institution_name || row['Institution Name'] || row.Institution || null;
+
+                    if (email && firstName) {
+                        const finalPassword = rawPassword && String(rawPassword).trim()
+                            ? String(rawPassword).trim()
+                            : (email.split('@')[0] + '123!');
+
                         students.push({
-                            first_name: row.first_name,
-                            last_name: row.last_name,
-                            email: row.email,
-                            mobile_number: row.mobile_number || null,
-                            password: row.password,
-                            course_id: row.course_id ? parseInt(row.course_id, 10) : null,
-                            notes: row.notes || null,
-                            institution_name: row.institution || null
+                            first_name: String(firstName).trim(),
+                            last_name: String(lastName).trim(),
+                            email: String(email).trim(),
+                            mobile_number: mobile ? String(mobile).trim() : null,
+                            password: finalPassword,
+                            course_id: courseId ? parseInt(courseId, 10) : null,
+                            notes: notes ? String(notes).trim() : null,
+                            institution_name: institutionName ? String(institutionName).trim() : null
                         });
                     }
                 })
@@ -531,6 +597,27 @@ class StudentService {
                     reject(error);
                 });
         });
+    }
+
+    async getBulkUploadTemplate() {
+        const headers = ['first_name', 'last_name', 'email', 'mobile_number', 'password', 'status', 'institution'];
+        const sampleRows = [
+            ['John', 'Doe', 'john.doe@example.com', '9876543210', 'Password@123', 'active', 'ABC College'],
+            ['Jane', 'Smith', 'jane.smith@example.com', '9123456789', 'Password@456', 'inactive', 'XYZ Institute']
+        ];
+
+        const escapeCsvField = (field) => {
+            const str = field === null || field === undefined ? '' : String(field);
+            if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                return `"${str.replace(/"/g, '""')}"`;
+            }
+            return str;
+        };
+
+        const headerLine = headers.join(',') + '\n';
+        const dataLines = sampleRows.map(row => row.map(escapeCsvField).join(',')).join('\n') + '\n';
+
+        return headerLine + dataLines;
     }
 }
 

@@ -115,6 +115,7 @@ router.post('/course/:courseId/complete', studentPortalController.completeCourse
 
 // Student Quiz APIs
 router.get('/course/:courseId/quiz/:quizId', studentPortalController.getCourseQuiz);
+router.post('/course/:courseId/quiz/:quizId/start', studentPortalController.startCourseQuiz);
 router.post('/course/:courseId/quiz/:quizId/submit', studentPortalController.submitQuiz);
 router.get('/course/quiz/result', studentPortalController.getQuizResult);
 router.get('/course/:courseId/quiz/:quizId/review', studentPortalController.getCourseQuizReview);

@@ -40,10 +40,21 @@ module.exports = (sequelize, DataTypes) => {
             allowNull: true
         },
         status: {
-            type: DataTypes.ENUM('pending_review', 'reviewed', 'completed'),
+            type: DataTypes.ENUM('in_progress', 'pending_review', 'reviewed', 'completed'),
             defaultValue: 'completed'
         },
-        submitted_at: DataTypes.DATE
+        started_at: {
+            type: DataTypes.DATE,
+            allowNull: true
+        },
+        expires_at: {
+            type: DataTypes.DATE,
+            allowNull: true
+        },
+        submitted_at: {
+            type: DataTypes.DATE,
+            allowNull: true
+        }
     }, {
         tableName: 'quiz_submissions',
         timestamps: true,

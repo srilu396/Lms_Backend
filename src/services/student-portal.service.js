@@ -1118,7 +1118,7 @@ class StudentPortalService {
             ]
         });
 
-        const [lessonProgress, moduleProgress] = await Promise.all([
+        const [lessonProgress, moduleProgress, topicProgress] = await Promise.all([
             enrollment ? LessonProgress.findAll({
                 where: { enrollment_id: enrollment.id },
                 attributes: ['lesson_id', 'is_completed']
@@ -1126,6 +1126,10 @@ class StudentPortalService {
             enrollment ? StudentProgress.findAll({
                 where: { enrollment_id: enrollment.id },
                 attributes: ['module_id', 'progress_pct', 'is_completed']
+            }) : Promise.resolve([]),
+            enrollment ? TopicProgress.findAll({
+                where: { enrollment_id: enrollment.id },
+                attributes: ['topic_id', 'is_completed']
             }) : Promise.resolve([])
         ]);
         const progressMap = {};
@@ -1134,22 +1138,35 @@ class StudentPortalService {
         const moduleProgressMap = {};
         moduleProgress.forEach(mp => moduleProgressMap[mp.module_id] = mp);
 
+        const topicProgressMap = {};
+        topicProgress.forEach(tp => topicProgressMap[tp.topic_id] = tp.is_completed);
+
         const sidebarData = [];
         let prevModuleCompleted = true; // Module 1 is never locked
 
         for (const mod of course.modules) {
-            const modProg = moduleProgressMap[mod.id];
-            const isModCompleted = modProg ? modProg.is_completed : false;
-            const progressPct = modProg ? parseFloat(modProg.progress_pct || 0) : 0;
+            let modTotalItems = 0;
+            let modCompItems = 0;
 
             const lessons = mod.lessons.map(les => {
-                const isCompleted = progressMap[les.id] || false;
+                const isLessonCompleted = progressMap[les.id] || false;
 
-                const topics = (les.topics || []).map(top => ({
-                    id: top.id,
-                    name: top.name
-                }));
+                const topics = (les.topics || []).map(top => {
+                    const isTopicCompleted = topicProgressMap[top.id] || false;
+                    modTotalItems++;
+                    if (isTopicCompleted) modCompItems++;
+                    return {
+                        id: top.id,
+                        name: top.name,
+                        status: isTopicCompleted ? 'completed' : 'not_completed'
+                    };
+                });
                 
+                if (!les.topics || les.topics.length === 0) {
+                    modTotalItems++;
+                    if (isLessonCompleted) modCompItems++;
+                }
+
                 const quizzes = (les.quizzes || []).map(q => ({
                     id: q.id,
                     name: q.name
@@ -1164,13 +1181,16 @@ class StudentPortalService {
                     id: les.id,
                     name: les.name,
                     type: les.type,
-                    isCompleted,
+                    status: isLessonCompleted ? 'completed' : 'not_completed',
                     topics,
                     quizzes,
                     assignments
                 };
             });
             
+            let calculatedProgressPct = modTotalItems > 0 ? Math.round((modCompItems / modTotalItems) * 100) : 0;
+            let calculatedIsModCompleted = modTotalItems > 0 ? (calculatedProgressPct === 100) : (moduleProgressMap[mod.id] ? moduleProgressMap[mod.id].is_completed : false);
+
             const moduleQuizzes = (mod.quizzes || []).map(q => ({
                 id: q.id,
                 name: q.name
@@ -1184,12 +1204,13 @@ class StudentPortalService {
             const isLocked = !prevModuleCompleted && enrollment; // Only lock if we have an enrollment (i.e., student)
             
             // Update for next iteration
-            prevModuleCompleted = !enrollment || isModCompleted; // For admin/tutor, modules are always unlocked
+            prevModuleCompleted = !enrollment || calculatedIsModCompleted; // For admin/tutor, modules are always unlocked
 
             sidebarData.push({
                 id: mod.id,
                 name: mod.name,
-                progressPct,
+                progress: calculatedProgressPct,
+                status: calculatedIsModCompleted ? 'completed' : 'not_completed',
                 isLocked,
                 lessons,
                 quizzes: moduleQuizzes,
@@ -1435,7 +1456,8 @@ class StudentPortalService {
     // ─── 16. Student Quiz APIs ──────────────────────────────────────────────────
     
     async getCourseQuiz(userId, courseId, quizId) {
-        await this._verifyCourseAccess(userId, courseId);
+        const student = await this._getStudentByUserId(userId);
+        const { enrollment } = await this._verifyCourseAccess(userId, courseId);
 
         // 2. Fetch quiz
         const quiz = await Quiz.findByPk(quizId, {
@@ -1443,15 +1465,23 @@ class StudentPortalService {
         });
         if (!quiz) throw { statusCode: 404, message: 'Quiz not found' };
 
-        // 3. Fetch questions
-        const questions = await QuizQuestion.findAll({
+        // 3. Check if student has submitted or is in progress
+        const submission = await QuizSubmission.findOne({
+            where: { student_id: userId, quiz_id: quizId, enrollment_id: enrollment.id },
+            order: [['attempt_number', 'DESC']]
+        });
+
+        const totalQuestions = await QuizQuestion.count({ where: { quiz_id: quizId } });
+        
+        let totalMarks = 0;
+        const questionsList = await QuizQuestion.findAll({
             where: { quiz_id: quizId },
-            attributes: ['id', 'question_text', 'options', 'type'],
+            attributes: ['id', 'question_text', 'options', 'type', 'marks'],
             order: [['order_num', 'ASC']]
         });
 
-        // 4. Format options if they are stored as array of strings
-        const formattedQuestions = questions.map(q => {
+        const formattedQuestions = questionsList.map(q => {
+            totalMarks += (q.marks || 1);
             let options = q.options;
             if (Array.isArray(options) && typeof options[0] === 'string') {
                 options = options.map((opt, index) => ({
@@ -1466,13 +1496,107 @@ class StudentPortalService {
             };
         });
 
-        return {
-            quizId: String(quiz.id),
-            quizTitle: quiz.name,
-            quizTime: quiz.time_limit_minutes || 0,
-            courseId: String(courseId),
-            questions: formattedQuestions
-        };
+        if (submission && submission.status !== 'in_progress') {
+            // State 2 - Quiz Completed
+            const quizAnswers = await QuizAnswer.findAll({
+                where: { submission_id: submission.id }
+            });
+
+            const correctAnswers = quizAnswers.filter(a => a.is_correct).length;
+            const wrongAnswers = quizAnswers.length - correctAnswers;
+            
+            let timeTaken = "10m 0s";
+            if (submission.started_at && submission.submitted_at) {
+                const diffMs = submission.submitted_at - submission.started_at;
+                const totalSeconds = Math.floor(diffMs / 1000);
+                const m = Math.floor(totalSeconds / 60);
+                const s = totalSeconds % 60;
+                timeTaken = `${m}m ${s}s`;
+            }
+
+            return {
+                quiz_result: {
+                    answered_questions: `${quizAnswers.length}/${totalQuestions}`,
+                    time_taken: timeTaken,
+                    correct_answers: correctAnswers,
+                    wrong_answers: wrongAnswers,
+                    status: submission.status
+                }
+            };
+        } else if (submission && submission.status === 'in_progress') {
+            // State 1b - Quiz In Progress
+            return {
+                attempt_id: submission.id,
+                server_time: new Date(),
+                started_at: submission.started_at,
+                expires_at: submission.expires_at,
+                quiz: {
+                    id: quiz.id,
+                    title: quiz.name,
+                    time: quiz.time_limit_minutes || 0,
+                    total_questions: totalQuestions,
+                    total_marks: totalMarks,
+                    status: "in_progress"
+                },
+                questions: formattedQuestions
+            };
+        } else {
+            // State 1a - Quiz Not Started
+            // DO NOT RETURN QUESTIONS
+            return {
+                quiz: {
+                    id: quiz.id,
+                    title: quiz.name,
+                    time: quiz.time_limit_minutes || 0,
+                    total_questions: totalQuestions,
+                    total_marks: totalMarks,
+                    status: "not_started"
+                }
+            };
+        }
+    }
+
+    async startCourseQuiz(userId, courseId, quizId) {
+        const student = await this._getStudentByUserId(userId);
+        const { enrollment } = await this._verifyCourseAccess(userId, courseId);
+
+        const quiz = await Quiz.findByPk(quizId, {
+            attributes: ['id', 'name', 'time_limit_minutes']
+        });
+        if (!quiz) throw { statusCode: 404, message: 'Quiz not found' };
+
+        let submission = await QuizSubmission.findOne({
+            where: { student_id: userId, quiz_id: quizId, enrollment_id: enrollment.id },
+            order: [['attempt_number', 'DESC']]
+        });
+
+        if (submission && submission.status !== 'in_progress') {
+            throw { statusCode: 400, message: 'Quiz has already been completed' };
+        }
+
+        if (!submission) {
+            const now = new Date();
+            const expiresAt = new Date(now.getTime() + (quiz.time_limit_minutes || 0) * 60000);
+            
+            // Get latest attempt number to auto-increment if multiple attempts are supported in future
+            const lastAttempt = await QuizSubmission.findOne({
+                where: { student_id: userId, quiz_id: quizId, enrollment_id: enrollment.id },
+                order: [['attempt_number', 'DESC']]
+            });
+            const nextAttempt = lastAttempt ? lastAttempt.attempt_number + 1 : 1;
+
+            submission = await QuizSubmission.create({
+                student_id: userId,
+                quiz_id: quizId,
+                enrollment_id: enrollment.id,
+                attempt_number: nextAttempt,
+                status: 'in_progress',
+                started_at: now,
+                expires_at: expiresAt
+            });
+        }
+        
+        return this.getCourseQuiz(userId, courseId, quizId);
     }
 
     async submitQuiz(userId, courseId, quizId, data) {
@@ -1485,12 +1609,20 @@ class StudentPortalService {
 
         const enrollment = await this._getEnrollment(student.id, courseId);
 
-        // 3. Prevent duplicate final submissions
+        // 3. Find active submission
         const existingSubmission = await QuizSubmission.findOne({
-            where: { student_id: userId, quiz_id: quizId, enrollment_id: enrollment.id }
+            where: { student_id: userId, quiz_id: quizId, enrollment_id: enrollment.id },
+            order: [['attempt_number', 'DESC']]
         });
-        if (existingSubmission) {
-            throw { statusCode: 400, message: 'Quiz already submitted' };
+
+        if (!existingSubmission || existingSubmission.status !== 'in_progress') {
+            throw { statusCode: 400, message: 'No active quiz attempt found or quiz already submitted' };
+        }
+
+        const now = new Date();
+        const bufferMs = 10000; // 10 seconds grace period
+        if (existingSubmission.expires_at && now.getTime() > existingSubmission.expires_at.getTime() + bufferMs) {
+            throw { statusCode: 400, message: 'Quiz attempt has expired' };
         }
 
         // 4. Calculate score
@@ -1502,14 +1634,10 @@ class StudentPortalService {
         const questionMap = {};
         quizQuestions.forEach(q => questionMap[q.id] = q);
 
-        // 5. Create submission record
-        const submission = await QuizSubmission.create({
-            student_id: userId, // Use userId to avoid foreign key violation
-            quiz_id: quizId,
-            enrollment_id: enrollment.id,
-            attempt_number: 1,
+        // Update submission
+        await existingSubmission.update({ 
             status: 'completed',
-            submitted_at: submittedAt || new Date()
+            submitted_at: now
         });
 
         // 6. Save answers and calculate score
@@ -1531,7 +1659,7 @@ class StudentPortalService {
             }
 
             await QuizAnswer.create({
-                submission_id: submission.id,
+                submission_id: existingSubmission.id,
                 question_id: q.id,
                 selected_answer: selectedAnswerText,
                 is_correct: isCorrect
@@ -1539,14 +1667,14 @@ class StudentPortalService {
         }
 
         // Update submission with score
-        await submission.update({ score });
+        await existingSubmission.update({ score });
 
         return {
-            submissionId: String(submission.id),
+            submissionId: String(existingSubmission.id),
             quizId: String(quizId),
             courseId: String(courseId),
             studentId: String(student.id),
-            submittedAt: submission.submitted_at,
+            submittedAt: existingSubmission.submitted_at,
             isAutoSubmitted: isAutoSubmitted || false,
             totalQuestions,
             answeredQuestions: answers.length
@@ -1582,6 +1710,16 @@ class StudentPortalService {
         else if (quizPercentage >= 70) grade = 'B';
         else if (quizPercentage >= 50) grade = 'C';
 
+        let timeTakenObj = { minutes: 10, seconds: 0 };
+        if (submission.started_at && submission.submitted_at) {
+            const diffMs = submission.submitted_at - submission.started_at;
+            const totalSeconds = Math.floor(diffMs / 1000);
+            timeTakenObj = {
+                minutes: Math.floor(totalSeconds / 60),
+                seconds: totalSeconds % 60
+            };
+        }
+
         return {
             quizId: String(quizId),
             courseId: String(courseId),
@@ -1591,10 +1729,7 @@ class StudentPortalService {
                 correctAnswers,
                 wrongAnswers,
                 quizPercentage,
-                timeTaken: {
-                    minutes: 10, // Fallback as we don't track start time
-                    seconds: 0
-                },
+                timeTaken: timeTakenObj,
                 grade
             }
         };

@@ -448,6 +448,21 @@ class StudentPortalController {
         }
     }
 
+    // POST /student-portal/course/:courseId/quiz/:quizId/start
+    async startCourseQuiz(req, res, next) {
+        try {
+            const { courseId, quizId } = req.params;
+            const quizData = await studentPortalService.startCourseQuiz(req.user.id, courseId, quizId);
+            res.status(200).json({
+                success: true,
+                message: 'Quiz started successfully',
+                data: quizData
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
     // POST /student-portal/course/:courseId/quiz/:quizId/submit
     async submitQuiz(req, res, next) {
         try {

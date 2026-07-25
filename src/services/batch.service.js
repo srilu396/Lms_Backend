@@ -2,6 +2,7 @@ const { Batch, Course, Domain, Institution, Enrollment, BatchTutor, BatchAssignm
 const { Op } = require('sequelize');
 const fs = require('fs');
 const csvParser = require('csv-parser');
+const { createNotification, createNotificationsForMany } = require('./notification.service');
 
 class BatchService {
     /**
@@ -81,8 +82,50 @@ class BatchService {
                 }));
                 await Enrollment.bulkCreate(enrollments, { transaction, ignoreDuplicates: true });
             }
-
             await transaction.commit();
+
+            // Trigger 1 — Institution Rep: New batch created
+            try {
+                if (batch.institution_id) {
+                    const rep = await User.findOne({ where: { role: 'institution_representative', institution_id: batch.institution_id } });
+                    if (rep) {
+                        await createNotification({
+                            userId: rep.id,
+                            role: 'institution_representative',
+                            type: 'BATCH_CREATED',
+                            title: 'New Batch Added',
+                            message: `A new batch "${batch.name}" has been created for your institution.`,
+                            referenceId: batch.id,
+                            referenceType: 'batch'
+                        });
+                    }
+                }
+            } catch (err) {
+                // silent try-catch
+            }
+
+            // Trigger 2 — Tutor: New batch allocated
+            try {
+                if (tutor_id) {
+                    const tutor = await Tutor.findByPk(tutor_id);
+                    if (tutor) {
+                        const tutorUser = await User.findOne({ where: { email: tutor.email } });
+                        if (tutorUser) {
+                            await createNotification({
+                                userId: tutorUser.id,
+                                role: 'tutor',
+                                type: 'BATCH_ALLOCATED_TUTOR',
+                                title: 'New Batch Assigned to You',
+                                message: `You have been assigned to teach "${batch.name}" starting ${batch.start_date || 'N/A'}.`,
+                                referenceId: batch.id,
+                                referenceType: 'batch'
+                            });
+                        }
+                    }
+                }
+            } catch (err) {
+                // silent try-catch
+            }
         } catch (error) {
             if (transaction) await transaction.rollback();
             throw error;
@@ -615,6 +658,60 @@ class BatchService {
     async bulkCreateBatchesFromCSV(filePath, defaultInstitutionId) {
         const BulkUploadService = require('../utils/batchBulkUpload/BulkUploadService');
         return await BulkUploadService.processUpload(filePath, defaultInstitutionId);
+    }
+
+    /**
+     * Link an assignment to a batch
+     */
+    async linkAssignmentToBatch(batchId, assignmentId, dueDate) {
+        const batch = await Batch.findByPk(batchId);
+        if (!batch) throw new Error('Batch not found');
+
+        const assignment = await Assignment.findByPk(assignmentId);
+        if (!assignment) throw new Error('Assignment not found');
+
+        const [batchAssignment, created] = await BatchAssignment.findOrCreate({
+            where: { batch_id: batchId, assignment_id: assignmentId },
+            defaults: { due_date: dueDate || null }
+        });
+
+        if (!created && dueDate !== undefined) {
+            batchAssignment.due_date = dueDate;
+            await batchAssignment.save();
+        }
+
+        // Trigger 9 — Student: New assignment posted in batch
+        try {
+            const enrollments = await Enrollment.findAll({
+                where: { batch_id: batchId, status: 'active' },
+                include: [{ model: Student, as: 'student' }]
+            });
+
+            const studentEmails = enrollments.map(e => e.student?.email).filter(Boolean);
+            if (studentEmails.length > 0) {
+                const studentUsers = await User.findAll({
+                    where: { email: { [Op.in]: studentEmails } }
+                });
+                const userIds = studentUsers.map(u => u.id);
+                
+                if (userIds.length > 0) {
+                    const dueDateText = dueDate ? ` Due: ${dueDate}` : ' No deadline set.';
+                    await createNotificationsForMany({
+                        userIds,
+                        role: 'student',
+                        type: 'ASSIGNMENT_ADDED',
+                        title: 'New Assignment Posted',
+                        message: `A new assignment "${assignment.title}" has been posted in your batch "${batch.name}".${dueDateText}`,
+                        referenceId: assignment.id,
+                        referenceType: 'assignment'
+                    });
+                }
+            }
+        } catch (err) {
+            // silent try-catch
+        }
+
+        return batchAssignment;
     }
 }
 

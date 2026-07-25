@@ -1,4 +1,5 @@
 const { Enrollment, Batch, Student, User, Course } = require('../models');
+const { createNotificationsForMany } = require('./notification.service');
 
 class EnrollmentService {
     async enrollStudent(data) {
@@ -26,7 +27,32 @@ class EnrollmentService {
             throw error;
         }
 
-        return await Enrollment.create(data);
+        const enrollment = await Enrollment.create(data);
+
+        // Trigger 3 — Student: Enrolled into batch
+        try {
+            const studentUser = await User.findOne({ where: { email: student.email } });
+            if (studentUser) {
+                const batchObj = await Batch.findByPk(data.batch_id, {
+                    include: [{ model: Course, attributes: ['id', 'name'] }]
+                });
+                if (batchObj) {
+                    await createNotificationsForMany({
+                        userIds: [studentUser.id],
+                        role: 'student',
+                        type: 'BATCH_ALLOCATED_STUDENT',
+                        title: 'You Have Been Enrolled in a Batch',
+                        message: `You have been enrolled in "${batchObj.name}". Your course "${batchObj.Course?.name || 'N/A'}" starts on ${batchObj.start_date || 'N/A'}.`,
+                        referenceId: batchObj.id,
+                        referenceType: 'batch'
+                    });
+                }
+            }
+        } catch (err) {
+            // silent try-catch
+        }
+
+        return enrollment;
     }
 
     async getAllEnrollments(filters = {}) {

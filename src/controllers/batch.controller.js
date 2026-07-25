@@ -530,6 +530,30 @@ class BatchController {
             });
         }
     }
+
+    /**
+     * POST /batches/:id/assignments
+     */
+    async linkAssignmentToBatch(req, res) {
+        try {
+            const { id } = req.params;
+            const { assignment_id, due_date } = req.body;
+            if (!assignment_id) {
+                return res.status(400).json({ success: false, message: 'assignment_id is required' });
+            }
+            const result = await batchService.linkAssignmentToBatch(id, assignment_id, due_date);
+            res.status(201).json({
+                success: true,
+                message: 'Assignment linked to batch successfully',
+                data: result
+            });
+        } catch (error) {
+            res.status(400).json({
+                success: false,
+                message: error.message || 'Internal server error linking assignment'
+            });
+        }
+    }
 }
 
 module.exports = new BatchController();

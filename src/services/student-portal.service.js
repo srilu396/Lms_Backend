@@ -1669,6 +1669,108 @@ class StudentPortalService {
         // Update submission with score
         await existingSubmission.update({ score });
 
+        // Trigger 4 & 5 — Top/Least Performer Alerts
+        try {
+            if (enrollment && enrollment.id) {
+                // Fetch all quiz submissions for this student in this batch
+                const allSubmissions = await QuizSubmission.findAll({
+                    where: { enrollment_id: enrollment.id },
+                    include: [{ model: Quiz, attributes: ['total_marks'] }]
+                });
+
+                const prevSubmissions = allSubmissions.filter(sub => sub.id !== submission.id);
+                
+                const calculateAvg = (subs) => {
+                    if (subs.length === 0) return 0;
+                    const percents = subs.map(sub => {
+                        const score_obtained = parseFloat(sub.score || 0);
+                        const score_total = parseFloat(sub.Quiz?.total_marks || 100);
+                        return score_total > 0 ? (score_obtained / score_total * 100) : 0;
+                    });
+                    return percents.reduce((a, b) => a + b, 0) / percents.length;
+                };
+
+                const prevAvg = calculateAvg(prevSubmissions);
+                const newAvg = calculateAvg(allSubmissions);
+
+                const batchObj = enrollment.Batch || await Batch.findByPk(enrollment.batch_id);
+                
+                if (batchObj && batchObj.institution_id) {
+                    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+                    
+                    // Trigger 4: Top Performer Alert
+                    if (prevAvg < 90 && newAvg >= 90) {
+                        const Notification = models.Notification;
+                        const existingNotif = await Notification.findOne({
+                            where: {
+                                type: 'TOP_PERFORMER',
+                                reference_id: student.id,
+                                created_at: {
+                                    [Op.gt]: oneDayAgo
+                                }
+                            }
+                        });
+
+                        if (!existingNotif) {
+                            const repUser = await User.findOne({
+                                where: {
+                                    role: 'institution_representative',
+                                    institution_id: batchObj.institution_id
+                                }
+                            });
+                            if (repUser) {
+                                await createNotification({
+                                    userId: repUser.id,
+                                    role: 'institution_representative',
+                                    type: 'TOP_PERFORMER',
+                                    title: 'Top Performer Alert',
+                                    message: `"${student.first_name} ${student.last_name}" from batch "${batchObj.name}" has achieved a quiz average of ${newAvg.toFixed(1)}%.`,
+                                    referenceId: student.id,
+                                    referenceType: 'student'
+                                });
+                            }
+                        }
+                    }
+
+                    // Trigger 5: Least Performer Alert
+                    if (prevAvg >= 60 && newAvg < 60) {
+                        const Notification = models.Notification;
+                        const existingNotif = await Notification.findOne({
+                            where: {
+                                type: 'LEAST_PERFORMER',
+                                reference_id: student.id,
+                                created_at: {
+                                    [Op.gt]: oneDayAgo
+                                }
+                            }
+                        });
+
+                        if (!existingNotif) {
+                            const repUser = await User.findOne({
+                                where: {
+                                    role: 'institution_representative',
+                                    institution_id: batchObj.institution_id
+                                }
+                            });
+                            if (repUser) {
+                                await createNotification({
+                                    userId: repUser.id,
+                                    role: 'institution_representative',
+                                    type: 'LEAST_PERFORMER',
+                                    title: 'Low Performance Alert',
+                                    message: `"${student.first_name} ${student.last_name}" from batch "${batchObj.name}" has dropped to a quiz average of ${newAvg.toFixed(1)}%. Immediate attention required.`,
+                                    referenceId: student.id,
+                                    referenceType: 'student'
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            // silent try-catch
+        }
+
         return {
             submissionId: String(existingSubmission.id),
             quizId: String(quizId),
@@ -1914,6 +2016,23 @@ class StudentPortalService {
                 status: status,
                 submitted_at: isDraft ? null : (data.submittedAt || new Date())
             });
+        }
+
+        // Trigger 8 — Student: Assignment submitted confirmation
+        try {
+            if (status === 'submitted') {
+                await createNotification({
+                    userId: userId,
+                    role: 'student',
+                    type: 'ASSIGNMENT_SUBMITTED',
+                    title: 'Assignment Submitted Successfully',
+                    message: `Your assignment "${assignment.title}" has been submitted successfully. You will be notified once it is reviewed.`,
+                    referenceId: assignment.id,
+                    referenceType: 'assignment'
+                });
+            }
+        } catch (err) {
+            // silent try-catch
         }
 
         return {

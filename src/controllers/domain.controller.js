@@ -50,6 +50,23 @@ class DomainController {
         }
     }
 
+    async getDomainsForFilter(req, res) {
+        try {
+            const result = await domainService.getDomainsForFilter();
+            res.status(200).json({
+                success: true,
+                message: 'Domains filter list retrieved successfully',
+                data: result.data
+            });
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: 'Server error retrieving domains filter list'
+            });
+        }
+    }
+
+
     async getDomainById(req, res) {
         try {
             const domain = await domainService.getDomainById(req.params.id, req.query, req.user);

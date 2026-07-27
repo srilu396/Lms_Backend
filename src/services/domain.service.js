@@ -128,6 +128,35 @@ class DomainService {
         };
     }
 
+    async getDomainsForFilter() {
+        const rows = await Domain.findAll({
+            attributes: ['id', 'name', 'status'],
+            order: [['name', 'ASC']]
+        });
+
+        const sortedData = rows
+            .map((domain) => {
+                const d = domain.toJSON();
+                const statusUpper = d.status ? String(d.status).toUpperCase() : 'ACTIVE';
+                return {
+                    id: d.id,
+                    name: d.name,
+                    status: statusUpper
+                };
+            })
+            .sort((a, b) => {
+                if (a.status === b.status) {
+                    return a.name.localeCompare(b.name);
+                }
+                return a.status === 'ACTIVE' ? -1 : 1;
+            });
+
+        return {
+            data: sortedData
+        };
+    }
+
+
     async getDomainById(id, query = {}, user = null) {
         const numericId = parseInt(id, 10);
         if (isNaN(numericId)) {

@@ -25,6 +25,7 @@ const {
 const { Op } = require('sequelize');
 const { mediaInclude, serializeWithMedia } = require('../utils/media');
 const { generateGrade } = require('../utils/grade.util');
+const { createNotification } = require('./notification.service');
 
 class StudentPortalService {
 
@@ -1164,7 +1165,7 @@ class StudentPortalService {
             let modTotalItems = 0;
             let modCompItems = 0;
 
-            const isLocked = prevModuleProgressPct !== 100 && enrollment;
+            const isLocked = prevModuleProgressPct !== 100 && !!enrollment;
 
             const lessons = mod.lessons.map(les => {
                 const isLessonCompleted = progressMap[les.id] || false;
@@ -1735,7 +1736,7 @@ class StudentPortalService {
                     include: [{ model: Quiz, attributes: ['total_marks'] }]
                 });
 
-                const prevSubmissions = allSubmissions.filter(sub => sub.id !== submission.id);
+                const prevSubmissions = allSubmissions.filter(sub => sub.id !== existingSubmission.id);
                 
                 const calculateAvg = (subs) => {
                     if (subs.length === 0) return 0;
@@ -1942,11 +1943,9 @@ class StudentPortalService {
                         }
                     ]
                 }
-            ]
-        }
-    ],
-    order: [['attempt_number', 'DESC']]
-});
+            ],
+            order: [['attempt_number', 'DESC']]
+        });
 
 if (!submission) {
     throw { statusCode: 404, message: 'Quiz submission not found' };

@@ -24,6 +24,7 @@ const {
 } = models;
 const { Op } = require('sequelize');
 const { mediaInclude, serializeWithMedia } = require('../utils/media');
+const { generateGrade } = require('../utils/grade.util');
 
 class StudentPortalService {
 
@@ -1118,35 +1119,52 @@ class StudentPortalService {
             ]
         });
 
-        const [lessonProgress, moduleProgress, topicProgress] = await Promise.all([
+        const [lessonProgress, topicProgress, quizSubmissions, assignmentSubmissions] = await Promise.all([
             enrollment ? LessonProgress.findAll({
                 where: { enrollment_id: enrollment.id },
                 attributes: ['lesson_id', 'is_completed']
             }) : Promise.resolve([]),
-            enrollment ? StudentProgress.findAll({
-                where: { enrollment_id: enrollment.id },
-                attributes: ['module_id', 'progress_pct', 'is_completed']
-            }) : Promise.resolve([]),
             enrollment ? TopicProgress.findAll({
                 where: { enrollment_id: enrollment.id },
                 attributes: ['topic_id', 'is_completed']
+            }) : Promise.resolve([]),
+            enrollment ? QuizSubmission.findAll({
+                where: { enrollment_id: enrollment.id },
+                attributes: ['quiz_id', 'status'],
+                order: [['attempt_number', 'DESC']]
+            }) : Promise.resolve([]),
+            enrollment ? AssignmentSubmission.findAll({
+                where: { enrollment_id: enrollment.id },
+                attributes: ['assignment_id', 'status']
             }) : Promise.resolve([])
         ]);
+        
         const progressMap = {};
         lessonProgress.forEach(lp => progressMap[lp.lesson_id] = lp.is_completed);
-
-        const moduleProgressMap = {};
-        moduleProgress.forEach(mp => moduleProgressMap[mp.module_id] = mp);
 
         const topicProgressMap = {};
         topicProgress.forEach(tp => topicProgressMap[tp.topic_id] = tp.is_completed);
 
+        const quizStatusMap = {};
+        quizSubmissions.forEach(qs => {
+            if (!quizStatusMap[qs.quiz_id]) {
+                quizStatusMap[qs.quiz_id] = qs.status;
+            }
+        });
+
+        const assignmentStatusMap = {};
+        assignmentSubmissions.forEach(asub => {
+            assignmentStatusMap[asub.assignment_id] = asub.status;
+        });
+
         const sidebarData = [];
-        let prevModuleCompleted = true; // Module 1 is never locked
+        let prevModuleProgressPct = 100; // Module 1 is always unlocked
 
         for (const mod of course.modules) {
             let modTotalItems = 0;
             let modCompItems = 0;
+
+            const isLocked = prevModuleProgressPct !== 100 && enrollment;
 
             const lessons = mod.lessons.map(les => {
                 const isLessonCompleted = progressMap[les.id] || false;
@@ -1158,7 +1176,8 @@ class StudentPortalService {
                     return {
                         id: top.id,
                         name: top.name,
-                        status: isTopicCompleted ? 'completed' : 'not_completed'
+                        status: isTopicCompleted ? 'completed' : 'not_completed',
+                        isLocked
                     };
                 });
                 
@@ -1167,49 +1186,82 @@ class StudentPortalService {
                     if (isLessonCompleted) modCompItems++;
                 }
 
-                const quizzes = (les.quizzes || []).map(q => ({
-                    id: q.id,
-                    name: q.name
-                }));
+                const quizzes = (les.quizzes || []).map(q => {
+                    const qStatus = quizStatusMap[q.id] || 'not_started';
+                    const qCompleted = ['completed', 'pending_review', 'reviewed'].includes(qStatus);
+                    modTotalItems++;
+                    if (qCompleted) modCompItems++;
+                    return {
+                        id: q.id,
+                        name: q.name,
+                        status: qStatus,
+                        isLocked
+                    };
+                });
 
-                const assignments = (les.assignments || []).map(a => ({
-                    id: a.id,
-                    title: a.title
-                }));
+                const assignments = (les.assignments || []).map(a => {
+                    const aStatus = assignmentStatusMap[a.id] || 'not_started';
+                    const aCompleted = ['submitted', 'graded'].includes(aStatus);
+                    modTotalItems++;
+                    if (aCompleted) modCompItems++;
+                    return {
+                        id: a.id,
+                        title: a.title,
+                        status: aStatus,
+                        isLocked
+                    };
+                });
 
                 return {
                     id: les.id,
                     name: les.name,
                     type: les.type,
                     status: isLessonCompleted ? 'completed' : 'not_completed',
+                    isLocked,
                     topics,
                     quizzes,
                     assignments
                 };
             });
             
+            const moduleQuizzes = (mod.quizzes || []).map(q => {
+                const qStatus = quizStatusMap[q.id] || 'not_started';
+                const qCompleted = ['completed', 'pending_review', 'reviewed'].includes(qStatus);
+                modTotalItems++;
+                if (qCompleted) modCompItems++;
+                return {
+                    id: q.id,
+                    name: q.name,
+                    status: qStatus,
+                    isLocked
+                };
+            });
+
+            const moduleAssignments = (mod.assignments || []).map(a => {
+                const aStatus = assignmentStatusMap[a.id] || 'not_started';
+                const aCompleted = ['submitted', 'graded'].includes(aStatus);
+                modTotalItems++;
+                if (aCompleted) modCompItems++;
+                return {
+                    id: a.id,
+                    title: a.title,
+                    status: aStatus,
+                    isLocked
+                };
+            });
+
             let calculatedProgressPct = modTotalItems > 0 ? Math.round((modCompItems / modTotalItems) * 100) : 0;
-            let calculatedIsModCompleted = modTotalItems > 0 ? (calculatedProgressPct === 100) : (moduleProgressMap[mod.id] ? moduleProgressMap[mod.id].is_completed : false);
+            let calculatedIsModCompleted = (calculatedProgressPct === 100 && modTotalItems > 0);
 
-            const moduleQuizzes = (mod.quizzes || []).map(q => ({
-                id: q.id,
-                name: q.name
-            }));
-
-            const moduleAssignments = (mod.assignments || []).map(a => ({
-                id: a.id,
-                title: a.title
-            }));
-
-            const isLocked = !prevModuleCompleted && enrollment; // Only lock if we have an enrollment (i.e., student)
-            
             // Update for next iteration
-            prevModuleCompleted = !enrollment || calculatedIsModCompleted; // For admin/tutor, modules are always unlocked
+            prevModuleProgressPct = enrollment ? calculatedProgressPct : 100;
 
             sidebarData.push({
                 id: mod.id,
                 name: mod.name,
                 progress: calculatedProgressPct,
+                completedItems: modCompItems,
+                totalItems: modTotalItems,
                 status: calculatedIsModCompleted ? 'completed' : 'not_completed',
                 isLocked,
                 lessons,
@@ -1626,27 +1678,30 @@ class StudentPortalService {
         }
 
         // 4. Calculate score
-        let score = 0;
+        let totalMarks = 0;
+        let incorrectMarks = 0;
         const totalQuestions = await QuizQuestion.count({ where: { quiz_id: quizId } });
 
         // Fetch all questions for this quiz to compare answers
         const quizQuestions = await QuizQuestion.findAll({ where: { quiz_id: quizId } });
         const questionMap = {};
-        quizQuestions.forEach(q => questionMap[q.id] = q);
+        quizQuestions.forEach(q => {
+            questionMap[q.id] = q;
+            totalMarks += (q.marks || 1);
+        });
 
-        // Update submission
+        // Update submission status and timestamp
         await existingSubmission.update({ 
             status: 'completed',
             submitted_at: now
         });
 
         // 6. Save answers and calculate score
-        for (const ans of answers) {
-            const q = questionMap[ans.questionId];
-            if (!q) continue;
-
+        for (const q of quizQuestions) {
+            const ans = answers.find(a => String(a.questionId) === String(q.id));
             let selectedAnswerText = null;
-            if (ans.selectedOptionId !== null && ans.selectedOptionId !== undefined) {
+
+            if (ans && ans.selectedOptionId !== null && ans.selectedOptionId !== undefined) {
                 const optionIndex = parseInt(ans.selectedOptionId, 10);
                 if (Array.isArray(q.options) && optionIndex >= 0 && optionIndex < q.options.length) {
                     selectedAnswerText = q.options[optionIndex];
@@ -1654,8 +1709,8 @@ class StudentPortalService {
             }
 
             const isCorrect = selectedAnswerText === q.correct_answer;
-            if (isCorrect) {
-                score += q.marks || 1;
+            if (!isCorrect) {
+                incorrectMarks += (q.marks || 1);
             }
 
             await QuizAnswer.create({
@@ -1665,6 +1720,8 @@ class StudentPortalService {
                 is_correct: isCorrect
             });
         }
+
+        let score = totalMarks - incorrectMarks;
 
         // Update submission with score
         await existingSubmission.update({ score });
@@ -1796,21 +1853,51 @@ class StudentPortalService {
         }
 
         const totalQuestions = await QuizQuestion.count({ where: { quiz_id: quizId } });
-        
         const quizAnswers = await QuizAnswer.findAll({
-            where: { submission_id: submission.id }
+            where: { submission_id: submission.id },
+            include: [{
+                model: QuizQuestion,
+                attributes: ['id', 'question_text', 'marks', 'correct_answer']
+            }]
         });
 
-        const correctAnswers = quizAnswers.filter(a => a.is_correct).length;
-        const wrongAnswers = quizAnswers.length - correctAnswers;
-        const quizPercentage = totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0;
+        let correctAnswers = 0;
+        let wrongAnswers = 0;
+        let totalMarks = 0;
+        
+        let firstCorrectQuestion = null;
+        let firstIncorrectQuestion = null;
+        
+        quizAnswers.forEach(ans => {
+            const q = ans.QuizQuestion;
+            if (q) totalMarks += (q.marks || 1);
+            
+            if (ans.is_correct) {
+                correctAnswers++;
+                if (!firstCorrectQuestion && q) {
+                    firstCorrectQuestion = {
+                        question: q.question_text,
+                        studentAnswer: ans.selected_answer,
+                        correctAnswer: q.correct_answer,
+                        marks: q.marks || 1
+                    };
+                }
+            } else {
+                wrongAnswers++;
+                if (!firstIncorrectQuestion && q) {
+                    firstIncorrectQuestion = {
+                        question: q.question_text,
+                        studentAnswer: ans.selected_answer,
+                        correctAnswer: q.correct_answer,
+                        marks: q.marks || 1
+                    };
+                }
+            }
+        });
 
-        // Grade calculation
-        let grade = 'D';
-        if (quizPercentage >= 90) grade = 'A+';
-        else if (quizPercentage >= 80) grade = 'A';
-        else if (quizPercentage >= 70) grade = 'B';
-        else if (quizPercentage >= 50) grade = 'C';
+        const obtainedMarks = parseFloat(submission.score || 0);
+        const quizPercentage = totalMarks > 0 ? (obtainedMarks / totalMarks) * 100 : 0;
+        const grade = generateGrade(quizPercentage);
 
         let timeTakenObj = { minutes: 10, seconds: 0 };
         if (submission.started_at && submission.submitted_at) {
@@ -1832,7 +1919,9 @@ class StudentPortalService {
                 wrongAnswers,
                 quizPercentage,
                 timeTaken: timeTakenObj,
-                grade
+                grade,
+                firstCorrectQuestion,
+                firstIncorrectQuestion
             }
         };
     }
@@ -1853,46 +1942,55 @@ class StudentPortalService {
                         }
                     ]
                 }
-            ],
-            order: [['attempt_number', 'DESC']]
-        });
-
-        if (!submission) {
-            throw { statusCode: 404, message: 'Quiz submission not found' };
+            ]
         }
+    ],
+    order: [['attempt_number', 'DESC']]
+});
 
-        let review = submission.QuizAnswers.map(ans => {
-            const q = ans.QuizQuestion;
-            
-            let selectedOptionId = null;
-            let selectedOptionText = ans.selected_answer;
-            if (Array.isArray(q.options)) {
-                const idx = q.options.indexOf(selectedOptionText);
-                if (idx !== -1) selectedOptionId = String(idx);
-            }
+if (!submission) {
+    throw { statusCode: 404, message: 'Quiz submission not found' };
+}
 
-            let correctOptionId = null;
-            let correctOptionText = q.correct_answer;
-            if (Array.isArray(q.options)) {
-                const idx = q.options.indexOf(correctOptionText);
-                if (idx !== -1) correctOptionId = String(idx);
-            }
+let review = submission.QuizAnswers.map(ans => {
+    const q = ans.QuizQuestion;
+    
+    let selectedOptionId = null;
+    let selectedOptionText = ans.selected_answer;
+    if (Array.isArray(q.options)) {
+        const idx = q.options.indexOf(selectedOptionText);
+        if (idx !== -1) selectedOptionId = String(idx);
+    }
 
-            return {
-                questionId: String(q.id),
-                question: q.question_text,
-                studentSelectedAnswer: {
-                    optionId: selectedOptionId,
-                    option: selectedOptionText
-                },
-                correctAnswer: {
-                    optionId: correctOptionId,
-                    option: correctOptionText
-                },
-                isCorrect: ans.is_correct,
-                explanation: q.explanation || null
-            };
-        });
+    let correctOptionId = null;
+    let correctOptionText = q.correct_answer;
+    if (Array.isArray(q.options)) {
+        const idx = q.options.indexOf(correctOptionText);
+        if (idx !== -1) correctOptionId = String(idx);
+    }
+    
+    const isCorrect = ans.is_correct;
+    
+    let responseObj = {
+        questionId: String(q.id),
+        question: q.question_text,
+        studentSelectedAnswer: {
+            optionId: selectedOptionId,
+            option: selectedOptionText
+        },
+        correctAnswer: {
+            optionId: correctOptionId,
+            option: correctOptionText
+        },
+        isCorrect: isCorrect
+    };
+
+    if (!isCorrect) {
+        responseObj.explanation = q.explanation || null;
+    }
+
+    return responseObj;
+});
 
         // Apply filtering if requested
         if (status === 'correct') {

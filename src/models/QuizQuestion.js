@@ -28,6 +28,10 @@ module.exports = (sequelize, DataTypes) => {
             type: DataTypes.INTEGER,
             defaultValue: 1
         },
+        explanation: {
+            type: DataTypes.TEXT,
+            allowNull: true
+        },
         order_num: {
             type: DataTypes.INTEGER,
             allowNull: false

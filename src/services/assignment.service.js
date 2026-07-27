@@ -79,7 +79,7 @@ class AssignmentService {
 
     async getAssignmentLookup(query = {}) {
         const { search, limit = 10 } = query;
-        const parsedLimit = Math.min(parseInt(limit, 10) || 10, 50);
+        const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
 
         const where = {
             status: 'active'
@@ -92,12 +92,19 @@ class AssignmentService {
         const rows = await db.Assignment.findAll({
             where,
             limit: parsedLimit,
-            attributes: ['id', 'title'],
+            attributes: ['id', 'title', 'max_score'],
             order: [['title', 'ASC']]
         });
 
+        const data = rows.map(assignment => ({
+            id: assignment.id,
+            title: assignment.title,
+            duration: null,
+            total_marks: assignment.max_score !== null && assignment.max_score !== undefined ? Number(assignment.max_score) : 0
+        }));
+
         return {
-            data: rows
+            data
         };
     }
 

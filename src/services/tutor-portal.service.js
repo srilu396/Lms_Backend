@@ -725,7 +725,8 @@ class TutorPortalService {
                 correct_answer: question ? question.correct_answer : '',
                 student_choice: ans.selected_answer,
                 is_correct: ans.is_correct,
-                marks: question ? question.marks : 1
+                marks: question ? question.marks : 1,
+                explanation: question ? (question.explanation || null) : null
             };
         });
 

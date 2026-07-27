@@ -1849,7 +1849,7 @@ class StudentPortalService {
                     include: [
                         {
                             model: QuizQuestion,
-                            attributes: ['id', 'question_text', 'options', 'correct_answer']
+                            attributes: ['id', 'question_text', 'options', 'correct_answer', 'explanation']
                         }
                     ]
                 }
@@ -1890,7 +1890,7 @@ class StudentPortalService {
                     option: correctOptionText
                 },
                 isCorrect: ans.is_correct,
-                explanation: "Explanation for this answer is currently unavailable." // Fallback for UI
+                explanation: q.explanation || null
             };
         });
 

@@ -1,4 +1,4 @@
-const { Quiz, QuizQuestion } = require('../models');
+const { Quiz, QuizQuestion, sequelize } = require('../models');
 const { Op } = require('sequelize');
 
 // Shuffle utility function
@@ -88,7 +88,7 @@ class QuizService {
 
     async getQuizLookup(query = {}) {
         const { search, limit = 10 } = query;
-        const parsedLimit = Math.min(parseInt(limit, 10) || 10, 50);
+        const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
 
         const where = {
             status: 'published'
@@ -101,12 +101,26 @@ class QuizService {
         const rows = await Quiz.findAll({
             where,
             limit: parsedLimit,
-            attributes: ['id', 'name'],
+            attributes: [
+                'id',
+                'name',
+                'time_limit_minutes',
+                'total_marks',
+                [sequelize.literal('(SELECT COUNT(*)::int FROM quiz_questions WHERE quiz_questions.quiz_id = "Quiz".id)'), 'questions_count']
+            ],
             order: [['name', 'ASC']]
         });
 
+        const data = rows.map(quiz => ({
+            id: quiz.id,
+            title: quiz.name,
+            duration: quiz.time_limit_minutes !== null && quiz.time_limit_minutes !== undefined ? Number(quiz.time_limit_minutes) : 0,
+            total_marks: quiz.total_marks !== null && quiz.total_marks !== undefined ? Number(quiz.total_marks) : 0,
+            questions_count: quiz.get('questions_count') ? parseInt(quiz.get('questions_count'), 10) : 0
+        }));
+
         return {
-            data: rows
+            data
         };
     }
 
@@ -215,7 +229,7 @@ class QuizService {
         const quiz = await Quiz.findByPk(quizId, {
             include: [{
                 model: QuizQuestion,
-                attributes: ['id', 'question_text', 'type', 'options', 'correct_answer', 'marks', 'order_num']
+                attributes: ['id', 'question_text', 'type', 'options', 'correct_answer', 'marks', 'explanation', 'order_num']
             }],
             order: [[QuizQuestion, 'order_num', 'ASC']]
         });
@@ -227,7 +241,20 @@ class QuizService {
             };
         }
 
-        const questions = quiz.QuizQuestions || [];
+        const questions = (quiz.QuizQuestions || []).map(q => {
+            const qJson = q.toJSON ? q.toJSON() : q;
+            return {
+                id: qJson.id,
+                question: qJson.question_text,
+                question_text: qJson.question_text,
+                type: qJson.type,
+                options: qJson.options,
+                correct_answer: qJson.correct_answer,
+                marks: qJson.marks,
+                explanation: qJson.explanation !== undefined && qJson.explanation !== null ? qJson.explanation : null,
+                order_num: qJson.order_num
+            };
+        });
 
         return {
             id: quiz.id,
@@ -286,6 +313,7 @@ class QuizService {
                 options: q.options || [],
                 correct_answer: String(q.correct_answer),
                 marks: Number(q.marks),
+                explanation: q.explanation !== undefined && q.explanation !== null ? q.explanation : null,
                 order_num: index + 1
             }));
             await QuizQuestion.bulkCreate(quizQuestions);
@@ -358,6 +386,7 @@ class QuizService {
                     options: q.options || [],
                     correct_answer: String(q.correct_answer),
                     marks: Number(q.marks),
+                    explanation: q.explanation !== undefined && q.explanation !== null ? q.explanation : null,
                     order_num: index + 1
                 }));
                 await QuizQuestion.bulkCreate(quizQuestions);

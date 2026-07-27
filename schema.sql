@@ -391,6 +391,7 @@ CREATE TABLE quiz_questions (
     type            VARCHAR(20)   NOT NULL
                         CHECK (type IN ('mcq', 'short')),
     marks           INT           NOT NULL DEFAULT 1,
+    explanation     TEXT,
     order_num       INT           NOT NULL,
 
     CONSTRAINT fk_question_quiz

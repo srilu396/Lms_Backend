@@ -1918,6 +1918,8 @@ class StudentPortalService {
                 totalQuestions,
                 correctAnswers,
                 wrongAnswers,
+                obtainedMarks,
+                totalMarks,
                 quizPercentage,
                 timeTaken: timeTakenObj,
                 grade,

@@ -1702,14 +1702,32 @@ class StudentPortalService {
             const ans = answers.find(a => String(a.questionId) === String(q.id));
             let selectedAnswerText = null;
 
-            if (ans && ans.selectedOptionId !== null && ans.selectedOptionId !== undefined) {
-                const optionIndex = parseInt(ans.selectedOptionId, 10);
-                if (Array.isArray(q.options) && optionIndex >= 0 && optionIndex < q.options.length) {
-                    selectedAnswerText = q.options[optionIndex];
+            if (ans) {
+                // The frontend might send an index (selectedOptionId) or the actual text (selectedAnswer)
+                let val = ans.selectedOptionId !== undefined ? ans.selectedOptionId : ans.selectedAnswer;
+                
+                if (val !== null && val !== undefined) {
+                    const optionIndex = parseInt(val, 10);
+                    
+                    if (!isNaN(optionIndex) && String(val) === String(optionIndex) && Array.isArray(q.options) && optionIndex >= 0 && optionIndex < q.options.length) {
+                        // Frontend sent a numeric index
+                        selectedAnswerText = q.options[optionIndex];
+                    } else if (Array.isArray(q.options) && q.options.includes(val)) {
+                        // Frontend sent the exact text
+                        selectedAnswerText = val;
+                    } else {
+                        // Fallback
+                        selectedAnswerText = String(val);
+                    }
                 }
             }
 
-            const isCorrect = selectedAnswerText === q.correct_answer;
+            let isCorrect = false;
+            if (selectedAnswerText !== null && q.correct_answer) {
+                // Robust comparison: ignore case and trailing spaces
+                isCorrect = String(selectedAnswerText).trim().toLowerCase() === String(q.correct_answer).trim().toLowerCase();
+            }
+
             if (!isCorrect) {
                 incorrectMarks += (q.marks || 1);
             }

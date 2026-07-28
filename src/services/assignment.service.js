@@ -21,10 +21,30 @@ class AssignmentService {
         };
     }
 
+    validateDuration(duration, isRequired = true) {
+        if (duration === undefined || duration === null || duration === '') {
+            if (isRequired) {
+                const error = new Error('Duration is required.');
+                error.statusCode = 400;
+                throw error;
+            }
+            return;
+        }
+
+        const num = Number(duration);
+        if (typeof duration === 'boolean' || isNaN(num) || !Number.isInteger(num) || num <= 0) {
+            const error = new Error('Duration must be a positive whole number.');
+            error.statusCode = 400;
+            throw error;
+        }
+    }
+
     async createAssignment(data) {
         const transaction = await db.sequelize.transaction();
         try {
-            const { title, description, domains, tags, submission_type, instructions, max_score, course_id, evaluation_matrix, status } = data;
+            const { title, description, domains, tags, submission_type, instructions, max_score, duration, course_id, evaluation_matrix, status } = data;
+
+            this.validateDuration(duration, true);
 
             const existingAssignment = await db.Assignment.findOne({ where: { title: { [Op.iLike]: title } } });
             if (existingAssignment) {
@@ -55,6 +75,7 @@ class AssignmentService {
                 submission_type: dbSubmissionType,
                 instructions,
                 max_score: final_max_score || 0,
+                duration: Number(duration),
                 course_id,
                 status: status || 'active'
             }, { transaction });
@@ -92,14 +113,14 @@ class AssignmentService {
         const rows = await db.Assignment.findAll({
             where,
             limit: parsedLimit,
-            attributes: ['id', 'title', 'max_score'],
+            attributes: ['id', 'title', 'max_score', 'duration'],
             order: [['title', 'ASC']]
         });
 
         const data = rows.map(assignment => ({
             id: assignment.id,
             title: assignment.title,
-            duration: null,
+            duration: assignment.duration !== undefined && assignment.duration !== null ? Number(assignment.duration) : null,
             total_marks: assignment.max_score !== null && assignment.max_score !== undefined ? Number(assignment.max_score) : 0
         }));
 
@@ -145,6 +166,7 @@ class AssignmentService {
                 domains: assignment.domains,
                 tags: assignment.tags,
                 marks: assignment.max_score,
+                duration: assignment.duration !== undefined && assignment.duration !== null ? Number(assignment.duration) : null,
                 submission_type: assignment.submission_type,
                 status: assignment.status,
                 created_at: assignment.created_at
@@ -187,7 +209,11 @@ class AssignmentService {
                 throw new Error('Assignment not found');
             }
 
-            const { title, description, domains, tags, submission_type, instructions, max_score, course_id, evaluation_matrix, status } = data;
+            const { title, description, domains, tags, submission_type, instructions, max_score, duration, course_id, evaluation_matrix, status } = data;
+
+            if (duration !== undefined) {
+                this.validateDuration(duration, true);
+            }
 
             // Map frontend submission types (e.g. FILE_UPLOAD) to database enums
             let dbSubmissionType = submission_type;
@@ -212,6 +238,7 @@ class AssignmentService {
                 submission_type: dbSubmissionType !== undefined ? dbSubmissionType : assignment.submission_type,
                 instructions: instructions !== undefined ? instructions : assignment.instructions,
                 max_score: final_max_score,
+                duration: duration !== undefined ? Number(duration) : assignment.duration,
                 course_id: course_id !== undefined ? course_id : assignment.course_id,
                 status: status !== undefined ? status : assignment.status
             }, { transaction });

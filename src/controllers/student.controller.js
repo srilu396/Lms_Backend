@@ -145,7 +145,7 @@ class StudentController {
 
     async getStudentStats(req, res) {
         try {
-            const stats = await studentService.getStudentStats();
+            const stats = await studentService.getStudentStats(req.query);
             res.status(200).json({
                 success: true,
                 message: 'Student statistics retrieved successfully',

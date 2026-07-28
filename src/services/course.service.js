@@ -311,40 +311,22 @@ class CourseService {
                     attributes: ['id', 'name']
                 }
             ],
-            attributes: {
-                include: [
-                    [
-                        sequelize.literal(`(
-                            SELECT COUNT(*)
-                            FROM "modules"
-                            WHERE "modules"."course_id" = "Course"."id"
-                        )`),
-                        'no_of_modules'
-                    ],
-                    [
-                        sequelize.literal(`(
-                            SELECT COUNT(*)
-                            FROM "lessons" l
-                            WHERE l."module_id" IN (
-                                SELECT id FROM "modules" WHERE "course_id" = "Course"."id"
-                            )
-                        )`),
-                        'total_lessons'
-                    ],
-                    [
-                        sequelize.literal(`(
-                            SELECT COUNT(*)
-                            FROM "topics" t
-                            WHERE t."lesson_id" IN (
-                                SELECT id FROM "lessons" WHERE "module_id" IN (
-                                    SELECT id FROM "modules" WHERE "course_id" = "Course"."id"
-                                )
-                            )
-                        )`),
-                        'total_topics'
-                    ]
+            attributes: [
+                'id',
+                'name',
+                'description',
+                'status',
+                'unique_code',
+                'updated_at',
+                [
+                    sequelize.literal(`(
+                        SELECT COUNT(*)
+                        FROM "modules"
+                        WHERE "modules"."course_id" = "Course"."id"
+                    )`),
+                    'no_of_modules'
                 ]
-            },
+            ],
             limit: parsedLimit,
             offset: offset,
             order: [['created_at', 'DESC']],

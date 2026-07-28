@@ -7,9 +7,10 @@ const optionalAuth = require('../middlewares/optionalAuth.middleware');
 
 router.use(optionalAuth);
 
-// Stats
+// Stats & Lookups
 router.get('/stats', domainController.getDomainStats);
 router.get('/lookup', domainController.getDomainLookup);
+router.get('/filter', domainController.getDomainsForFilter);
 
 // CRUD
 router.post('/', validate(createDomainSchema), domainController.createDomain);

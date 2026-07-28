@@ -129,7 +129,7 @@ class InstitutionController {
 
     async getInstitutionStats(req, res) {
         try {
-            const stats = await institutionService.getInstitutionStats();
+            const stats = await institutionService.getInstitutionStats(req.query);
             res.status(200).json({
                 success: true,
                 data: stats

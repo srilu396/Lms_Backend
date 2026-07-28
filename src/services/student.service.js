@@ -87,12 +87,8 @@ class StudentService {
         return result;
     }
 
-    async getStudents(query) {
-        const { search, status, course_id, page = 1, limit = 10 } = query;
-        const parsedLimit = Math.min(parseInt(limit, 10) || 10, 50);
-        const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
-        const offset = (parsedPage - 1) * parsedLimit;
-
+    _buildStudentWhereClause(query = {}) {
+        const { search, status, course_id, institution_id } = query;
         const where = {};
 
         if (status) {
@@ -103,6 +99,10 @@ class StudentService {
             where.course_id = course_id;
         }
 
+        if (institution_id) {
+            where.institution_id = institution_id;
+        }
+
         if (search) {
             const safeSearch = search.trim().slice(0, 50);
             where[Op.or] = [
@@ -111,6 +111,17 @@ class StudentService {
                 { email: { [Op.iLike]: `%${safeSearch}%` } }
             ];
         }
+
+        return where;
+    }
+
+    async getStudents(query = {}) {
+        const { search, status, course_id, page = 1, limit = 10 } = query;
+        const parsedLimit = Math.min(parseInt(limit, 10) || 10, 50);
+        const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
+        const offset = (parsedPage - 1) * parsedLimit;
+
+        const where = this._buildStudentWhereClause(query);
 
         const includeOptions = [];
         if (models.Course) {
@@ -147,7 +158,9 @@ class StudentService {
             limit: parsedLimit,
             offset: offset,
             attributes: { exclude: ['password'] },
-            order: [['created_at', 'DESC']]
+            order: [['created_at', 'DESC']],
+            distinct: true,
+            col: 'id'
         });
 
         // Format response to include course_name if available
@@ -369,8 +382,11 @@ class StudentService {
         }
     }
 
-    async getStudentStats() {
+    async getStudentStats(query = {}) {
+        const where = this._buildStudentWhereClause(query);
+
         const statusStats = await Student.findAll({
+            where,
             attributes: [
                 'status',
                 [sequelize.fn('COUNT', sequelize.col('id')), 'count']
@@ -390,6 +406,7 @@ class StudentService {
         });
 
         const studentsGrouped = await Student.findAll({
+            where,
             attributes: [
                 'course_id',
                 [sequelize.fn('COUNT', sequelize.col('id')), 'student_count']

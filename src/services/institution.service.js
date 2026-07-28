@@ -117,16 +117,8 @@ class InstitutionService {
     /**
      * Get institutions with pagination, filtering, and aggregate stats
      */
-    async getInstitutions(query) {
-        const { 
-            page = 1, 
-            limit = 10, 
-            search = '', 
-            status = 'all' // 'all', 'active', 'inactive'
-        } = query;
-
-        const offset = (page - 1) * limit;
-
+    _buildInstitutionWhereClause(query = {}) {
+        const { search = '', status = 'all' } = query;
         const whereClause = {};
 
         // Filtering by status
@@ -138,17 +130,36 @@ class InstitutionService {
 
         // Searching by name, email or ID
         if (search) {
-            // Support searching for ID in the format "INST-YYYY-ID"
             const instIdMatch = search.match(/^INST-\d{4}-(\d+)$/i);
             const searchId = instIdMatch ? Number(instIdMatch[1]) : (isNaN(Number(search)) ? null : Number(search));
 
             whereClause[Op.or] = [
                 { name: { [Op.iLike]: `%${search}%` } },
                 { email: { [Op.iLike]: `%${search}%` } },
-                // Allow search by pure number or parsed prefix number
                 ...(searchId !== null ? [{ id: searchId }] : [])
             ];
         }
+
+        return whereClause;
+    }
+
+    async getInstitutionCount(whereClause = {}) {
+        return await Institution.count({ where: whereClause });
+    }
+
+    /**
+     * Get institutions with pagination, filtering, and aggregate stats
+     */
+    async getInstitutions(query = {}) {
+        const { 
+            page = 1, 
+            limit = 10, 
+            search = '', 
+            status = 'all' 
+        } = query;
+
+        const offset = (page - 1) * limit;
+        const whereClause = this._buildInstitutionWhereClause(query);
 
         // Fetch institutions
         const { rows: institutions, count } = await Institution.findAndCountAll({
@@ -162,7 +173,9 @@ class InstitutionService {
             ],
             limit,
             offset,
-            order: [['created_at', 'DESC']]
+            order: [['created_at', 'DESC']],
+            distinct: true,
+            col: 'id'
         });
 
         return {
@@ -179,10 +192,11 @@ class InstitutionService {
     /**
      * Get summary statistics for institutions
      */
-    async getInstitutionStats() {
-        const totalInstitutions = await Institution.count();
-        const activeInstitutionsCount = await Institution.count({ where: { is_active: true } });
-        const pendingRegistrationsCount = await Institution.count({ where: { is_active: false } }); // Assuming inactive is pending
+    async getInstitutionStats(query = {}) {
+        const baseWhere = this._buildInstitutionWhereClause(query);
+        const totalInstitutions = await this.getInstitutionCount(baseWhere);
+        const activeInstitutionsCount = await Institution.count({ where: { ...baseWhere, is_active: true } });
+        const pendingRegistrationsCount = await Institution.count({ where: { ...baseWhere, is_active: false } }); // Assuming inactive is pending
         
         const totalCourses = await Course.count();
         const avgCoursesPerInstitution = totalInstitutions > 0 

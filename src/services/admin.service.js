@@ -1,12 +1,13 @@
-const { Institution, Batch, Course, Tutor } = require('../models');
+const { Batch, Course, Tutor } = require('../models');
+const institutionService = require('./institution.service');
 
 class AdminService {
     async getDashboardStats() {
         const [total_institutions, total_batches, total_courses, total_tutors] = await Promise.all([
-            Institution.count({ where: { deleted_at: null } }),
-            Batch.count({ where: { deleted_at: null } }),
-            Course.count({ where: { deleted_at: null } }),
-            Tutor.count({ where: { deleted_at: null } })
+            institutionService.getInstitutionCount(),
+            Batch.count(),
+            Course.count(),
+            Tutor.count()
         ]);
 
         return {

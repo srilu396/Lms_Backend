@@ -35,7 +35,8 @@ class TutorPortalController {
             res.status(200).json({
                 success: true,
                 message: 'Tutor dashboard retrieved successfully',
-                data: dashboardData
+                data: dashboardData.data,
+                pagination: dashboardData.pagination
             });
         } catch (error) {
             next(error);

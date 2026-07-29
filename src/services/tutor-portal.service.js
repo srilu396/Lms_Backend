@@ -17,14 +17,16 @@ const {
     AssignmentSubmission,
     Student,
     Tutor,
+    LessonProgress,
     sequelize
 } = require('../models');
 const { Op } = require('sequelize');
 const { mediaInclude, serializeWithMedia } = require('../utils/media');
 
 function formatDate(date) {
-    if (!date) return '';
+    if (!date) return 'N/A';
     const d = new Date(date);
+    if (isNaN(d.getTime())) return 'N/A';
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const month = months[d.getMonth()];
     const day = d.getDate();
@@ -47,6 +49,74 @@ class TutorPortalService {
         if (!isAssigned) {
             throw { statusCode: 403, message: 'Access denied. You are not assigned to this batch.' };
         }
+    }
+
+    // Helper to calculate total items and completions for batch course progress calculation
+    async _calculateBatchCourseProgress(batchId, courseId) {
+        if (!courseId) return 0;
+
+        const modules = await Module.findAll({
+            where: { course_id: courseId },
+            attributes: ['id']
+        });
+        const moduleIds = modules.map(m => m.id);
+
+        const lessons = moduleIds.length > 0
+            ? await Lesson.findAll({ where: { module_id: { [Op.in]: moduleIds } }, attributes: ['id'] })
+            : [];
+        const lessonIds = lessons.map(l => l.id);
+
+        // Quizzes count
+        const quizWhere = {
+            [Op.or]: [{ course_id: courseId }]
+        };
+        if (moduleIds.length > 0) quizWhere[Op.or].push({ module_id: { [Op.in]: moduleIds } });
+        if (lessonIds.length > 0) quizWhere[Op.or].push({ lesson_id: { [Op.in]: lessonIds } });
+        const totalQuizzes = await Quiz.count({ where: quizWhere });
+
+        // Assignments count
+        const batchAssignments = await BatchAssignment.findAll({
+            where: { batch_id: batchId },
+            attributes: ['assignment_id']
+        });
+        let totalAssignments = batchAssignments.length;
+        if (totalAssignments === 0) {
+            const assignmentWhere = {
+                [Op.or]: [{ course_id: courseId }]
+            };
+            if (moduleIds.length > 0) assignmentWhere[Op.or].push({ module_id: { [Op.in]: moduleIds } });
+            if (lessonIds.length > 0) assignmentWhere[Op.or].push({ lesson_id: { [Op.in]: lessonIds } });
+            totalAssignments = await Assignment.count({ where: assignmentWhere });
+        }
+
+        const totalItemsInCourse = lessons.length + totalQuizzes + totalAssignments;
+        if (totalItemsInCourse === 0) return 0;
+
+        // Get active enrollments for this batch
+        const enrollments = await Enrollment.findAll({
+            where: { batch_id: batchId, status: 'active' },
+            attributes: ['id']
+        });
+        const enrollmentIds = enrollments.map(e => e.id);
+        if (enrollmentIds.length === 0) return 0;
+
+        // Completions
+        const lessonsCompleted = await LessonProgress.count({
+            where: { enrollment_id: { [Op.in]: enrollmentIds }, is_completed: true }
+        });
+
+        const quizzesCompleted = await QuizSubmission.count({
+            where: { enrollment_id: { [Op.in]: enrollmentIds }, status: { [Op.in]: ['completed', 'reviewed'] } }
+        });
+
+        const assignmentsCompleted = await AssignmentSubmission.count({
+            where: { enrollment_id: { [Op.in]: enrollmentIds }, status: { [Op.in]: ['submitted', 'graded'] } }
+        });
+
+        const totalCompletions = lessonsCompleted + quizzesCompleted + assignmentsCompleted;
+        const maxPossible = totalItemsInCourse * enrollmentIds.length;
+
+        return maxPossible > 0 ? Math.min(100, Math.round((totalCompletions / maxPossible) * 100)) : 0;
     }
 
     // ─── 1. Stats API (Overview Cards) ──────────────────────────────────────────
@@ -73,24 +143,42 @@ class TutorPortalService {
             })
             : 0;
 
-        // Placeholder — extend with Assignments / Session tables when ready
-        const pendingEvaluations = 0;
-        const todaySessions = 0;
+        // Count only assignment submissions waiting for tutor evaluation (status: 'submitted' or 'pending_review')
+        let pendingAssignmentEvaluations = 0;
+        if (tutorBatchIds.length > 0) {
+            const enrollments = await Enrollment.findAll({
+                where: {
+                    batch_id: { [Op.in]: tutorBatchIds },
+                    status: 'active'
+                },
+                attributes: ['id']
+            });
+            const enrollmentIds = enrollments.map(e => e.id);
+
+            if (enrollmentIds.length > 0) {
+                pendingAssignmentEvaluations = await AssignmentSubmission.count({
+                    where: {
+                        enrollment_id: { [Op.in]: enrollmentIds },
+                        status: 'submitted'
+                    }
+                });
+            }
+        }
 
         return {
-            total_assigned_batches: totalAssignedBatches,
-            total_students: totalStudents,
-            pending_evaluations: pendingEvaluations,
-            today_sessions: todaySessions
+            totalAssignedBatches,
+            totalStudents,
+            pendingAssignmentEvaluations
         };
     }
 
     // ─── 2. Dashboard API (Batches List) ────────────────────────────────────────
     async getDashboardData(tutorId, filters = {}) {
-        const { page = 1, limit = 10, search = '', status } = filters;
-        const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+        const { page = 1, limit = 10, search = '' } = filters;
+        const parsedLimit = Math.max(parseInt(limit, 10) || 10, 1);
+        const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
+        const offset = (parsedPage - 1) * parsedLimit;
 
-        // Step 1: Resolve batch IDs assigned to this tutor via junction table
         const tutorBatchRows = await BatchTutor.findAll({
             where: { tutor_id: tutorId },
             attributes: ['batch_id']
@@ -99,113 +187,57 @@ class TutorPortalService {
 
         if (tutorBatchIds.length === 0) {
             return {
-                total_items: 0,
-                total_pages: 0,
-                current_page: parseInt(page, 10),
-                items_per_page: parseInt(limit, 10),
-                data: []
+                data: [],
+                pagination: {
+                    totalItems: 0,
+                    totalPages: 0,
+                    currentPage: parsedPage,
+                    itemsPerPage: parsedLimit
+                }
             };
         }
 
-        // Step 2: Build where clause
         const whereClause = {
             id: { [Op.in]: tutorBatchIds }
         };
-
-        if (status) {
-            whereClause.status = status;
-        }
 
         if (search) {
             whereClause.name = { [Op.iLike]: `%${search}%` };
         }
 
-        // Step 3: Fetch paginated batches with related data
         const { count, rows: batches } = await Batch.findAndCountAll({
             where: whereClause,
             include: [
                 {
                     model: Course,
                     attributes: ['id', 'name']
-                },
-                {
-                    model: Domain,
-                    attributes: ['id', 'name']
-                },
-                {
-                    model: BatchPerformance,
-                    attributes: ['overall_progress', 'completion_rate'],
-                    required: false
                 }
             ],
-            limit: parseInt(limit, 10),
+            limit: parsedLimit,
             offset,
             order: [['created_at', 'DESC']],
             distinct: true
         });
 
-        // Step 4: Enrich each batch with student count
-        const batchIds = batches.map(b => b.id);
-        const studentCounts = batchIds.length > 0
-            ? await Enrollment.findAll({
-                where: {
-                    batch_id: { [Op.in]: batchIds },
-                    status: 'active'
-                },
-                attributes: [
-                    'batch_id',
-                    [sequelize.fn('COUNT', sequelize.col('id')), 'count']
-                ],
-                group: ['batch_id'],
-                raw: true
-            })
-            : [];
-
-        const studentCountMap = {};
-        studentCounts.forEach(c => {
-            studentCountMap[c.batch_id] = parseInt(c.count, 10);
-        });
-
-        const batchData = batches.map((batch) => {
-            const studentCount = studentCountMap[batch.id] || 0;
-
-            let type = null;
-            let course = null;
-            let domain = null;
-            
-            if (batch.course_id) {
-                type = 'course';
-                course = batch.Course ? { id: batch.Course.id, name: batch.Course.name } : null;
-            } else if (batch.domain_id) {
-                type = 'domain';
-                domain = batch.Domain ? { id: batch.Domain.id, name: batch.Domain.name } : null;
-            }
+        const batchData = await Promise.all(batches.map(async (batch) => {
+            const progress = await this._calculateBatchCourseProgress(batch.id, batch.course_id);
 
             return {
-                id: batch.id,
-                batch_name: batch.name,
-                status: batch.status,
-                start_date: batch.start_date,
-                end_date: batch.end_date,
-                type,
-                course,
-                domain,
-                total_students: studentCount,
-                progress_percentage: batch.BatchPerformance
-                    ? parseFloat(batch.BatchPerformance.overall_progress)
-                    : 0,
-                completion_percentage: batch.BatchPerformance
-                    ? parseFloat(batch.BatchPerformance.completion_rate)
-                    : 0
+                batchId: batch.id,
+                batchName: batch.name,
+                courseName: batch.Course ? batch.Course.name : 'N/A',
+                progress
             };
-        });
+        }));
 
         return {
-            total_items: count,
-            total_pages: Math.ceil(count / parseInt(limit, 10)),
-            current_page: parseInt(page, 10),
-            items_per_page: parseInt(limit, 10),
-            data: batchData
+            data: batchData,
+            pagination: {
+                totalItems: count,
+                totalPages: Math.ceil(count / parsedLimit),
+                currentPage: parsedPage,
+                itemsPerPage: parsedLimit
+            }
         };
     }
 
@@ -358,163 +390,177 @@ class TutorPortalService {
 
         if (batchIds.length === 0) {
             return {
-                total_quizzes: 0,
-                pending_reviews: 0,
-                average_score: 0,
-                total_batches: 0,
-                total_submissions: 0
+                totalBatches: 0,
+                totalQuizSubmissions: 0,
+                averageQuizScore: 0
             };
         }
 
-        const batches = await Batch.findAll({ where: { id: { [Op.in]: batchIds } }, attributes: ['course_id'] });
-        const courseIds = batches.map(b => b.course_id).filter(Boolean);
+        const batches = await Batch.findAll({ where: { id: { [Op.in]: batchIds } }, attributes: ['id', 'course_id'] });
 
-        let total_quizzes = 0;
-        if (courseIds.length > 0) {
-            const modules = await Module.findAll({ where: { course_id: { [Op.in]: courseIds } }, attributes: ['id'] });
-            const moduleIds = modules.map(m => m.id);
-            
-            const lessons = moduleIds.length > 0 ? await Lesson.findAll({ where: { module_id: { [Op.in]: moduleIds } }, attributes: ['id'] }) : [];
-            const lessonIds = lessons.map(l => l.id);
+        let totalBatches = 0;
+        for (const b of batches) {
+            if (b.course_id) {
+                const modules = await Module.findAll({ where: { course_id: b.course_id }, attributes: ['id'] });
+                const moduleIds = modules.map(m => m.id);
+                const lessons = moduleIds.length > 0 ? await Lesson.findAll({ where: { module_id: { [Op.in]: moduleIds } }, attributes: ['id'] }) : [];
+                const lessonIds = lessons.map(l => l.id);
 
-            const quizWhere = {
-                [Op.or]: [
-                    { course_id: { [Op.in]: courseIds } }
-                ]
-            };
-            if (moduleIds.length > 0) {
-                quizWhere[Op.or].push({ module_id: { [Op.in]: moduleIds } });
+                const quizWhere = {
+                    [Op.or]: [{ course_id: b.course_id }]
+                };
+                if (moduleIds.length > 0) quizWhere[Op.or].push({ module_id: { [Op.in]: moduleIds } });
+                if (lessonIds.length > 0) quizWhere[Op.or].push({ lesson_id: { [Op.in]: lessonIds } });
+
+                const qCount = await Quiz.count({ where: quizWhere });
+                if (qCount > 0) totalBatches++;
             }
-            if (lessonIds.length > 0) {
-                quizWhere[Op.or].push({ lesson_id: { [Op.in]: lessonIds } });
-            }
-
-            total_quizzes = await Quiz.count({ where: quizWhere });
         }
 
-        const enrollments = await Enrollment.findAll({ where: { batch_id: { [Op.in]: batchIds } }, attributes: ['id'] });
+        const enrollments = await Enrollment.findAll({ where: { batch_id: { [Op.in]: batchIds }, status: 'active' }, attributes: ['id'] });
         const enrollmentIds = enrollments.map(e => e.id);
-        
-        const pending_reviews = await QuizSubmission.count({ where: { enrollment_id: { [Op.in]: enrollmentIds }, status: 'pending_review' } });
-        
-        const submissions = await QuizSubmission.findAll({ where: { enrollment_id: { [Op.in]: enrollmentIds }, status: 'completed' }, attributes: ['score'] });
-        const average_score = submissions.length > 0 ? submissions.reduce((sum, s) => sum + Number(s.score), 0) / submissions.length : 0;
 
-        const total_submissions = await QuizSubmission.count({ where: { enrollment_id: { [Op.in]: enrollmentIds } } });
+        let totalQuizSubmissions = 0;
+        let averageQuizScore = 0;
+
+        if (enrollmentIds.length > 0) {
+            totalQuizSubmissions = await QuizSubmission.count({
+                where: { enrollment_id: { [Op.in]: enrollmentIds } }
+            });
+
+            const completedSubmissions = await QuizSubmission.findAll({
+                where: { enrollment_id: { [Op.in]: enrollmentIds }, status: { [Op.in]: ['completed', 'reviewed'] } },
+                attributes: ['score']
+            });
+
+            if (completedSubmissions.length > 0) {
+                const sumScore = completedSubmissions.reduce((sum, s) => sum + Number(s.score || 0), 0);
+                averageQuizScore = Math.round(sumScore / completedSubmissions.length);
+            }
+        }
 
         return {
-            total_quizzes,
-            pending_reviews,
-            average_score: Math.round(average_score),
-            total_batches: batchIds.length,
-            total_submissions
+            totalBatches,
+            totalQuizSubmissions,
+            averageQuizScore
         };
     }
 
-    async getQuizzesOverview(tutorId, filters) {
-        const { page = 1, limit = 10, search = '' } = filters;
-        const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+    async getQuizzesOverview(tutorId, filters = {}) {
+        const { page = 1, limit = 10, search = '', batchId } = filters;
+        const parsedLimit = Math.max(parseInt(limit, 10) || 10, 1);
+        const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
+        const offset = (parsedPage - 1) * parsedLimit;
 
         const tutorBatches = await BatchTutor.findAll({ where: { tutor_id: tutorId }, attributes: ['batch_id'] });
-        const batchIds = tutorBatches.map(b => b.batch_id);
+        let batchIds = tutorBatches.map(b => b.batch_id);
+
+        if (batchId) {
+            const requestedBatchId = parseInt(batchId, 10);
+            if (!batchIds.includes(requestedBatchId)) {
+                throw { statusCode: 403, message: 'Access denied. You are not assigned to this batch.' };
+            }
+            batchIds = [requestedBatchId];
+        }
 
         if (batchIds.length === 0) {
-            return { data: [], pagination: { total_items: 0, total_pages: 0, current_page: 1, items_per_page: limit } };
+            return {
+                data: [],
+                pagination: { totalItems: 0, totalPages: 0, currentPage: parsedPage, itemsPerPage: parsedLimit }
+            };
         }
 
         const whereClause = { id: { [Op.in]: batchIds } };
         if (search) {
-             whereClause.name = { [Op.iLike]: `%${search}%` };
+            whereClause.name = { [Op.iLike]: `%${search}%` };
         }
 
         const { count, rows: batches } = await Batch.findAndCountAll({
-             where: whereClause,
-             include: [{ model: Course, attributes: ['id', 'name'] }],
-             limit: parseInt(limit, 10),
-             offset,
-             order: [['created_at', 'DESC']]
+            where: whereClause,
+            include: [{ model: Course, attributes: ['id', 'name'] }],
+            limit: parsedLimit,
+            offset,
+            order: [['created_at', 'DESC']]
         });
 
         const data = await Promise.all(batches.map(async (batch) => {
-             const enrollments = await Enrollment.findAll({ where: { batch_id: batch.id, status: 'active' }, attributes: ['id'] });
-             const enrollmentIds = enrollments.map(e => e.id);
-             const totalStudents = enrollmentIds.length;
+            let totalQuizzes = 0;
+            if (batch.course_id) {
+                const modules = await Module.findAll({ where: { course_id: batch.course_id }, attributes: ['id'] });
+                const moduleIds = modules.map(m => m.id);
+                const lessons = moduleIds.length > 0 ? await Lesson.findAll({ where: { module_id: { [Op.in]: moduleIds } }, attributes: ['id'] }) : [];
+                const lessonIds = lessons.map(l => l.id);
 
-             let latestQuizName = 'N/A';
-             let totalQuizzes = 0;
+                const quizWhere = {
+                    [Op.or]: [{ course_id: batch.course_id }]
+                };
+                if (moduleIds.length > 0) quizWhere[Op.or].push({ module_id: { [Op.in]: moduleIds } });
+                if (lessonIds.length > 0) quizWhere[Op.or].push({ lesson_id: { [Op.in]: lessonIds } });
 
-             if (batch.course_id) {
-                 const modules = await Module.findAll({ where: { course_id: batch.course_id }, attributes: ['id'] });
-                 const moduleIds = modules.map(m => m.id);
-                 
-                 const lessons = moduleIds.length > 0 ? await Lesson.findAll({ where: { module_id: { [Op.in]: moduleIds } }, attributes: ['id'] }) : [];
-                 const lessonIds = lessons.map(l => l.id);
+                totalQuizzes = await Quiz.count({ where: quizWhere });
+            }
 
-                 const quizzes = await Quiz.findAll({
-                     where: {
-                         [Op.or]: [
-                             { course_id: batch.course_id },
-                             { module_id: { [Op.in]: moduleIds } },
-                             { lesson_id: { [Op.in]: lessonIds } }
-                         ]
-                     },
-                     order: [['created_at', 'DESC']]
-                 });
-
-                 totalQuizzes = quizzes.length;
-                 if (totalQuizzes > 0) {
-                     latestQuizName = quizzes[0].name;
-                 }
-             }
-
-             const total_submissions = await QuizSubmission.count({ where: { enrollment_id: { [Op.in]: enrollmentIds } } });
-             const possible_submissions = totalStudents * totalQuizzes;
-             
-             const completed_submissions = await QuizSubmission.findAll({ where: { enrollment_id: { [Op.in]: enrollmentIds }, status: 'completed' }, attributes: ['score'] });
-             
-             const submission_percentage = possible_submissions > 0 ? Math.round((total_submissions / possible_submissions) * 100) : 0;
-             const average_score = completed_submissions.length > 0 
-                 ? Math.round(completed_submissions.reduce((sum, s) => sum + Number(s.score), 0) / completed_submissions.length)
-                 : 0;
-
-             return {
-                 batch_id: batch.id,
-                 batch_name: batch.name,
-                 course_name: batch.Course ? batch.Course.name : '',
-                 latest_quiz: latestQuizName,
-                 submissions_ratio: `${total_submissions}/${possible_submissions}`,
-                 submission_percentage,
-                 average_score
-             };
+            return {
+                batchId: batch.id,
+                batchName: batch.name,
+                courseName: batch.Course ? batch.Course.name : 'N/A',
+                totalQuizzes
+            };
         }));
 
         return {
             data,
-            pagination: { 
-                total_items: count, 
-                total_pages: Math.ceil(count / limit), 
-                current_page: parseInt(page), 
-                items_per_page: parseInt(limit) 
+            pagination: {
+                totalItems: count,
+                totalPages: Math.ceil(count / parsedLimit),
+                currentPage: parsedPage,
+                itemsPerPage: parsedLimit
             }
         };
     }
 
     async getBatchQuizStats(tutorId, batchId) {
         await this.checkBatchAllocation(tutorId, batchId);
-        const enrollments = await Enrollment.findAll({ where: { batch_id: batchId }, attributes: ['id'] });
+
+        const enrollments = await Enrollment.findAll({
+            where: { batch_id: batchId, status: 'active' },
+            attributes: ['id']
+        });
+        const totalStudents = enrollments.length;
         const enrollmentIds = enrollments.map(e => e.id);
-        
-        const total_submissions = await QuizSubmission.count({ where: { enrollment_id: { [Op.in]: enrollmentIds } } });
-        const completed_submissions = await QuizSubmission.count({ where: { enrollment_id: { [Op.in]: enrollmentIds }, status: 'completed' } });
-        
-        const completion_rate = total_submissions > 0 ? Math.round((completed_submissions / total_submissions) * 100) : 0;
-        
-        return { total_submissions, completed_submissions, completion_rate };
+
+        let quizAttempts = 0;
+        let averageScore = 0;
+
+        if (enrollmentIds.length > 0) {
+            quizAttempts = await QuizSubmission.count({
+                where: { enrollment_id: { [Op.in]: enrollmentIds } }
+            });
+
+            const completedSubmissions = await QuizSubmission.findAll({
+                where: { enrollment_id: { [Op.in]: enrollmentIds }, status: { [Op.in]: ['completed', 'reviewed'] } },
+                attributes: ['score']
+            });
+
+            if (completedSubmissions.length > 0) {
+                const sumScore = completedSubmissions.reduce((sum, s) => sum + Number(s.score || 0), 0);
+                averageScore = Math.round(sumScore / completedSubmissions.length);
+            }
+        }
+
+        return {
+            totalStudents,
+            quizAttempts,
+            averageScore
+        };
     }
 
-    async getBatchStudentQuizzes(tutorId, batchId, filters) {
+    async getBatchStudentQuizzes(tutorId, batchId, filters = {}) {
         await this.checkBatchAllocation(tutorId, batchId);
-        const { page = 1, limit = 10, search = '', status } = filters;
+        const { page = 1, limit = 10, search = '' } = filters;
+        const parsedLimit = Math.max(parseInt(limit, 10) || 10, 1);
+        const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
+        const offset = (parsedPage - 1) * parsedLimit;
 
         const studentWhere = {};
         if (search) {
@@ -537,42 +583,9 @@ class TutorPortalService {
         if (enrollments.length === 0) {
             return {
                 data: [],
-                pagination: { total_items: 0, total_pages: 0, current_page: parseInt(page), items_per_page: parseInt(limit) }
+                pagination: { totalItems: 0, totalPages: 0, currentPage: parsedPage, itemsPerPage: parsedLimit }
             };
         }
-
-        const batch = await Batch.findByPk(batchId);
-        if (!batch) {
-            throw { statusCode: 404, message: 'Batch not found' };
-        }
-
-        let quizzes = [];
-        if (batch.course_id) {
-            const modules = await Module.findAll({ where: { course_id: batch.course_id }, attributes: ['id'] });
-            const moduleIds = modules.map(m => m.id);
-            const lessons = moduleIds.length > 0 ? await Lesson.findAll({ where: { module_id: { [Op.in]: moduleIds } }, attributes: ['id'] }) : [];
-            const lessonIds = lessons.map(l => l.id);
-
-            quizzes = await Quiz.findAll({
-                where: {
-                    [Op.or]: [
-                        { course_id: batch.course_id },
-                        { module_id: { [Op.in]: moduleIds } },
-                        { lesson_id: { [Op.in]: lessonIds } }
-                    ]
-                }
-            });
-        }
-
-        const enrollmentIds = enrollments.map(e => e.id);
-        const submissions = await QuizSubmission.findAll({
-            where: { enrollment_id: { [Op.in]: enrollmentIds } }
-        });
-
-        const subMap = new Map();
-        submissions.forEach(sub => {
-            subMap.set(`${sub.enrollment_id}_${sub.quiz_id}`, sub);
-        });
 
         const studentEmails = enrollments.map(e => e.student.email);
         const users = await User.findAll({
@@ -581,49 +594,44 @@ class TutorPortalService {
         });
         const userMap = new Map(users.map(u => [u.email, u.id]));
 
-        const allPairs = [];
-        for (const enrollment of enrollments) {
-            for (const quiz of quizzes) {
-                const sub = subMap.get(`${enrollment.id}_${quiz.id}`);
-                const hasSubmitted = sub && (sub.status === 'completed' || sub.status === 'reviewed');
-                const pairStatus = hasSubmitted ? 'GRADED' : 'PENDING';
+        const studentList = await Promise.all(enrollments.map(async (enrollment) => {
+            const student = enrollment.student;
+            const userId = userMap.get(student.email) || null;
 
-                if (status && status !== 'All Status' && status.toUpperCase() !== pairStatus) {
-                    continue;
-                }
+            // Get submissions for this student enrollment
+            const submissions = await QuizSubmission.findAll({
+                where: { enrollment_id: enrollment.id },
+                include: [{ model: Quiz, attributes: ['name'] }],
+                order: [['submitted_at', 'DESC'], ['created_at', 'DESC']]
+            });
 
-                const score = hasSubmitted ? `${Math.round(sub.score)}/${quiz.total_marks || 100}` : `--/${quiz.total_marks || 100}`;
-                const rawSubDate = hasSubmitted ? sub.submitted_at || sub.created_at : (batch.end_date || new Date(quiz.created_at.getTime() + 7 * 24 * 60 * 60 * 1000));
-                const submissionDate = formatDate(rawSubDate);
-                const userId = userMap.get(enrollment.student.email) || null;
+            const submittedQuizCount = submissions.length;
+            const latestSub = submissions.length > 0 ? submissions[0] : null;
+            const latestQuiz = latestSub && latestSub.Quiz ? latestSub.Quiz.name : 'N/A';
+            const rawDate = latestSub ? (latestSub.submitted_at || latestSub.created_at) : null;
+            const submittedOn = formatDate(rawDate);
 
-                allPairs.push({
-                    student_id: userId ? Number(userId) : null,
-                    quiz_id: quiz.id,
-                    student_profile: enrollment.student.profile_image || null,
-                    student_name: `${enrollment.student.first_name} ${enrollment.student.last_name}`,
-                    student_email: enrollment.student.email,
-                    quiz_title: quiz.name,
-                    submission_date: submissionDate,
-                    score,
-                    status: pairStatus
-                });
-            }
-        }
+            return {
+                studentId: userId ? Number(userId) : null,
+                studentProfile: student.profile_image || null,
+                studentName: `${student.first_name || ''} ${student.last_name || ''}`.trim(),
+                studentEmail: student.email,
+                latestQuiz,
+                submittedOn,
+                submittedQuizCount
+            };
+        }));
 
-        const totalItems = allPairs.length;
-        const parsedLimit = parseInt(limit, 10) || 10;
-        const parsedPage = parseInt(page, 10) || 1;
-        const startIndex = (parsedPage - 1) * parsedLimit;
-        const paginatedData = allPairs.slice(startIndex, startIndex + parsedLimit);
+        const totalItems = studentList.length;
+        const paginatedData = studentList.slice(offset, offset + parsedLimit);
 
         return {
             data: paginatedData,
             pagination: {
-                total_items: totalItems,
-                total_pages: Math.ceil(totalItems / parsedLimit),
-                current_page: parsedPage,
-                items_per_page: parsedLimit
+                totalItems,
+                totalPages: Math.ceil(totalItems / parsedLimit),
+                currentPage: parsedPage,
+                itemsPerPage: parsedLimit
             }
         };
     }
@@ -828,134 +836,182 @@ class TutorPortalService {
 
         if (batchIds.length === 0) {
             return {
-                total_assignments: 0,
-                pending_grading: 0,
-                total_batches: 0,
-                total_submissions: 0
+                totalBatches: 0,
+                totalAssignmentSubmissions: 0,
+                pendingEvaluations: 0
             };
         }
 
-        const batchAssignments = await BatchAssignment.findAll({ where: { batch_id: { [Op.in]: batchIds } }, attributes: ['assignment_id'] });
-        const total_assignments = batchAssignments.length;
+        const batches = await Batch.findAll({ where: { id: { [Op.in]: batchIds } }, attributes: ['id', 'course_id'] });
 
-        const enrollments = await Enrollment.findAll({ where: { batch_id: { [Op.in]: batchIds } }, attributes: ['id'] });
-        const enrollmentIds = enrollments.map(e => e.id);
-        
-        const pending_grading = await AssignmentSubmission.count({ where: { enrollment_id: { [Op.in]: enrollmentIds }, status: 'submitted' } });
-        const total_submissions = await AssignmentSubmission.count({
-            where: {
-                enrollment_id: { [Op.in]: enrollmentIds },
-                status: { [Op.ne]: 'pending' }
+        let totalBatches = 0;
+        for (const b of batches) {
+            const batchAssignmentsCount = await BatchAssignment.count({ where: { batch_id: b.id } });
+            if (batchAssignmentsCount > 0) {
+                totalBatches++;
+            } else if (b.course_id) {
+                const modules = await Module.findAll({ where: { course_id: b.course_id }, attributes: ['id'] });
+                const moduleIds = modules.map(m => m.id);
+                const lessons = moduleIds.length > 0 ? await Lesson.findAll({ where: { module_id: { [Op.in]: moduleIds } }, attributes: ['id'] }) : [];
+                const lessonIds = lessons.map(l => l.id);
+
+                const assignmentWhere = {
+                    [Op.or]: [{ course_id: b.course_id }]
+                };
+                if (moduleIds.length > 0) assignmentWhere[Op.or].push({ module_id: { [Op.in]: moduleIds } });
+                if (lessonIds.length > 0) assignmentWhere[Op.or].push({ lesson_id: { [Op.in]: lessonIds } });
+
+                const aCount = await Assignment.count({ where: assignmentWhere });
+                if (aCount > 0) totalBatches++;
             }
-        });
+        }
+
+        const enrollments = await Enrollment.findAll({ where: { batch_id: { [Op.in]: batchIds }, status: 'active' }, attributes: ['id'] });
+        const enrollmentIds = enrollments.map(e => e.id);
+
+        let totalAssignmentSubmissions = 0;
+        let pendingEvaluations = 0;
+
+        if (enrollmentIds.length > 0) {
+            totalAssignmentSubmissions = await AssignmentSubmission.count({
+                where: {
+                    enrollment_id: { [Op.in]: enrollmentIds },
+                    status: { [Op.ne]: 'pending' }
+                }
+            });
+
+            pendingEvaluations = await AssignmentSubmission.count({
+                where: {
+                    enrollment_id: { [Op.in]: enrollmentIds },
+                    status: 'submitted'
+                }
+            });
+        }
 
         return {
-            total_assignments,
-            pending_grading,
-            total_batches: batchIds.length,
-            total_submissions
+            totalBatches,
+            totalAssignmentSubmissions,
+            pendingEvaluations
         };
     }
 
-    async getAssignmentsOverview(tutorId, filters) {
-        const { page = 1, limit = 10, search = '' } = filters;
-        const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+    async getAssignmentsOverview(tutorId, filters = {}) {
+        const { page = 1, limit = 10, search = '', batchId } = filters;
+        const parsedLimit = Math.max(parseInt(limit, 10) || 10, 1);
+        const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
+        const offset = (parsedPage - 1) * parsedLimit;
 
         const tutorBatches = await BatchTutor.findAll({ where: { tutor_id: tutorId }, attributes: ['batch_id'] });
-        const batchIds = tutorBatches.map(b => b.batch_id);
+        let batchIds = tutorBatches.map(b => b.batch_id);
+
+        if (batchId) {
+            const requestedBatchId = parseInt(batchId, 10);
+            if (!batchIds.includes(requestedBatchId)) {
+                throw { statusCode: 403, message: 'Access denied. You are not assigned to this batch.' };
+            }
+            batchIds = [requestedBatchId];
+        }
 
         if (batchIds.length === 0) {
-            return { data: [], pagination: { total_items: 0, total_pages: 0, current_page: 1, items_per_page: limit } };
+            return {
+                data: [],
+                pagination: { totalItems: 0, totalPages: 0, currentPage: parsedPage, itemsPerPage: parsedLimit }
+            };
         }
 
         const whereClause = { id: { [Op.in]: batchIds } };
         if (search) {
-             whereClause.name = { [Op.iLike]: `%${search}%` };
+            whereClause.name = { [Op.iLike]: `%${search}%` };
         }
 
         const { count, rows: batches } = await Batch.findAndCountAll({
-             where: whereClause,
-             include: [{ model: Course, attributes: ['id', 'name'] }],
-             limit: parseInt(limit, 10),
-             offset,
-             order: [['created_at', 'DESC']]
+            where: whereClause,
+            include: [{ model: Course, attributes: ['id', 'name'] }],
+            limit: parsedLimit,
+            offset,
+            order: [['created_at', 'DESC']]
         });
 
         const data = await Promise.all(batches.map(async (batch) => {
-             const enrollments = await Enrollment.findAll({ where: { batch_id: batch.id, status: 'active' }, attributes: ['id'] });
-             const enrollmentIds = enrollments.map(e => e.id);
-             const totalStudents = enrollmentIds.length;
+            const batchAssignmentsCount = await BatchAssignment.count({ where: { batch_id: batch.id } });
+            let totalAssignments = batchAssignmentsCount;
 
-             const batchAssignments = await BatchAssignment.findAll({ 
-                 where: { batch_id: batch.id }, 
-                 attributes: ['assignment_id'],
-                 include: [{ model: Assignment, attributes: ['title', 'created_at'] }],
-                 order: [[Assignment, 'created_at', 'DESC']]
-             });
-             
-             const totalAssignments = batchAssignments.length;
-             const latestAssignmentName = totalAssignments > 0 && batchAssignments[0].Assignment ? batchAssignments[0].Assignment.title : 'N/A';
+            if (totalAssignments === 0 && batch.course_id) {
+                const modules = await Module.findAll({ where: { course_id: batch.course_id }, attributes: ['id'] });
+                const moduleIds = modules.map(m => m.id);
+                const lessons = moduleIds.length > 0 ? await Lesson.findAll({ where: { module_id: { [Op.in]: moduleIds } }, attributes: ['id'] }) : [];
+                const lessonIds = lessons.map(l => l.id);
 
-             const total_submissions = await AssignmentSubmission.count({
-                 where: {
-                     enrollment_id: { [Op.in]: enrollmentIds },
-                     status: { [Op.ne]: 'pending' }
-                 }
-             });
-             const possible_submissions = totalStudents * totalAssignments;
-             
-             const graded_submissions = await AssignmentSubmission.findAll({ where: { enrollment_id: { [Op.in]: enrollmentIds }, status: 'graded' }, attributes: ['grade'] });
-             
-             const submission_percentage = possible_submissions > 0 ? Math.round((total_submissions / possible_submissions) * 100) : 0;
-             const average_score = graded_submissions.length > 0 
-                 ? Math.round(graded_submissions.reduce((sum, s) => sum + Number(s.grade), 0) / graded_submissions.length)
-                 : 0;
+                const assignmentWhere = {
+                    [Op.or]: [{ course_id: batch.course_id }]
+                };
+                if (moduleIds.length > 0) assignmentWhere[Op.or].push({ module_id: { [Op.in]: moduleIds } });
+                if (lessonIds.length > 0) assignmentWhere[Op.or].push({ lesson_id: { [Op.in]: lessonIds } });
 
-             return {
-                 batch_id: batch.id,
-                 batch_name: batch.name,
-                 course_name: batch.Course ? batch.Course.name : '',
-                 latest_assignment: latestAssignmentName,
-                 submissions_ratio: `${total_submissions}/${possible_submissions}`,
-                 submission_percentage,
-                 average_score
-             };
+                totalAssignments = await Assignment.count({ where: assignmentWhere });
+            }
+
+            return {
+                batchId: batch.id,
+                batchName: batch.name,
+                courseName: batch.Course ? batch.Course.name : 'N/A',
+                totalAssignments
+            };
         }));
 
         return {
             data,
-            pagination: { 
-                total_items: count, 
-                total_pages: Math.ceil(count / limit), 
-                current_page: parseInt(page), 
-                items_per_page: parseInt(limit) 
+            pagination: {
+                totalItems: count,
+                totalPages: Math.ceil(count / parsedLimit),
+                currentPage: parsedPage,
+                itemsPerPage: parsedLimit
             }
         };
     }
 
     async getBatchAssignmentStats(tutorId, batchId) {
         await this.checkBatchAllocation(tutorId, batchId);
-        const batchAssignments = await BatchAssignment.count({ where: { batch_id: batchId } });
-        
-        const enrollments = await Enrollment.findAll({ where: { batch_id: batchId }, attributes: ['id'] });
-        const enrollmentIds = enrollments.map(e => e.id);
-        
-        const total_submissions = await AssignmentSubmission.count({
-            where: {
-                enrollment_id: { [Op.in]: enrollmentIds },
-                status: { [Op.ne]: 'pending' }
-            }
-        });
-        const possible_submissions = enrollments.length * batchAssignments;
-        
-        const submission_rate = possible_submissions > 0 ? Math.round((total_submissions / possible_submissions) * 100) : 0;
 
-        return { total_assignments: batchAssignments, total_submissions, submission_rate };
+        const enrollments = await Enrollment.findAll({
+            where: { batch_id: batchId, status: 'active' },
+            attributes: ['id']
+        });
+        const totalStudents = enrollments.length;
+        const enrollmentIds = enrollments.map(e => e.id);
+
+        let submittedAssignments = 0;
+        let pendingEvaluations = 0;
+
+        if (enrollmentIds.length > 0) {
+            submittedAssignments = await AssignmentSubmission.count({
+                where: {
+                    enrollment_id: { [Op.in]: enrollmentIds },
+                    status: { [Op.ne]: 'pending' }
+                }
+            });
+
+            pendingEvaluations = await AssignmentSubmission.count({
+                where: {
+                    enrollment_id: { [Op.in]: enrollmentIds },
+                    status: 'submitted'
+                }
+            });
+        }
+
+        return {
+            totalStudents,
+            submittedAssignments,
+            pendingEvaluations
+        };
     }
 
-    async getBatchStudentAssignments(tutorId, batchId, filters) {
+    async getBatchStudentAssignments(tutorId, batchId, filters = {}) {
         await this.checkBatchAllocation(tutorId, batchId);
-        const { page = 1, limit = 10, search = '', status } = filters;
+        const { page = 1, limit = 10, search = '' } = filters;
+        const parsedLimit = Math.max(parseInt(limit, 10) || 10, 1);
+        const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
+        const offset = (parsedPage - 1) * parsedLimit;
 
         const studentWhere = {};
         if (search) {
@@ -978,30 +1034,9 @@ class TutorPortalService {
         if (enrollments.length === 0) {
             return {
                 data: [],
-                pagination: { total_items: 0, total_pages: 0, current_page: parseInt(page), items_per_page: parseInt(limit) }
+                pagination: { totalItems: 0, totalPages: 0, currentPage: parsedPage, itemsPerPage: parsedLimit }
             };
         }
-
-        const batch = await Batch.findByPk(batchId);
-        if (!batch) {
-            throw { statusCode: 404, message: 'Batch not found' };
-        }
-
-        const batchAssignments = await BatchAssignment.findAll({
-            where: { batch_id: batchId },
-            include: [{ model: Assignment }]
-        });
-        const assignments = batchAssignments.map(ba => ba.Assignment).filter(Boolean);
-
-        const enrollmentIds = enrollments.map(e => e.id);
-        const submissions = await AssignmentSubmission.findAll({
-            where: { enrollment_id: { [Op.in]: enrollmentIds } }
-        });
-
-        const subMap = new Map();
-        submissions.forEach(sub => {
-            subMap.set(`${sub.enrollment_id}_${sub.assignment_id}`, sub);
-        });
 
         const studentEmails = enrollments.map(e => e.student.email);
         const users = await User.findAll({
@@ -1010,51 +1045,47 @@ class TutorPortalService {
         });
         const userMap = new Map(users.map(u => [u.email, u.id]));
 
-        const allPairs = [];
-        for (const enrollment of enrollments) {
-            for (const assignment of assignments) {
-                const sub = subMap.get(`${enrollment.id}_${assignment.id}`);
-                const isGraded = sub && sub.status === 'graded';
-                const pairStatus = isGraded ? 'GRADED' : 'PENDING';
+        const studentList = await Promise.all(enrollments.map(async (enrollment) => {
+            const student = enrollment.student;
+            const userId = userMap.get(student.email) || null;
 
-                if (status && status !== 'All Status' && status.toUpperCase() !== pairStatus) {
-                    continue;
-                }
+            // Get submissions for this student enrollment
+            const submissions = await AssignmentSubmission.findAll({
+                where: {
+                    enrollment_id: enrollment.id,
+                    status: { [Op.ne]: 'pending' }
+                },
+                include: [{ model: Assignment, attributes: ['title'] }],
+                order: [['submitted_at', 'DESC'], ['created_at', 'DESC']]
+            });
 
-                const score = isGraded ? `${Math.round(sub.grade)}/${assignment.max_score || 100}` : `--/${assignment.max_score || 100}`;
-                const baMapping = batchAssignments.find(ba => ba.assignment_id === assignment.id);
-                const dueDate = baMapping ? baMapping.due_date : null;
-                const rawSubDate = sub ? sub.submitted_at || sub.created_at : (dueDate || batch.end_date || new Date());
-                const submissionDate = formatDate(rawSubDate);
-                const userId = userMap.get(enrollment.student.email) || null;
+            const submittedAssignmentCount = submissions.length;
+            const latestSub = submissions.length > 0 ? submissions[0] : null;
+            const latestAssignment = latestSub && latestSub.Assignment ? latestSub.Assignment.title : 'N/A';
+            const rawDate = latestSub ? (latestSub.submitted_at || latestSub.created_at) : null;
+            const submittedOn = formatDate(rawDate);
 
-                allPairs.push({
-                    student_id: userId ? Number(userId) : null,
-                    assignment_id: assignment.id,
-                    student_profile: enrollment.student.profile_image || null,
-                    student_name: `${enrollment.student.first_name} ${enrollment.student.last_name}`,
-                    student_email: enrollment.student.email,
-                    assignment_title: assignment.title,
-                    submission_date: submissionDate,
-                    score,
-                    status: pairStatus
-                });
-            }
-        }
+            return {
+                studentId: userId ? Number(userId) : null,
+                studentProfile: student.profile_image || null,
+                studentName: `${student.first_name || ''} ${student.last_name || ''}`.trim(),
+                studentEmail: student.email,
+                latestAssignment,
+                submittedOn,
+                submittedAssignmentCount
+            };
+        }));
 
-        const totalItems = allPairs.length;
-        const parsedLimit = parseInt(limit, 10) || 10;
-        const parsedPage = parseInt(page, 10) || 1;
-        const startIndex = (parsedPage - 1) * parsedLimit;
-        const paginatedData = allPairs.slice(startIndex, startIndex + parsedLimit);
+        const totalItems = studentList.length;
+        const paginatedData = studentList.slice(offset, offset + parsedLimit);
 
         return {
             data: paginatedData,
             pagination: {
-                total_items: totalItems,
-                total_pages: Math.ceil(totalItems / parsedLimit),
-                current_page: parsedPage,
-                items_per_page: parsedLimit
+                totalItems,
+                totalPages: Math.ceil(totalItems / parsedLimit),
+                currentPage: parsedPage,
+                itemsPerPage: parsedLimit
             }
         };
     }

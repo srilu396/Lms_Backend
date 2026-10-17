@@ -6,10 +6,12 @@ const path = require('path');
 const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
+const validateEnv = require('./config/validateEnv');
 const { connectDB, sequelize } = require('./db/connect');
 
 const app = express();
-const PORT = Number(process.env.PORT || 5000);
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 5000;
+const HOST = process.env.HOST || '0.0.0.0';
 const BODY_LIMIT = process.env.BODY_LIMIT || '100mb';
 
 // Trust proxy for rate limiting behind reverse proxies (Render, Heroku, etc.)
@@ -51,9 +53,13 @@ app.use(cookieParser());
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 
-// Default status route
+// Health and status routes
 app.get('/', (req, res) => {
     res.json({ message: 'LMS Backend API is running' });
+});
+
+app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'ok', uptime: process.uptime() });
 });
 
 // Register API Routes
@@ -102,28 +108,35 @@ app.use(errorHandler);
 // Start the server only after connecting to the database
 const startServer = async () => {
     try {
+        // Validate required environment variables before initializing connections
+        validateEnv();
+
+        // Connect to PostgreSQL database
         await connectDB();
 
-        const listenWithFallback = async (port) => {
+        const isProduction = process.env.NODE_ENV === 'production';
+
+        const listenWithFallback = async (port, host) => {
             return await new Promise((resolve, reject) => {
-                const server = app.listen(port, () => resolve(server));
+                const server = app.listen(port, host, () => resolve(server));
                 server.on('error', (error) => {
-                    if (error.code === 'EADDRINUSE') {
-                        reject(error);
-                    } else {
-                        reject(error);
-                    }
+                    reject(error);
                 });
             });
         };
 
         let server;
         try {
-            server = await listenWithFallback(PORT);
+            server = await listenWithFallback(PORT, HOST);
         } catch (error) {
             if (error.code === 'EADDRINUSE') {
-                console.warn(`Port ${PORT} is busy. Falling back to an available port.`);
-                server = await listenWithFallback(0);
+                if (!isProduction) {
+                    console.warn(`[Server] Port ${PORT} is busy. Falling back to an available port in development.`);
+                    server = await listenWithFallback(0, HOST);
+                } else {
+                    console.error(`[Server Error] Port ${PORT} is already in use.`);
+                    throw error;
+                }
             } else {
                 throw error;
             }
@@ -131,19 +144,19 @@ const startServer = async () => {
 
         const address = server.address();
         const actualPort = typeof address === 'object' && address ? address.port : PORT;
-        console.log(`Server listening on port ${actualPort}`);
+        console.log(`[Server] Listening on ${HOST}:${actualPort} (NODE_ENV=${process.env.NODE_ENV || 'development'})`);
 
         // Graceful shutdown handler
         const shutdown = async (signal) => {
-            console.log(`\n${signal} received. Shutting down gracefully...`);
+            console.log(`\n[Server] ${signal} received. Shutting down gracefully...`);
             server.close(async () => {
-                console.log('HTTP server closed.');
+                console.log('[Server] HTTP server closed.');
                 try {
                     await sequelize.close();
-                    console.log('Database connection closed.');
+                    console.log('[Database] Database connection closed.');
                     process.exit(0);
                 } catch (err) {
-                    console.error('Error closing database connection:', err);
+                    console.error('[Database] Error closing database connection:', err.message);
                     process.exit(1);
                 }
             });
@@ -153,7 +166,7 @@ const startServer = async () => {
         process.on('SIGTERM', () => shutdown('SIGTERM'));
 
     } catch (error) {
-        console.error('Failed to start server:', error);
+        console.error('[Server Startup Failure]:', error.message || error);
         process.exit(1);
     }
 };
